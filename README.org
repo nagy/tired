@@ -1,0 +1,77 @@
+#+title: tired.el - Tabulated list directory editor
+#+author: Daniel Nagy
+#+language: en
+
+tired shows a directory as a =tabulated-list-mode= buffer.  It reads
+entries with =directory-files= and =file-attributes=.  It never parses
+the output of =ls -l=.  Requires Emacs 31.1 or later.
+
+* Features
+
+- Column listing with name, size, modification time and permission mode
+- Directories first, then sort by name, size, modification time or mode
+- Transient selection that file commands act on
+- Name filter and hidden file toggle
+- Native Elisp listing, no external process
+
+* Usage
+
+#+begin_src elisp
+  (require 'tired)
+  (tired-find-directory "~/")
+#+end_src
+
+Interactive entry point: =M-x tired-find-directory=.
+
+* Key bindings
+
+| Key     | Command                    | Description                              |
+|---------+----------------------------+------------------------------------------|
+| =RET=   | =tired-open=               | Visit target entries                     |
+| =o=     | =tired-open-other-window=  | Visit target entries in another window   |
+| =^=     | =tired-up-directory=       | Go to the parent directory               |
+| =g=     | =tired-refresh=            | Reload the listing                       |
+| =s=     | =tired-sort=               | Sort by a column                         |
+| =SPC=   | =tired-select-toggle-next= | Toggle selection, move down              |
+| =M-SPC= | =tired-select-toggle=      | Toggle selection at point                |
+| =t=     | =tired-select-all=         | Select every visible entry               |
+| =u=     | =tired-select-none=        | Clear the selection                      |
+| =f=     | =tired-set-filter=         | Filter entries by name substring         |
+| =F=     | =tired-clear-filter=       | Remove the filter                        |
+| =.=     | =tired-toggle-dotfiles=    | Toggle hidden entries                    |
+| =y=     | =tired-copy-name=          | Copy names of the targets                |
+| =w=     | =tired-copy-path=          | Copy full paths of the targets           |
+| =q=     | =quit-window=              | Bury the buffer                          |
+
+The selection is transient.  It belongs to the buffer and it is pruned
+when entries disappear.  Commands that act on it clear it afterwards.
+
+* Build and test
+
+#+begin_src sh
+  nix build          # package
+  nix flake check    # package, ERT suite, lint
+  nix develop        # Emacs and git
+#+end_src
+
+Without Nix:
+
+#+begin_src sh
+  emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
+    -f batch-byte-compile tired.el
+  emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
+#+end_src
+
+* Design notes
+
+- Directory entries are =tired-entry= structs in a hash table.  The
+  listing table is rebuilt on refresh, so the displayed data never goes
+  stale.
+- Rows are vectors, as Emacs 31 `tabulated-list-print-entry' requires.
+- Sorting happens in Elisp, not in =tabulated-list=.  Directories stay
+  first in both sort directions.
+- See =docs/adr/= for the recorded decisions.
+
+* License
+
+[[./LICENSE][AGPL3+]]
