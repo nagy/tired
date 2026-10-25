@@ -75,6 +75,7 @@
 
 (require 'bookmark)
 (require 'cl-lib)
+(require 'dired)
 (require 'filenotify)
 (require 'hl-line)
 (require 'project)
@@ -123,13 +124,36 @@ The column grows to the longest visible name, up to the window width
 minus the other columns."
   :type 'integer)
 
+(defcustom tired-check-symlinks t
+  "When non-nil, check whether a symbolic link resolves.
+A link that does not resolve gets `tired-broken-symlink-face'.
+Set the value to nil for remote directories, where the check costs
+one network round trip per link."
+  :type 'boolean)
+
 (defface tired-directory-face
-  '((t :inherit font-lock-function-name-face))
+  '((t :inherit dired-directory))
   "Face for directory names.")
 
 (defface tired-symlink-face
-  '((t :inherit font-lock-variable-name-face))
-  "Face for symbolic link names and their targets.")
+  '((t :inherit dired-symlink))
+  "Face for the name of a symbolic link.")
+
+(defface tired-symlink-target-face
+  '((t :inherit dired-symlink-filename))
+  "Face for the target of a symbolic link.")
+
+(defface tired-broken-symlink-face
+  '((t :inherit dired-broken-symlink))
+  "Face for a symbolic link whose target does not exist.")
+
+(defface tired-special-face
+  '((t :inherit dired-special))
+  "Face for sockets, pipes and device files.")
+
+(defface tired-ignored-face
+  '((t :inherit dired-ignored))
+  "Face for names that match `completion-ignored-extensions'.")
 
 (defface tired-selected-face
   '((t :inherit highlight :extend t))
@@ -142,7 +166,8 @@ file name.  TYPE is one of `directory', `file', `symlink' or
 `special'.  DIRP is non-nil for real directories only.  SIZE is the
 size in bytes.  MTIME is a float time value.  MODE is the permission
 string as returned by `file-attribute-modes'.  LINK is the link
-target for symbolic links."
+target for symbolic links.  BROKEN is non-nil when a symbolic link
+does not resolve."
   name
   path
   type
@@ -150,7 +175,8 @@ target for symbolic links."
   size
   mtime
   mode
-  link)
+  link
+  broken)
 
 (defvar-local tired--directory nil
   "Absolute name of the directory shown in the current buffer.")
@@ -230,7 +256,15 @@ ATTRIBUTES defaults to the result of `file-attributes' for the file.
      :size (file-attribute-size attributes)
      :mtime (float-time (file-attribute-modification-time attributes))
      :mode (file-attribute-modes attributes)
-     :link (and (stringp type) type))))
+     :link (and (stringp type) type)
+     :broken (and (stringp type) (tired--broken-link-p path)))))
+
+(defun tired--broken-link-p (path)
+  "Return non-nil when the symbolic link at PATH does not resolve.
+A circular link counts as broken.  The user option
+`tired-check-symlinks' turns the check off."
+  (and tired-check-symlinks
+       (not (ignore-errors (file-exists-p (file-truename path))))))
 
 (defun tired--entry-visible-p (entry)
   "Return non-nil when ENTRY passes the narrow, dotfile and name filters."
@@ -382,18 +416,60 @@ into one row for that file, keeping the directory's sort position."
   "Return the entries that are currently shown, in display order."
   (mapcar #'car (tired--display-rows t)))
 
+(defvar tired--ignored-source nil
+  "Value of `completion-ignored-extensions' behind the cached regexp.")
+
+(defvar tired--ignored-regexp-cache nil
+  "Cached regexp that matches an ignored file name.")
+
+(defun tired--ignored-regexp ()
+  "Return the regexp that matches a name Dired shows as ignored.
+The regexp covers `completion-ignored-extensions', an autosave name
+and a lock file name.  The cache follows the variable."
+  (unless (equal completion-ignored-extensions tired--ignored-source)
+    (setq tired--ignored-source completion-ignored-extensions
+          tired--ignored-regexp-cache
+          (concat "\\(?:"
+                  (if completion-ignored-extensions
+                      (concat (regexp-opt completion-ignored-extensions) "\\|")
+                    "")
+                  "#\\|\\.#.+\\)\\'")))
+  tired--ignored-regexp-cache)
+
+(defun tired--ignored-name-p (name)
+  "Return non-nil when NAME matches `completion-ignored-extensions'."
+  (string-match-p (tired--ignored-regexp) name))
+
+(defun tired--name-face (entry)
+  "Return the face for the name of ENTRY, or nil for a plain name.
+The order follows `dired-font-lock-keywords': directory, ignored
+suffix, symbolic link, special file."
+  (cond
+   ((tired-entry-dirp entry) 'tired-directory-face)
+   ((tired--ignored-name-p (tired-entry-name entry)) 'tired-ignored-face)
+   ((and (eq (tired-entry-type entry) 'symlink)
+         (tired-entry-broken entry))
+    'tired-broken-symlink-face)
+   ((eq (tired-entry-type entry) 'symlink) 'tired-symlink-face)
+   ((eq (tired-entry-type entry) 'special) 'tired-special-face)
+   (t nil)))
+
 (defun tired--name-cell (entry)
   "Return the name column string for ENTRY."
-  (pcase (tired-entry-type entry)
-    ('directory
-     (concat (propertize (tired-entry-name entry) 'face 'tired-directory-face)
-             "/"))
-    ('symlink
-     (concat (propertize (tired-entry-name entry) 'face 'tired-symlink-face)
-             " -> "
-             (propertize (or (tired-entry-link entry) "?")
-                         'face 'tired-symlink-face)))
-    (_ (tired-entry-name entry))))
+  (let ((name (tired-entry-name entry))
+        (face (tired--name-face entry)))
+    (pcase (tired-entry-type entry)
+      ('directory
+       (concat (if face (propertize name 'face face) name)
+               "/"))
+      ('symlink
+       (concat (if face (propertize name 'face face) name)
+               " -> "
+               (propertize (or (tired-entry-link entry) "?")
+                           'face (if (tired-entry-broken entry)
+                                     'tired-broken-symlink-face
+                                   'tired-symlink-target-face))))
+      (_ (if face (propertize name 'face face) name)))))
 
 (defun tired--row (entry depth)
   "Return the tabulated list row for ENTRY at DEPTH.

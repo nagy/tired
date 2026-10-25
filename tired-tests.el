@@ -354,6 +354,58 @@ a symlink, and removes every tired buffer it opened."
     (should (string-suffix-p "/"
                              (tired--name-cell (tired-tests--entry "sub"))))))
 
+(defun tired-tests--cell-face (entry)
+  "Return the face of the name column of ENTRY."
+  (get-text-property 0 'face (tired--name-cell entry)))
+
+(ert-deftest tired-faces-inherit-dired-faces ()
+  "Each name face takes its look from the matching Dired face."
+  (dolist (pair '((tired-directory-face . dired-directory)
+                  (tired-symlink-face . dired-symlink)
+                  (tired-symlink-target-face . dired-symlink-filename)
+                  (tired-broken-symlink-face . dired-broken-symlink)
+                  (tired-special-face . dired-special)
+                  (tired-ignored-face . dired-ignored)))
+    (should (memq (cdr pair)
+                  (ensure-list (face-attribute (car pair) :inherit))))))
+
+(ert-deftest tired-name-cell-fontifies-names-like-dired ()
+  "Directory, symlink and special names get the Dired face mapping."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (should (eq 'tired-directory-face
+                (tired-tests--cell-face (tired-tests--entry "sub"))))
+    (should (eq 'tired-symlink-face
+                (tired-tests--cell-face (tired-tests--entry "link"))))
+    (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
+    (should (eq 'tired-special-face
+                (tired--name-face
+                 (tired--entry-create :name "fifo" :type 'special))))))
+
+(ert-deftest tired-name-cell-fontifies-broken-symlink ()
+  "A link that does not resolve gets the broken symlink face."
+  (tired-tests--with-fixture
+    (make-symbolic-link "missing.txt" (expand-file-name "dead"))
+    (tired-find-directory root)
+    (let ((entry (tired-tests--entry "dead"))
+          (cell nil))
+      (should (tired-entry-broken entry))
+      (should-not (tired-entry-broken (tired-tests--entry "link")))
+      (setq cell (tired--name-cell entry))
+      (should (eq 'tired-broken-symlink-face (get-text-property 0 'face cell)))
+      (should (eq 'tired-broken-symlink-face
+                  (get-text-property (length "dead -> ") 'face cell))))))
+
+(ert-deftest tired-name-cell-fontifies-ignored-suffix ()
+  "A name that matches `completion-ignored-extensions' gets the ignored face."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name "alpha.elc") (insert "x"))
+    (tired-find-directory root)
+    (should (eq 'tired-ignored-face
+                (tired-tests--cell-face (tired-tests--entry "alpha.elc"))))
+    (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
+    (should (equal (tired--ignored-regexp) (tired--ignored-regexp)))))
+
 (ert-deftest tired-jump-from-file-buffer ()
   "Jumping from a file buffer opens its directory and marks the file."
   (tired-tests--with-fixture

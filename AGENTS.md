@@ -145,7 +145,13 @@ column and redraws.
   entry points (`tired-mode`, `tired-find-directory`).
 - Every function has a docstring.  `checkdoc` must pass.
 - Byte-compilation with warnings as errors must pass.
-- Faces inherit from built-in faces so themes keep working.
+- Faces inherit from Dired faces (`dired-directory`, `dired-symlink`,
+  `dired-symlink-filename`, `dired-broken-symlink`, `dired-special`,
+  `dired-ignored`), so a user Dired theme setting reaches tired rows.
+  `dired-font-lock-keywords` itself stays unused: those keywords match
+  the `ls` line layout and call `dired-move-to-filename`, which needs a
+  mark column and an inode field on one line.  A tabulated-list row
+  keeps its columns apart.
 - AGPL3+ header in every Elisp file.
 
 ## Gotchas
@@ -188,6 +194,16 @@ column and redraws.
 - `file-attributes` does not follow symlinks by default.  The struct
   records the link type and target, and commands use `file-directory-p`
   to follow directory symlinks.
+- `tired--make-entry` resolves each symbolic link once to fill the
+  BROKEN flag, so a link that does not resolve gets
+  `tired-broken-symlink-face`.  A circular link counts as broken.  The
+  user option `tired-check-symlinks` turns the check off, because a
+  remote directory costs one round trip per link.
+- `tired--ignored-regexp` caches a regexp for
+  `completion-ignored-extensions`, an autosave name and a lock file
+  name.  `tired--ignored-source` holds the value the cache derives
+  from, so a changed variable rebuilds the regexp.  The ignored face
+  applies to files and links, never to directories.
 - The header line is rebuilt on every refresh.  `tired--header-base`
   holds the string from `tabulated-list-init-header`, so the directory
   title can be prepended without losing the column labels.
