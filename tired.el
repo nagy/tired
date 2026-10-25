@@ -50,12 +50,20 @@
 ;;   w       copy the full path of the targets
 ;;   q       bury the buffer
 ;;
+;; Related commands:
+;;
+;;   M-x tired-jump  visit the directory of the current buffer
+;;
+;; The mode sets `bookmark-make-record-function', so `bookmark-set'
+;; records a tired buffer and `bookmark-jump' restores it.
+;;
 ;; The selection is transient.  It lives only in the buffer, it is
 ;; pruned when entries disappear, and commands that act on it clear
 ;; it afterwards.
 
 ;;; Code:
 
+(require 'bookmark)
 (require 'cl-lib)
 (require 'hl-line)
 (require 'seq)
@@ -313,19 +321,27 @@ Emacs 31 requires a vector of column descriptors here; a list makes
           (overlay-put overlay 'evaporate t)))
       (forward-line 1))))
 
-(defun tired--goto-entry (entry)
-  "Move point to the line showing ENTRY, when it is still listed."
-  (when (tired-entry-p entry)
-    (let ((path (tired-entry-path entry))
+(defun tired--goto-path (path)
+  "Move point to the line showing PATH.
+Return non-nil when the listing contains PATH.  Leave point at the
+first line when PATH is absent."
+  (when path
+    (let ((path (directory-file-name (expand-file-name path)))
           (found nil))
       (goto-char (point-min))
       (while (and (not found) (not (eobp)))
-        (let ((current (tired--entry-at-point)))
-          (if (and current (equal (tired-entry-path current) path))
+        (let ((entry (tired--entry-at-point)))
+          (if (and entry (equal (tired-entry-path entry) path))
               (setq found t)
             (forward-line 1))))
       (unless found
-        (goto-char (point-min))))))
+        (goto-char (point-min)))
+      found)))
+
+(defun tired--goto-entry (entry)
+  "Move point to the line showing ENTRY, when it is still listed."
+  (when (tired-entry-p entry)
+    (tired--goto-path (tired-entry-path entry))))
 
 (defun tired-refresh ()
   "Reload the listing from disk and redraw the buffer."
@@ -382,6 +398,41 @@ When OTHER-WINDOW is non-nil, show the buffer in another window."
     (user-error "Not in a tired buffer"))
   (tired-find-directory
    (file-name-directory (directory-file-name tired--directory))))
+
+;;;###autoload
+(defun tired-jump (&optional other-window)
+  "Visit the directory of the current buffer in a tired buffer.
+In a tired buffer, visit the parent directory and put point on the
+directory that was shown.  Without a visited file, use
+`default-directory'.  When OTHER-WINDOW is non-nil, show the buffer in
+another window."
+  (interactive "P")
+  (let* ((here (expand-file-name
+                (cond ((derived-mode-p 'tired-mode) tired--directory)
+                      ((buffer-file-name) (buffer-file-name))
+                      (t default-directory))))
+         (directory-p (file-directory-p here))
+         (directory (if (and directory-p (derived-mode-p 'tired-mode))
+                        (file-name-directory (directory-file-name here))
+                      (if directory-p
+                          here
+                        (file-name-directory here))))
+         (anchor (cond ((derived-mode-p 'tired-mode)
+                        (directory-file-name here))
+                       (directory-p nil)
+                       (t (directory-file-name here)))))
+    (tired-find-directory directory other-window)
+    (tired--goto-path anchor)))
+
+(defun tired-bookmark-make-record ()
+  "Return a bookmark record for the current tired buffer."
+  (list (abbreviate-file-name tired--directory)
+        (cons 'handler #'tired-bookmark-jump)
+        (cons 'directory tired--directory)))
+
+(defun tired-bookmark-jump (bookmark)
+  "Jump to the tired buffer described by BOOKMARK."
+  (tired-find-directory (bookmark-prop-get bookmark 'directory)))
 
 (defun tired-select-toggle ()
   "Add the entry at point to the selection, or remove it."
@@ -545,6 +596,7 @@ The directory contents come from `directory-files' and
   (setq-local tabulated-list-padding 1)
   (setq-local tabulated-list-sort-key nil)
   (setq-local revert-buffer-function #'tired--revert)
+  (setq-local bookmark-make-record-function #'tired-bookmark-make-record)
   (setq-local mode-line-format
               (append (default-value 'mode-line-format)
                       '((:eval (tired--mode-line)))))

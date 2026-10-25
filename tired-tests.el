@@ -238,6 +238,54 @@ a symlink, and removes every tired buffer it opened."
     (should (string-suffix-p "/"
                              (tired--name-cell (tired-tests--entry "sub"))))))
 
+(ert-deftest tired-jump-from-file-buffer ()
+  "Jumping from a file buffer opens its directory and marks the file."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (tired-open)
+    (let ((file-buffer (current-buffer)))
+      (unwind-protect
+          (progn
+            (tired-jump)
+            (should (derived-mode-p 'tired-mode))
+            (should (equal tired--directory root))
+            (should (equal (tired-entry-name (tired--entry-at-point))
+                           "alpha.txt")))
+        (kill-buffer file-buffer)))))
+
+(ert-deftest tired-jump-from-tired-buffer-goes-up ()
+  "Jumping from a tired buffer opens the parent and marks the directory."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (let ((origin (current-buffer)))
+      (tired-tests--goto "sub")
+      (tired-open)
+      (tired-jump)
+      (should (eq (current-buffer) origin))
+      (should (equal (tired-entry-name (tired--entry-at-point)) "sub")))))
+
+(ert-deftest tired-jump-uses-default-directory ()
+  "Jumping from a buffer without a file uses `default-directory'."
+  (tired-tests--with-fixture
+    (with-temp-buffer
+      (setq default-directory root)
+      (tired-jump)
+      (should (derived-mode-p 'tired-mode))
+      (should (equal tired--directory root)))))
+
+(ert-deftest tired-bookmark-round-trip ()
+  "A tired bookmark records the directory and restores the buffer."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (let ((record (tired-bookmark-make-record)))
+      (should (equal (car record) (abbreviate-file-name root)))
+      (should (eq (cdr (assq 'handler record)) #'tired-bookmark-jump))
+      (kill-buffer (current-buffer))
+      (tired-bookmark-jump record)
+      (should (derived-mode-p 'tired-mode))
+      (should (equal tired--directory root)))))
+
 (provide 'tired-tests)
 
 ;;; tired-tests.el ends here

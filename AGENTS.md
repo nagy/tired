@@ -73,6 +73,16 @@ Data flow:
 5. `tired-refresh` rebuilds the hash table, prunes dead selection paths,
    redraws the header line and restores point by entry path.
 
+Jumping and bookmarks:
+
+- `tired-jump` derives the target directory from the current buffer:
+  `tired--directory` in a tired buffer, `buffer-file-name` in a file
+  buffer, `default-directory` otherwise.  From a tired buffer the target
+  is the parent directory and the anchor is the shown directory, so
+  point lands on the directory that was left.
+- `tired-bookmark-make-record` stores the directory in the record and
+  `tired-bookmark-jump` reopens it.
+
 Sorting is implemented in `tired--lessp`, not in `tabulated-list`,
 because tabulated-list cannot keep directories first while sorting other
 columns.  `tabulated-list-format` therefore marks every column as

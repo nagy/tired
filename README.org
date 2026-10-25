@@ -23,6 +23,16 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 
 Interactive entry point: =M-x tired-find-directory=.
 
+* Jumping and bookmarks
+
+=M-x tired-jump= visits the directory of the current buffer.  From a
+tired buffer it opens the parent directory and puts point on the
+directory that was shown.  From a buffer without a visited file it uses
+=default-directory=.  Bind it to =C-x C-j= in your init if you like.
+
+=tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=
+records a directory buffer and =M-x bookmark-jump= restores it.
+
 * Key bindings
 
 | Key     | Command                    | Description                              |
