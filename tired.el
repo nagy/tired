@@ -45,6 +45,7 @@
 ;;   e       expand the sections of the file at point
 ;;   E       collapse the sections of the file at point
 ;;   j       find a path anywhere below the shown directory
+;;   J       the same, in another window
 ;;   M-i     remove the inserted children of the directory at point
 ;;   s       sort the listing
 ;;   SPC     toggle selection, then move to the next line
@@ -1437,6 +1438,12 @@ tired buffer.  With OTHER-WINDOW, use another window."
        (other-window (find-file-other-window path))
        (t (find-file path))))))
 
+(defun tired-find-file-other-window ()
+  "Visit a path below the shown directory in another window.
+Completion works like `tired-find-file'."
+  (interactive)
+  (tired-find-file t))
+
 ;;;###autoload
 (defun tired-jump (&optional other-window)
   "Visit the directory of the current buffer in a tired buffer.
@@ -2090,6 +2097,7 @@ selection is cleared afterwards."
   "e" #'tired-expand-file
   "E" #'tired-collapse-file
   "j" #'tired-find-file
+  "J" #'tired-find-file-other-window
   "s" #'tired-sort
   "SPC" #'tired-select-toggle-next
   "M-SPC" #'tired-select-toggle

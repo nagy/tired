@@ -175,9 +175,11 @@ Jumping and bookmarks:
 - `tired-find-file` completes over the whole subtree below
   `tired--directory`, through `tired--find-candidates` and
   `directory-files-recursively`.  A directory candidate ends with a
-  slash and opens a tired buffer, a file candidate opens the file.  The
-  walk prunes hidden directories when `tired--hide-dotfiles' holds and
-  never follows a directory symlink.
+  slash and opens a tired buffer, a file candidate opens the file.
+  `tired-find-file-other-window` passes the other-window flag through,
+  the way `dired-find-file-other-window` does.  The walk prunes hidden
+  directories when `tired--hide-dotfiles' holds and never follows a
+  directory symlink.
 
 Copy commands:
 

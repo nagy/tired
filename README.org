@@ -50,9 +50,10 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 * Finding a path
 
 =j= completes over every path below the shown directory.  A chosen
-file opens, a chosen directory opens as a tired buffer.  Hidden paths
-stay out when =.= hides dotfiles.  The finder walks the subtree, so it
-reaches files inside directories that the listing does not insert.
+file opens, a chosen directory opens as a tired buffer.  =J= does the
+same in another window.  Hidden paths stay out when =.= hides
+dotfiles.  The finder walks the subtree, so it reaches files inside
+directories that the listing does not insert.
 
 * Key bindings
 
@@ -67,6 +68,7 @@ reaches files inside directories that the listing does not insert.
 | =TAB=   | =tired-toggle-subdir=      | Insert, expand or fold the subtree        |
 | =e=     | =tired-expand-file=        | Expand the sections of the file          |
 | =j=     | =tired-find-file=          | Find a path below the shown directory    |
+| =J=     | =tired-find-file-other-window= | The same, in another window          |
 | =E=     | =tired-collapse-file=      | Collapse the sections of the file        |
 | =M-i=   | =tired-remove-subdir=      | Remove an inserted section               |
 | =s=     | =tired-sort=               | Sort by a column                         |

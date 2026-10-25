@@ -1455,6 +1455,16 @@ joins the range."
       (should (equal buffer-file-name
                      (expand-file-name "alpha.txt" root))))))
 
+(ert-deftest tired-find-file-other-window-visits-the-choice ()
+  "The other-window finder visits the chosen file."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) "sub/inner.txt")))
+      (tired-find-file-other-window))
+    (should (equal buffer-file-name
+                   (expand-file-name "sub/inner.txt" root)))))
+
 (ert-deftest tired-find-file-opens-a-chosen-directory ()
   "A directory candidate opens as a tired buffer."
   (tired-tests--with-fixture
