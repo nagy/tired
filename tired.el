@@ -47,6 +47,8 @@
 ;;   M-SPC   toggle selection of the entry at point
 ;;   t       select every visible entry
 ;;   u       clear the selection
+;;   ~       invert the selection over the visible entries
+;;   N       narrow to the selection, or widen again
 ;;   f       narrow the listing while typing a filter
 ;;   F       remove the filter
 ;;   .       toggle hidden entries
@@ -149,6 +151,9 @@ One of `name', `size', `modified' or `mode'.")
 (defvar-local tired--selection nil
   "List of absolute file names in the transient selection.")
 
+(defvar-local tired--narrowed nil
+  "List of paths shown exclusively, or nil when the listing is wide.")
+
 (defvar-local tired--header-base nil
   "Header line string built by `tabulated-list-init-header'.")
 
@@ -181,9 +186,11 @@ The table maps file names to `tired-entry' structs."
              (and (stringp type) type)))))
 
 (defun tired--entry-visible-p (entry)
-  "Return non-nil when ENTRY passes the dotfile and name filters."
+  "Return non-nil when ENTRY passes the narrow, dotfile and name filters."
   (let ((case-fold-search t))
-    (and (or (not tired--hide-dotfiles)
+    (and (or (not tired--narrowed)
+             (member (tired-entry-path entry) tired--narrowed))
+         (or (not tired--hide-dotfiles)
              (not (string-prefix-p "." (tired-entry-name entry))))
          (or (null tired--filter)
              (string-match-p (regexp-quote tired--filter)
@@ -310,6 +317,8 @@ Emacs 31 requires a vector of column descriptors here; a list makes
 (defun tired--header-title ()
   "Return the directory title shown in the header line."
   (concat (abbreviate-file-name tired--directory)
+          (when tired--narrowed
+            "  [narrowed]")
           (when tired--filter
             (format "  [filter: %s]" tired--filter))
           (when tired--hide-dotfiles
@@ -318,8 +327,13 @@ Emacs 31 requires a vector of column descriptors here; a list makes
 (defun tired--mode-line ()
   "Return the `tired-mode' mode line string."
   (concat " ["
-          (number-to-string (length tired--selection))
-          " selected"
+          (if tired--selection
+              (format "%d selected, %s"
+                      (length tired--selection)
+                      (file-size-human-readable (tired--selection-size)))
+            "0 selected")
+          (when tired--narrowed
+            ", narrowed")
           (when (and (hash-table-p tired--inserted)
                      (> (hash-table-count tired--inserted) 0))
             (format ", %d inserted" (hash-table-count tired--inserted)))
@@ -337,14 +351,24 @@ Emacs 31 requires a vector of column descriptors here; a list makes
   (and (tired-entry-p entry)
        (member (tired-entry-path entry) tired--selection)))
 
+(defun tired--selected-entries ()
+  "Return the selected entries in display order."
+  (delq nil
+        (mapcar (lambda (row)
+                  (let ((entry (car row)))
+                    (and (tired--selected-p entry) entry)))
+                (tired--display-rows nil))))
+
+(defun tired--selection-size ()
+  "Return the total size of the selected non-directory entries in bytes."
+  (let ((total 0))
+    (dolist (entry (tired--selected-entries) total)
+      (unless (tired-entry-dirp entry)
+        (setq total (+ total (or (tired-entry-size entry) 0)))))))
+
 (defun tired--selection-targets ()
   "Return the selected entries in display order, or the entry at point."
-  (let* ((rows (tired--display-rows nil))
-         (selected (delq nil
-                         (mapcar (lambda (row)
-                                   (let ((entry (car row)))
-                                     (and (tired--selected-p entry) entry)))
-                                 rows))))
+  (let ((selected (tired--selected-entries)))
     (or selected
         (let ((entry (tired--entry-at-point)))
           (when entry (list entry))))))
@@ -450,6 +474,7 @@ Drop inserted directories that no longer exist."
     (user-error "Not in a tired buffer"))
   (tired--reload-tables)
   (setq tired--selection (tired--prune-selection tired--selection))
+  (setq tired--narrowed (tired--prune-selection tired--narrowed))
   (tired--redraw))
 
 (defun tired--revert (_ignore-auto _noconfirm)
@@ -595,6 +620,51 @@ another window."
   (setq tired--selection nil)
   (tired--apply-selection-overlays)
   (force-mode-line-update))
+
+(defun tired-select-invert ()
+  "Invert the selection over the visible entries.
+Selected entries outside the visible listing drop out."
+  (interactive)
+  (setq tired--selection
+        (mapcar #'tired-entry-path
+                (seq-remove #'tired--selected-p (tired--visible-entries))))
+  (tired--apply-selection-overlays)
+  (force-mode-line-update))
+
+(defun tired--narrow-ancestors (paths)
+  "Return PATHS plus the directories needed to reach them."
+  (let ((root (directory-file-name (expand-file-name tired--directory)))
+        (result (copy-sequence paths)))
+    (dolist (path paths)
+      (let ((directory (file-name-directory path)))
+        (while (and directory
+                    (> (length directory) (length root))
+                    (string-prefix-p root directory))
+          (push (directory-file-name directory) result)
+          (setq directory
+                (file-name-directory (directory-file-name directory))))))
+    (delete-dups result)))
+
+(defun tired-narrow-to-selection ()
+  "Show only the selected entries and the directories that contain them."
+  (interactive)
+  (unless tired--selection
+    (user-error "No selection"))
+  (setq tired--narrowed (tired--narrow-ancestors tired--selection))
+  (tired--redraw))
+
+(defun tired-widen ()
+  "Show the whole listing again."
+  (interactive)
+  (setq tired--narrowed nil)
+  (tired--redraw))
+
+(defun tired-toggle-narrow ()
+  "Narrow the listing to the selection, or widen it."
+  (interactive)
+  (if tired--narrowed
+      (tired-widen)
+    (tired-narrow-to-selection)))
 
 (defun tired-sort (column &optional reverse)
   "Sort the listing by COLUMN.
@@ -762,6 +832,8 @@ cleared afterwards."
   "S-SPC" #'tired-select-toggle
   "t" #'tired-select-all
   "u" #'tired-select-none
+  "~" #'tired-select-invert
+  "N" #'tired-toggle-narrow
   "f" #'tired-filter
   "F" #'tired-clear-filter
   "." #'tired-toggle-dotfiles
@@ -783,6 +855,7 @@ The directory contents come from `directory-files' and
   (setq-local tired--sort-flip nil)
   (setq-local tired--filter nil)
   (setq-local tired--selection nil)
+  (setq-local tired--narrowed nil)
   (setq-local tired--hide-dotfiles tired-hide-dotfiles)
   (setq-local tired--tables (make-hash-table :test #'equal))
   (setq-local tired--inserted (make-hash-table :test #'equal))

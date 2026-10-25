@@ -78,15 +78,21 @@ Data flow:
    `tabulated-list-print` draws the buffer.
 6. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
-7. `tired--reload-tables` re-reads the root directory and every inserted
+   `tired--selection-size` sums the sizes of selected non-directory
+   entries for the mode line.
+7. `tired--entry-visible-p` applies the narrow snapshot, then the
+   dotfile setting, then the name filter.  `tired--narrow-ancestors`
+   adds the directories that contain a narrowed path, so inserted
+   sections keep their parent rows.
+8. `tired--reload-tables` re-reads the root directory and every inserted
    directory, and drops inserted directories that vanished.
-   `tired-refresh` calls it, prunes dead selection paths and then calls
-   `tired--redraw`.
-8. `tired--redraw` rebuilds the header line, prints the rows, restores
+   `tired-refresh` calls it, prunes dead selection and narrow paths and
+   then calls `tired--redraw`.
+9. `tired--redraw` rebuilds the header line, prints the rows, restores
    point by entry path and reapplies the selection overlays.  Commands
    that only change the view (filter, sort, dotfiles, insert) call
    `tired--redraw`, not `tired-refresh`.
-9. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
+10. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
    value, C-g restores the previous filter.
 
@@ -131,6 +137,11 @@ column and redraws.
 - `tired--selection` stores absolute paths.  Pruning looks the path up
   in the table of its own directory, so a renamed or recreated file
   drops out of the selection.
+- `tired--narrowed` is a snapshot of the selection plus ancestor
+  directories.  It does not follow later selection changes.  Pruning
+  after refresh drops vanished paths and widens when the snapshot
+  becomes empty.  Ancestors matter: the tree walk cannot reach a narrowed
+  entry inside an inserted section unless the parent rows stay visible.
 - Inserted sections are ordinary rows with a depth, not synthetic header
   rows.  Every row stays selectable and every ID is a real `tired-entry'.
   Do not add nil-ID header rows for dired parity.

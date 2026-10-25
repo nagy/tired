@@ -51,6 +51,8 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =M-SPC= | =tired-select-toggle=      | Toggle selection at point                |
 | =t=     | =tired-select-all=         | Select every visible entry               |
 | =u=     | =tired-select-none=        | Clear the selection                      |
+| =~=     | =tired-select-invert=      | Invert the selection                     |
+| =N=     | =tired-toggle-narrow=      | Narrow to the selection, or widen        |
 | =f=     | =tired-filter=             | Narrow live, RET keeps, C-g restores    |
 | =F=     | =tired-clear-filter=       | Remove the filter                        |
 | =.=     | =tired-toggle-dotfiles=    | Toggle hidden entries                    |
@@ -70,6 +72,11 @@ previous one, and an empty input removes the filter.
 =w= copies absolute paths, =W= copies paths relative to the shown
 directory, and =P= copies paths relative to the project root.  =P=
 signals an error when the shown directory belongs to no project.
+
+=N= narrows the listing to a snapshot of the selection plus the
+directories that contain the selected entries.  =N= again widens it.
+The mode line shows the total size of the selected non-directory
+entries next to the selection count.
 
 * Inserted directories
 

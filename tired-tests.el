@@ -454,6 +454,68 @@ a symlink, and removes every tired buffer it opened."
     (tired-select-all)
     (should (= 8 (length (tired--selection-targets))))))
 
+(ert-deftest tired-select-invert-flips-visible-entries ()
+  "Inverting selects every visible entry that was not selected."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-select-invert)
+    (should (equal (sort (mapcar #'tired-entry-name
+                                 (tired--selection-targets))
+                         #'string<)
+                   '(".hidden" "beta.txt" "link" "sub")))))
+
+(ert-deftest tired-selection-size-sums-non-directories ()
+  "The selection size adds file sizes and skips directories."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "sub")
+    (tired-select-toggle)
+    (should (= 43 (tired--selection-size)))
+    (should (string-match-p "3 selected" (tired--mode-line)))))
+
+(ert-deftest tired-narrow-shows-selection-and-widens ()
+  "Narrowing hides unselected entries and widening restores them."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (tired-narrow-to-selection)
+    (should (equal (tired-tests--names) '("alpha.txt" "beta.txt")))
+    (should (string-match-p "narrowed" (tired--header-title)))
+    (tired-widen)
+    (should (= 5 (length (tired-tests--names))))))
+
+(ert-deftest tired-narrow-keeps-ancestor-directories ()
+  "A narrowed entry inside a section keeps its parent row visible."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (tired-select-toggle)
+    (tired-narrow-to-selection)
+    (should (equal (tired-tests--names) '("sub" "inner.txt")))))
+
+(ert-deftest tired-narrow-prunes-deleted-paths ()
+  "Refresh drops narrowed paths that vanished and widens when empty."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (tired-narrow-to-selection)
+    (delete-file (expand-file-name "beta.txt" root))
+    (tired-refresh)
+    (should-not tired--narrowed)
+    (should (= 4 (length (tired-tests--names))))))
+
 (provide 'tired-tests)
 
 ;;; tired-tests.el ends here

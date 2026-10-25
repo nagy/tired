@@ -36,3 +36,8 @@ _Avoid_: Operand, subject
 **Filter**:
 A name substring that limits which entries appear in the listing.
 _Avoid_: Search, query
+
+**Narrow**:
+A listing limited to a snapshot of the selection plus the directories
+that contain the selected entries.
+_Avoid_: Filter, focus
