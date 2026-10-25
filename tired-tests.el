@@ -42,8 +42,15 @@ a symlink, and removes every tired buffer it opened."
            (with-temp-file (expand-file-name "beta.txt")
              (insert (make-string 40 ?x)))
            (with-temp-file (expand-file-name ".hidden") (insert "h"))
-           (make-directory (expand-file-name "sub"))
+           (make-directory (expand-file-name "sub/deep") t)
+           (with-temp-file (expand-file-name "sub/inner.txt")
+             (insert "inner"))
+           (with-temp-file (expand-file-name "sub/deep/leaf.txt")
+             (insert "leaf"))
            (make-symbolic-link "alpha.txt" (expand-file-name "link"))
+           ;; A directory symlink that points back at the root.  The
+           ;; listing guard must not recurse through it.
+           (make-symbolic-link root (expand-file-name "sub/loop"))
            ,@body)
        (dolist (buffer (buffer-list))
          (with-current-buffer buffer
@@ -73,7 +80,7 @@ a symlink, and removes every tired buffer it opened."
   "Return the listed entry called NAME."
   (seq-find (lambda (entry)
               (equal (tired-entry-name entry) name))
-            (tired--sorted-entries nil)))
+            (tired--sorted-directory-entries tired--directory nil)))
 
 (ert-deftest tired-mode-is-derived-from-tabulated-list-mode ()
   "The major mode must inherit from `tabulated-list-mode'."
@@ -306,6 +313,105 @@ a symlink, and removes every tired buffer it opened."
       (tired-bookmark-jump record)
       (should (derived-mode-p 'tired-mode))
       (should (equal tired--directory root)))))
+
+(ert-deftest tired-insert-subdir-adds-indented-children ()
+  "Inserting a directory shows its children below it, indented by depth."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (should (equal (tired-tests--names)
+                   '("sub" "deep" "inner.txt" "loop"
+                     ".hidden" "alpha.txt" "beta.txt" "link")))
+    (should (equal (mapcar #'cdr (tired--display-rows t))
+                   '(0 1 1 1 0 0 0 0)))
+    (should (string-prefix-p
+             "  inner.txt"
+             (aref (tired--row
+                    (tired--entry-for-path
+                     (expand-file-name "sub/inner.txt" root))
+                    1)
+                   0)))))
+
+(ert-deftest tired-insert-subdir-nests ()
+  "Inserting a child section keeps the tree order."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "deep")
+    (tired-insert-subdir)
+    (should (equal (tired-tests--names)
+                   '("sub" "deep" "leaf.txt" "inner.txt" "loop"
+                     ".hidden" "alpha.txt" "beta.txt" "link")))
+    (should (equal (mapcar #'cdr (tired--display-rows t))
+                   '(0 1 2 1 1 0 0 0 0)))))
+
+(ert-deftest tired-toggle-subdir-removes-children ()
+  "TAB inserts and removes one section."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-toggle-subdir)
+    (should (member "inner.txt" (tired-tests--names)))
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--names)
+                   '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))))
+
+(ert-deftest tired-remove-subdir-drops-descendants ()
+  "Removing a section drops nested inserted sections as well."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "deep")
+    (tired-insert-subdir)
+    (tired-tests--goto "sub")
+    (tired-remove-subdir)
+    (should (= 0 (hash-table-count tired--inserted)))
+    (should (equal (tired-tests--names)
+                   '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))))
+
+(ert-deftest tired-insert-subdir-rejects-files ()
+  "Inserting a file signals a user error."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (should-error (tired-insert-subdir) :type 'user-error)))
+
+(ert-deftest tired-refresh-keeps-inserted-sections ()
+  "Refresh reloads inserted directories and keeps the sections."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (with-temp-file (expand-file-name "sub/new.txt") (insert "new"))
+    (tired-refresh)
+    (should (member "new.txt" (tired-tests--names)))
+    (should (tired--inserted-p (expand-file-name "sub" root)))))
+
+(ert-deftest tired-insert-subdir-guards-symlink-cycles ()
+  "A symlink back to an ancestor does not recurse."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "loop")
+    (tired-insert-subdir)
+    (should (= 8 (length (tired-tests--names))))))
+
+(ert-deftest tired-selection-targets-cover-inserted-entries ()
+  "Selection and targets work inside inserted sections."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (tired-select-toggle)
+    (should (equal (mapcar #'tired-entry-name (tired--selection-targets))
+                   '("inner.txt")))
+    (tired-select-all)
+    (should (= 8 (length (tired--selection-targets))))))
 
 (provide 'tired-tests)
 

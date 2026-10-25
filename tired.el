@@ -38,6 +38,10 @@
 ;;   o       same, in another window
 ;;   ^       go to the parent directory
 ;;   g       refresh the listing
+;;   l       refresh the listing, including inserted sections
+;;   i       insert the children of the directory at point
+;;   TAB     toggle insertion of the directory at point
+;;   M-i     remove the inserted children of the directory at point
 ;;   s       sort the listing
 ;;   SPC     toggle selection, then move to the next line
 ;;   M-SPC   toggle selection of the entry at point
@@ -120,8 +124,11 @@ target for symbolic links."
 (defvar-local tired--directory nil
   "Absolute name of the directory shown in the current buffer.")
 
-(defvar-local tired--entries nil
-  "Hash table mapping entry names to `tired-entry' structs.")
+(defvar-local tired--tables nil
+  "Hash table mapping absolute directory names to entry tables.")
+
+(defvar-local tired--inserted nil
+  "Hash table of directories whose children appear in the listing.")
 
 (defvar-local tired--sort-key 'name
   "Column used to sort the listing.
@@ -202,22 +209,55 @@ tie-breaker."
               (backward tired--sort-flip)
               (t (string< (tired-entry-name a) (tired-entry-name b))))))))
 
-(defun tired--sorted-entries (visible-only)
-  "Return all entries in display order.
+(defun tired--table (directory)
+  "Return the entry table for DIRECTORY, or nil."
+  (let ((directory (directory-file-name (expand-file-name directory))))
+    (and (hash-table-p tired--tables)
+         (gethash directory tired--tables))))
+
+(defun tired--inserted-p (directory)
+  "Return non-nil when DIRECTORY is inserted in the listing."
+  (and (hash-table-p tired--inserted)
+       (gethash (directory-file-name (expand-file-name directory))
+                tired--inserted)))
+
+(defun tired--sorted-directory-entries (directory visible-only)
+  "Return the entries of DIRECTORY in display order.
 When VISIBLE-ONLY is non-nil, drop entries hidden by the filter and
 the dotfile setting."
-  (let (entries)
-    (when (hash-table-p tired--entries)
+  (let ((table (tired--table directory))
+        entries)
+    (when table
       (maphash (lambda (_name entry)
                  (when (or (not visible-only)
                            (tired--entry-visible-p entry))
                    (push entry entries)))
-               tired--entries))
+               table))
     (sort entries #'tired--lessp)))
+
+(defun tired--display-rows (&optional visible-only)
+  "Return (ENTRY . DEPTH) conses for the whole listing.
+Children of inserted directories follow the row of their parent and
+indent by DEPTH.  With VISIBLE-ONLY, skip hidden and filtered
+entries.  A directory seen twice through symlinks appears once."
+  (let ((rows nil)
+        (seen (make-hash-table :test #'equal)))
+    (cl-labels ((walk (directory depth)
+                  (let ((key (file-truename directory)))
+                    (unless (gethash key seen)
+                      (puthash key t seen)
+                      (dolist (entry (tired--sorted-directory-entries
+                                      directory visible-only))
+                        (push (cons entry depth) rows)
+                        (when (and (tired-entry-dirp entry)
+                                   (tired--inserted-p (tired-entry-path entry)))
+                          (walk (tired-entry-path entry) (1+ depth))))))))
+      (walk tired--directory 0))
+    (nreverse rows)))
 
 (defun tired--visible-entries ()
   "Return the entries that are currently shown, in display order."
-  (tired--sorted-entries t))
+  (mapcar #'car (tired--display-rows t)))
 
 (defun tired--name-cell (entry)
   "Return the name column string for ENTRY."
@@ -232,11 +272,12 @@ the dotfile setting."
                          'face 'tired-symlink-face)))
     (_ (tired-entry-name entry))))
 
-(defun tired--row (entry)
-  "Return the tabulated list row for ENTRY.
+(defun tired--row (entry depth)
+  "Return the tabulated list row for ENTRY at DEPTH.
 Emacs 31 requires a vector of column descriptors here; a list makes
 `tabulated-list-print-entry' signal a type error."
-  (vector (tired--name-cell entry)
+  (vector (concat (make-string (* 2 depth) ?\s)
+                  (tired--name-cell entry))
           (if (tired-entry-dirp entry)
               ""
             (file-size-human-readable (tired-entry-size entry)))
@@ -245,9 +286,9 @@ Emacs 31 requires a vector of column descriptors here; a list makes
 
 (defun tired--tabulated-entries ()
   "Return `tabulated-list-entries' for the current listing."
-  (mapcar (lambda (entry)
-            (list entry (tired--row entry)))
-          (tired--visible-entries)))
+  (mapcar (lambda (row)
+            (list (car row) (tired--row (car row) (cdr row))))
+          (tired--display-rows t)))
 
 (defun tired--column-label (label key)
   "Return LABEL with a direction indicator when KEY is the sort key."
@@ -276,6 +317,9 @@ Emacs 31 requires a vector of column descriptors here; a list makes
   (concat " ["
           (number-to-string (length tired--selection))
           " selected"
+          (when (and (hash-table-p tired--inserted)
+                     (> (hash-table-count tired--inserted) 0))
+            (format ", %d inserted" (hash-table-count tired--inserted)))
           (when tired--filter
             (format ", filter: %s" tired--filter))
           "]"))
@@ -291,21 +335,27 @@ Emacs 31 requires a vector of column descriptors here; a list makes
        (member (tired-entry-path entry) tired--selection)))
 
 (defun tired--selection-targets ()
-  "Return the sorted selected entries, or the entry at point."
-  (let ((selected (seq-filter #'tired--selected-p (tired--sorted-entries nil))))
+  "Return the selected entries in display order, or the entry at point."
+  (let* ((rows (tired--display-rows nil))
+         (selected (delq nil
+                         (mapcar (lambda (row)
+                                   (let ((entry (car row)))
+                                     (and (tired--selected-p entry) entry)))
+                                 rows))))
     (or selected
         (let ((entry (tired--entry-at-point)))
           (when entry (list entry))))))
 
+(defun tired--entry-for-path (path)
+  "Return the listed entry for PATH, or nil."
+  (let* ((directory (file-name-directory path))
+         (table (tired--table directory))
+         (entry (and table (gethash (file-name-nondirectory path) table))))
+    (and entry (equal (tired-entry-path entry) path) entry)))
+
 (defun tired--prune-selection (selection)
   "Return SELECTION without paths that are no longer listed."
-  (let (result)
-    (dolist (path selection)
-      (let ((entry (and (hash-table-p tired--entries)
-                        (gethash (file-name-nondirectory path) tired--entries))))
-        (when (and entry (equal (tired-entry-path entry) path))
-          (push path result))))
-    (nreverse result)))
+  (seq-filter #'tired--entry-for-path selection))
 
 (defun tired--apply-selection-overlays ()
   "Highlight every entry in the transient selection."
@@ -358,12 +408,44 @@ first line when PATH is absent."
     (tired--apply-selection-overlays)
     (force-mode-line-update)))
 
+(defun tired--forget-inserted (directory)
+  "Remove DIRECTORY and its inserted descendants from the listing."
+  (let* ((base (directory-file-name (expand-file-name directory)))
+         (prefix (file-name-as-directory base))
+         doomed)
+    (maphash (lambda (other _ignore)
+               (let ((other (directory-file-name other)))
+                 (when (or (equal other base)
+                           (string-prefix-p prefix other))
+                   (push other doomed))))
+             tired--inserted)
+    (dolist (other doomed)
+      (remhash other tired--inserted)
+      (remhash other tired--tables))))
+
+(defun tired--reload-tables ()
+  "Read the root directory and every inserted directory.
+Drop inserted directories that no longer exist."
+  (setq tired--tables (make-hash-table :test #'equal))
+  (puthash (directory-file-name tired--directory)
+           (tired--read-entries tired--directory)
+           tired--tables)
+  (let (gone)
+    (maphash (lambda (directory _ignore)
+               (if (file-directory-p directory)
+                   (puthash directory (tired--read-entries directory)
+                            tired--tables)
+                 (push directory gone)))
+             tired--inserted)
+    (dolist (directory gone)
+      (tired--forget-inserted directory))))
+
 (defun tired-refresh ()
   "Reload the listing from disk and redraw the buffer."
   (interactive)
   (unless tired--directory
     (user-error "Not in a tired buffer"))
-  (setq tired--entries (tired--read-entries tired--directory))
+  (tired--reload-tables)
   (setq tired--selection (tired--prune-selection tired--selection))
   (tired--redraw))
 
@@ -388,6 +470,9 @@ When OTHER-WINDOW is non-nil, show the buffer in another window."
     (with-current-buffer buffer
       (unless (derived-mode-p 'tired-mode)
         (tired-mode))
+      (unless (equal tired--directory directory)
+        (setq tired--inserted (make-hash-table :test #'equal))
+        (setq tired--selection nil))
       (setq tired--directory directory)
       (tired-refresh))
     (if other-window
@@ -402,6 +487,42 @@ When OTHER-WINDOW is non-nil, show the buffer in another window."
     (user-error "Not in a tired buffer"))
   (tired-find-directory
    (file-name-directory (directory-file-name tired--directory))))
+
+(defun tired-insert-subdir (&optional directory)
+  "Insert the children of DIRECTORY into the listing.
+DIRECTORY defaults to the directory at point.  Inserted children
+follow their parent row and indent by one level.  Inserting an
+already inserted directory changes nothing."
+  (interactive)
+  (let* ((entry (tired--entry-at-point))
+         (directory (or directory
+                        (and entry (tired-entry-path entry))
+                        (user-error "No entry at point"))))
+    (unless (file-directory-p directory)
+      (user-error "Not a directory: %s" directory))
+    (setq directory (directory-file-name (expand-file-name directory)))
+    (puthash directory t tired--inserted)
+    (puthash directory (tired--read-entries directory) tired--tables)
+    (tired--redraw)))
+
+(defun tired-remove-subdir ()
+  "Remove the inserted children of the directory at point."
+  (interactive)
+  (let ((entry (tired--entry-at-point)))
+    (unless (and entry (tired--inserted-p (tired-entry-path entry)))
+      (user-error "No inserted directory at point"))
+    (tired--forget-inserted (tired-entry-path entry))
+    (tired--redraw)))
+
+(defun tired-toggle-subdir ()
+  "Insert or remove the children of the directory at point."
+  (interactive)
+  (let ((entry (tired--entry-at-point)))
+    (unless entry
+      (user-error "No entry at point"))
+    (if (tired--inserted-p (tired-entry-path entry))
+        (tired-remove-subdir)
+      (tired-insert-subdir))))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)
@@ -487,7 +608,7 @@ with the opposite direction."
       (setq tired--sort-flip (not tired--sort-flip))
     (setq tired--sort-key column
           tired--sort-flip (and reverse t)))
-  (tired-refresh))
+  (tired--redraw))
 
 (defun tired--apply-filter (filter)
   "Set `tired--filter' to FILTER and redraw the listing.
@@ -525,14 +646,13 @@ empty filter removes it."
 (defun tired-clear-filter ()
   "Remove the name filter."
   (interactive)
-  (setq tired--filter nil)
-  (tired-refresh))
+  (tired--apply-filter nil))
 
 (defun tired-toggle-dotfiles ()
   "Toggle the display of entries whose name starts with a dot."
   (interactive)
   (setq tired--hide-dotfiles (not tired--hide-dotfiles))
-  (tired-refresh))
+  (tired--redraw))
 
 (defun tired-copy-name ()
   "Copy the names of the targets to the kill ring."
@@ -595,6 +715,10 @@ cleared afterwards."
   "o" #'tired-open-other-window
   "^" #'tired-up-directory
   "g" #'tired-refresh
+  "l" #'tired-refresh
+  "i" #'tired-insert-subdir
+  "M-i" #'tired-remove-subdir
+  "TAB" #'tired-toggle-subdir
   "s" #'tired-sort
   "SPC" #'tired-select-toggle-next
   "M-SPC" #'tired-select-toggle
@@ -621,6 +745,8 @@ The directory contents come from `directory-files' and
   (setq-local tired--filter nil)
   (setq-local tired--selection nil)
   (setq-local tired--hide-dotfiles tired-hide-dotfiles)
+  (setq-local tired--tables (make-hash-table :test #'equal))
+  (setq-local tired--inserted (make-hash-table :test #'equal))
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
   (setq-local tabulated-list-padding 1)

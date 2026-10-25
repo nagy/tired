@@ -63,21 +63,31 @@ Data flow:
 1. `tired--read-entries` calls `directory-files` and builds a hash table
    of `tired-entry` structs.  `tired--make-entry` fills each struct from
    `file-attributes`.
-2. `tired--sorted-entries` selects visible entries (dotfile and name
-   filter) and sorts them.  Directories always come first.
-3. `tired--tabulated-entries` renders each entry as a vector row.
-   Emacs 31 requires the vector form.  `tabulated-list-print` draws the
-   buffer.
-4. `tired--apply-selection-overlays` highlights paths listed in
+2. `tired--tables` holds one such table per shown directory.  The root
+   directory is always present.  `tired--inserted` holds the directories
+   whose children appear in the listing; the user adds them with
+   `tired-insert-subdir` or `tired-toggle-subdir`.
+3. `tired--sorted-directory-entries` selects visible entries (dotfile
+   and name filter) and sorts them for one directory.  Directories
+   always come first.
+4. `tired--display-rows` walks the tree depth-first and returns
+   `(ENTRY . DEPTH)` conses.  Children of inserted directories follow
+   their parent row.  A `file-truename` set stops symlink cycles.
+5. `tired--tabulated-entries` renders each row as a vector, indented by
+   its depth.  Emacs 31 requires the vector form.
+   `tabulated-list-print` draws the buffer.
+6. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
-5. `tired-refresh` re-reads the directory, prunes dead selection paths
-   and calls `tired--redraw'.
-6. `tired--redraw` rebuilds the header line, prints the rows, restores
+7. `tired--reload-tables` re-reads the root directory and every inserted
+   directory, and drops inserted directories that vanished.
+   `tired-refresh` calls it, prunes dead selection paths and then calls
+   `tired--redraw`.
+8. `tired--redraw` rebuilds the header line, prints the rows, restores
    point by entry path and reapplies the selection overlays.  Commands
-   that only change the view (filter, sort) call `tired--redraw', not
-   `tired-refresh'.
-7. `tired-filter` opens a minibuffer, hooks `after-change-functions',
-   and calls `tired--apply-filter' on every keystroke.  RET keeps the
+   that only change the view (filter, sort, dotfiles, insert) call
+   `tired--redraw`, not `tired-refresh`.
+9. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
+   and calls `tired--apply-filter` on every keystroke.  RET keeps the
    value, C-g restores the previous filter.
 
 Jumping and bookmarks:
@@ -110,9 +120,14 @@ column and redraws.
 
 - Flake sources are git-tracked files only.  `git add` a new file before
   `nix flake check`, or the build cannot see it.
-- `tired--selection` stores absolute paths.  Pruning matches on both the
-  base name (hash key) and the full path, so a renamed or recreated file
+- `tired--selection` stores absolute paths.  Pruning looks the path up
+  in the table of its own directory, so a renamed or recreated file
   drops out of the selection.
+- Inserted sections are ordinary rows with a depth, not synthetic header
+  rows.  Every row stays selectable and every ID is a real `tired-entry'.
+  Do not add nil-ID header rows for dired parity.
+- `tired--display-rows` guards recursion with `file-truename`.  Without
+  it, a symlink back to an ancestor loops forever.
 - `file-attributes` does not follow symlinks by default.  The struct
   records the link type and target, and commands use `file-directory-p`
   to follow directory symlinks.
