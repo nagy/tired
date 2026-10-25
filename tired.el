@@ -501,11 +501,12 @@ Return nil when no rule matches PATH."
 Run HANDLER in a temporary buffer that holds the file contents, so a
 handler parses what the disk holds and never a visiting buffer.
 HANDLER selects its own major mode.  Return nil when the file is
-unreadable or when HANDLER signals an error."
+unreadable or when HANDLER signals an error.  Read the file with
+VISIT set, so the buffer keeps the file name and no modified flag,
+and the discarded buffer never prompts on kill."
   (condition-case err
       (with-temp-buffer
-        (insert-file-contents path)
-        (setq-local buffer-file-name path)
+        (insert-file-contents path t)
         (funcall handler path))
     (error
      (display-warning 'tired

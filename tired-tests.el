@@ -1345,6 +1345,23 @@ joins the range."
                      ("defun code-foo" . 1)
                      ("provide code" . 1))))))
 
+(ert-deftest tired-call-handler-does-not-ask-to-kill-its-buffer ()
+  "Parsing a file must not prompt about the discarded temp buffer."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n** Detail\n")
+    (let ((path (expand-file-name "notes.org" root))
+          asked)
+      (cl-letf* ((noninteractive nil)
+                 ((symbol-function 'yes-or-no-p)
+                  (lambda (&rest _) (setq asked t) t))
+                 ((symbol-function 'y-or-n-p)
+                  (lambda (&rest _) (setq asked t) t)))
+        (tired-file-sections path))
+      (should-not asked)
+      (should (equal (mapcar #'tired-section-label
+                             (tired-file-sections path))
+                     '("Intro" "Detail"))))))
+
 (ert-deftest tired-sections-of-a-rust-file ()
   "A Rust file lists items and nests the methods of an impl block."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))

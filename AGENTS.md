@@ -95,8 +95,10 @@ Data flow:
 5. `tired-file-sections` turns one file into `tired-section` structs.
    `tired-file-handler` matches `tired-file-handlers` against the
    absolute file name, first rule wins.  `tired--call-handler` runs the
-   handler in a `with-temp-buffer` that holds the file contents and sets
-   `buffer-file-name`; the handler selects its own major mode and
+   handler in a `with-temp-buffer` that holds the file contents, read
+   with `insert-file-contents` and its VISIT argument, so the buffer
+   carries `buffer-file-name` and no modified flag; the handler selects
+   its own major mode and
    returns plists.  `tired--section-plist` normalises each plist.  The
    result caches in `tired--sections` as `(MTIME . LIST)`, so a redraw
    does not re-parse.  `tired--section-rows` turns the list into
@@ -256,7 +258,11 @@ column and redraws.
   `tired--prune-selection` key the selection by path alone.
 - A section handler reads the file in a temporary buffer and selects
   its own major mode.  Do not parse from a visiting buffer and do not
-  make the framework guess the mode.
+  make the framework guess the mode.  The read passes VISIT to
+  `insert-file-contents`, which sets `buffer-file-name` and leaves the
+  modified flag clear.  Without VISIT the buffer starts modified, and
+  `kill-buffer` on the discarded buffer asks the user whether to kill
+  it, so every expand of a file raises a prompt.
 - Section handlers stay free of a hard dependency.  The Rust and
   Markdown handlers call `(require 'treesit)` at run time and return nil
   when the grammar is absent.  The Markdown handler also requires
