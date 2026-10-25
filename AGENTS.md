@@ -291,6 +291,19 @@ column and redraws.
   the redraw lands on the wrong row.  The SQLite handler counts its
   sections for this reason.  Such a handler also supplies an `:action',
   because visiting the raw file at line 1 is meaningless.
+- A `:label` may carry text properties.  `tired--section-cell` keeps
+  them when the label has a `face` property somewhere and then mirrors
+  each `face' run into `font-lock-face', the way a name cell carries
+  both.  A label without a face takes the kind's section face.  The
+  Emacs Lisp handler fontifies its temp buffer with `emacs-lisp-mode'
+  and `font-lock-ensure', then copies the head and the symbol argument
+  out of the source, so each part keeps the face the mode gave it.
+  Copy source text, never re-derive the face: a `defvar' name and a
+  `defun' name take different faces.  Fontify inside the handler, so
+  the parsed sections stay cached by modification time and a redraw
+  never fontifies again.
+  The label text still equals `tired--elisp-label', so the filter and
+  the tests compare plain strings.
 
 ## Gotchas
 
@@ -328,6 +341,11 @@ column and redraws.
   label: a narrowed-out file hides all of its sections.
 - `tired--call-handler` catches every error and reports through
   `display-warning`.  One broken handler must not break the listing.
+- The Emacs Lisp handler skips whitespace and comments with
+  `forward-comment` before it records the start of a form.  A
+  `skip-chars-forward` would leave point on a leading `;' line, so the
+  span scan would see a comment character instead of an open paren and
+  the row would lose its faces and its line number.
 - The section tests skip themselves without a grammar.  The Nix check
   supplies the grammars and exports `TREESIT_EXTRA_LOAD_PATH`; the test
   reads that variable at load time.  The Markdown test needs both the

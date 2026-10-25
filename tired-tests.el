@@ -1368,6 +1368,28 @@ joins the range."
                      ("defun code-foo" . 1)
                      ("provide code" . 1))))))
 
+(ert-deftest tired-elisp-section-labels-take-mode-faces ()
+  "An Emacs Lisp section label carries the faces of its source text."
+  (tired-tests--with-fixture
+    (tired-tests--write "code.el"
+                        "(defvar code-x 1)\n(defun code-foo (a) a)\n")
+    (let* ((path (expand-file-name "code.el" root))
+           (sections (tired-file-sections path))
+           (variable (car sections))
+           (function (cadr sections)))
+      (should (equal (tired-section-label variable) "defvar code-x"))
+      (should (eq (get-text-property 0 'face (tired-section-label variable))
+                  'font-lock-keyword-face))
+      (should (eq (get-text-property 7 'face (tired-section-label variable))
+                  'font-lock-variable-name-face))
+      (should (eq (get-text-property 6 'face (tired-section-label function))
+                  'font-lock-function-name-face))
+      (let ((cell (tired--section-cell variable)))
+        (should (eq (get-text-property 0 'font-lock-face cell)
+                    'font-lock-keyword-face))
+        (should (eq (get-text-property 0 'face cell)
+                    'font-lock-keyword-face))))))
+
 (ert-deftest tired-call-handler-does-not-ask-to-kill-its-buffer ()
   "Parsing a file must not prompt about the discarded temp buffer."
   (tired-tests--with-fixture

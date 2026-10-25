@@ -248,7 +248,7 @@ Five handlers ship with the package:
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
 | Org (=.org=)  | Every heading, indented by its outline level          |
-| Emacs Lisp    | Every top-level form, named by its head and argument  |
+| Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source |
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out |
 | SQLite        | Every table and view, then its columns one level deeper |
@@ -286,6 +286,12 @@ plists:
 The optional keys =:column= and =:action= also work.  An =:action= is
 a function, or a cons of a function and extra arguments, and it
 replaces the default visit.
+
+A =:label= may carry text properties.  A handler that fontifies its
+buffer can return a propertized label, and tired keeps the faces
+instead of applying the section face.  The Emacs Lisp handler
+fontifies with =emacs-lisp-mode= for this reason, so a =defun= row
+colors its keyword and its function name the way the file does.
 
 A section is not selectable, because a section stands for its file.
 The path commands, delete and copy act on the file that owns the

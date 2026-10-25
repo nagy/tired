@@ -595,10 +595,32 @@ same line fold together and no other row collides with them."
     ((or 'heading 'title 'table) 'tired-section-heading-face)
     (_ 'tired-section-face)))
 
+(defun tired--mirror-font-lock-face (string)
+  "Return STRING with each `face' property copied into `font-lock-face'.
+`font-lock-face' survives `font-lock-unfontify-region', which removes
+`face'."
+  (let ((string (copy-sequence string))
+        (position 0)
+        (end (length string)))
+    (while (< position end)
+      (let* ((face (get-text-property position 'face string))
+             (next (or (next-single-property-change position 'face string end)
+                       end)))
+        (when face
+          (add-text-properties position next
+                               (list 'font-lock-face face)
+                               string))
+        (setq position next)))
+    string))
+
 (defun tired--section-cell (section)
-  "Return the name column string for SECTION, without indentation."
-  (tired--propertize-name (tired-section-label section)
-                          (tired--section-face section)))
+  "Return the name column string for SECTION, without indentation.
+A handler may return a label that already carries the faces of its
+major mode.  Such a label keeps them and takes no fallback face."
+  (let ((label (tired-section-label section)))
+    (if (text-property-not-all 0 (length label) 'face nil label)
+        (tired--mirror-font-lock-face label)
+      (tired--propertize-name label (tired--section-face section)))))
 
 (defun tired--section-rows (entry depth)
   "Return (SECTION . DEPTH) conses for the sections of ENTRY.
@@ -2230,21 +2252,70 @@ argument is a symbol or a quoted symbol."
         (format "%s %s" head (cadr argument)))
        (t (symbol-name head))))))
 
+(defun tired--elisp-label-spans (form start)
+  "Return the source spans of the head and the argument of FORM at START.
+The value is a list of one or two (BEG . END) conses for the head
+symbol and, when the form names one, its symbol argument.  The value
+is nil when FORM does not start with an open paren."
+  (when (and (consp form)
+             (symbolp (car form))
+             (eq (char-after start) ?\())
+    (save-excursion
+      (goto-char start)
+      (forward-char 1)
+      (forward-comment (point-max))
+      (let ((head-start (point))
+            spans)
+        (forward-sexp 1)
+        (push (cons head-start (point)) spans)
+        (forward-comment (point-max))
+        (while (memq (char-after) '(?\' ?`))
+          (forward-char 1))
+        (let ((argument (cadr form)))
+          (when (or (and argument (symbolp argument))
+                    (and (consp argument)
+                         (eq (car argument) 'quote)
+                         (symbolp (cadr argument))))
+            (let ((argument-start (point)))
+              (forward-sexp 1)
+              (push (cons argument-start (point)) spans))))
+        (nreverse spans)))))
+
+(defun tired--elisp-fontified-label (form start)
+  "Return the label of FORM at START with the faces of its source text.
+Return nil when FORM carries no label.  Copy the head symbol and the
+symbol argument out of the fontified current buffer, so each part keeps
+the face that `emacs-lisp-mode' gives it.  Return the plain label when
+the source spans do not reproduce it."
+  (when-let* ((label (tired--elisp-label form)))
+    (let* ((spans (tired--elisp-label-spans form start))
+           (pieces (mapcar (lambda (span)
+                             (buffer-substring (car span) (cdr span)))
+                           spans)))
+      (if (and pieces
+               (equal (mapconcat #'substring-no-properties pieces " ") label))
+          (mapconcat #'identity pieces " ")
+        label))))
+
 (defun tired-file-sections-elisp (_path)
   "Return the top-level forms of the current Emacs Lisp buffer.
 The buffer already holds the file, so the handler ignores PATH.
 Only top-level forms become sections, so a form inside `progn'
-stays out.  A form that `read' rejects ends the scan."
+stays out.  A form that `read' rejects ends the scan.  Each label
+carries the faces that `emacs-lisp-mode' fontification gives its
+source text."
+  (delay-mode-hooks (emacs-lisp-mode))
+  (font-lock-ensure)
   (let (sections)
     (goto-char (point-min))
-    (while (progn (skip-chars-forward " \t\n\f\r") (not (eobp)))
+    (while (progn (forward-comment (point-max)) (not (eobp)))
       (let ((start (point))
             (form (condition-case nil
                       (read (current-buffer))
                     (error tired--elisp-read-error))))
         (if (eq form tired--elisp-read-error)
             (goto-char (point-max))
-          (when-let* ((label (tired--elisp-label form)))
+          (when-let* ((label (tired--elisp-fontified-label form start)))
             (push (list :label label
                         :line (line-number-at-pos start)
                         :level 0
