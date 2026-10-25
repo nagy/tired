@@ -84,6 +84,7 @@ Data flow:
    `tabulated-list-print` draws the buffer.
 6. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
+   `tired--selection-set` mirrors it as a hash set for O(1) membership.
    `tired--selection-size` sums the sizes of selected non-directory
    entries for the mode line.
 7. `tired--entry-visible-p` applies the narrow snapshot, then the
@@ -153,7 +154,10 @@ column and redraws.
   `nix flake check`, or the build cannot see it.
 - `tired--selection` stores absolute paths.  Pruning looks the path up
   in the table of its own directory, so a renamed or recreated file
-  drops out of the selection.
+  drops out of the selection.  `tired--selection-set` mirrors the list,
+  and `tired--narrowed-set` mirrors the narrow snapshot.  Change either
+  list only through `tired--set-selection` or `tired--set-narrowed`, or
+  the hash set and the list disagree.
 - `tired--narrowed` is a snapshot of the selection plus ancestor
   directories.  It does not follow later selection changes.  Pruning
   after refresh drops vanished paths and widens when the snapshot

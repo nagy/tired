@@ -177,8 +177,14 @@ One of `name', `size', `modified' or `mode'.")
 (defvar-local tired--selection nil
   "List of absolute file names in the transient selection.")
 
+(defvar-local tired--selection-set nil
+  "Hash set of the paths in `tired--selection'.")
+
 (defvar-local tired--narrowed nil
   "List of paths shown exclusively, or nil when the listing is wide.")
+
+(defvar-local tired--narrowed-set nil
+  "Hash set of the paths in `tired--narrowed'.")
 
 (defvar-local tired--header-base nil
   "Header line string built by `tabulated-list-init-header'.")
@@ -230,7 +236,8 @@ ATTRIBUTES defaults to the result of `file-attributes' for the file.
   "Return non-nil when ENTRY passes the narrow, dotfile and name filters."
   (let ((case-fold-search t))
     (and (or (not tired--narrowed)
-             (member (tired-entry-path entry) tired--narrowed))
+             (and (hash-table-p tired--narrowed-set)
+                  (gethash (tired-entry-path entry) tired--narrowed-set)))
          (or (not tired--hide-dotfiles)
              (not (string-prefix-p "."
                                    (file-name-nondirectory
@@ -485,7 +492,8 @@ column from the current listing."
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
   (and (tired-entry-p entry)
-       (member (tired-entry-path entry) tired--selection)))
+       (hash-table-p tired--selection-set)
+       (gethash (tired-entry-path entry) tired--selection-set)))
 
 (defun tired--selected-entries ()
   "Return the selected entries in display order."
@@ -515,6 +523,20 @@ column from the current listing."
          (table (tired--table directory))
          (entry (and table (gethash (file-name-nondirectory path) table))))
     (and entry (equal (tired-entry-path entry) path) entry)))
+
+(defun tired--set-selection (paths)
+  "Set the transient selection to PATHS and rebuild its lookup table."
+  (setq tired--selection (copy-sequence paths))
+  (setq tired--selection-set (make-hash-table :test #'equal))
+  (dolist (path paths)
+    (puthash path t tired--selection-set)))
+
+(defun tired--set-narrowed (paths)
+  "Set the narrowed path snapshot to PATHS and rebuild its lookup table."
+  (setq tired--narrowed (copy-sequence paths))
+  (setq tired--narrowed-set (make-hash-table :test #'equal))
+  (dolist (path paths)
+    (puthash path t tired--narrowed-set)))
 
 (defun tired--prune-selection (selection)
   "Return SELECTION without paths that are no longer listed."
@@ -705,8 +727,8 @@ Drop inserted directories that no longer exist."
   (unless tired--directory
     (user-error "Not in a tired buffer"))
   (tired--reload-tables)
-  (setq tired--selection (tired--prune-selection tired--selection))
-  (setq tired--narrowed (tired--prune-selection tired--narrowed))
+  (tired--set-selection (tired--prune-selection tired--selection))
+  (tired--set-narrowed (tired--prune-selection tired--narrowed))
   (tired--redraw))
 
 (defun tired--revert (_ignore-auto _noconfirm)
@@ -732,7 +754,7 @@ When OTHER-WINDOW is non-nil, show the buffer in another window."
         (tired-mode))
       (unless (equal tired--directory directory)
         (setq tired--inserted (make-hash-table :test #'equal))
-        (setq tired--selection nil))
+        (tired--set-selection nil))
       (setq tired--directory directory)
       (tired-refresh))
     (if other-window
@@ -826,9 +848,9 @@ another window."
     (unless entry
       (user-error "No entry at point"))
     (let ((path (tired-entry-path entry)))
-      (if (member path tired--selection)
-          (setq tired--selection (delete path tired--selection))
-        (push path tired--selection))))
+      (if (tired--selected-p entry)
+          (tired--set-selection (delete path tired--selection))
+        (tired--set-selection (cons path tired--selection)))))
   (tired--apply-selection-overlays)
   (force-mode-line-update))
 
@@ -841,15 +863,15 @@ another window."
 (defun tired-select-all ()
   "Select every visible entry."
   (interactive)
-  (setq tired--selection
-        (mapcar #'tired-entry-path (tired--visible-entries)))
+  (tired--set-selection
+   (mapcar #'tired-entry-path (tired--visible-entries)))
   (tired--apply-selection-overlays)
   (force-mode-line-update))
 
 (defun tired-select-none ()
   "Clear the transient selection."
   (interactive)
-  (setq tired--selection nil)
+  (tired--set-selection nil)
   (tired--apply-selection-overlays)
   (force-mode-line-update))
 
@@ -857,9 +879,9 @@ another window."
   "Invert the selection over the visible entries.
 Selected entries outside the visible listing drop out."
   (interactive)
-  (setq tired--selection
-        (mapcar #'tired-entry-path
-                (seq-remove #'tired--selected-p (tired--visible-entries))))
+  (tired--set-selection
+   (mapcar #'tired-entry-path
+           (seq-remove #'tired--selected-p (tired--visible-entries))))
   (tired--apply-selection-overlays)
   (force-mode-line-update))
 
@@ -882,13 +904,13 @@ Selected entries outside the visible listing drop out."
   (interactive)
   (unless tired--selection
     (user-error "No selection"))
-  (setq tired--narrowed (tired--narrow-ancestors tired--selection))
+  (tired--set-narrowed (tired--narrow-ancestors tired--selection))
   (tired--redraw))
 
 (defun tired-widen ()
   "Show the whole listing again."
   (interactive)
-  (setq tired--narrowed nil)
+  (tired--set-narrowed nil)
   (tired--redraw))
 
 (defun tired-toggle-narrow ()
@@ -1098,8 +1120,8 @@ The directory contents come from `directory-files' and
   (setq-local tired--sort-key 'name)
   (setq-local tired--sort-flip nil)
   (setq-local tired--filter nil)
-  (setq-local tired--selection nil)
-  (setq-local tired--narrowed nil)
+  (tired--set-selection nil)
+  (tired--set-narrowed nil)
   (setq-local tired--hide-dotfiles tired-hide-dotfiles)
   (setq-local tired--tables (make-hash-table :test #'equal))
   (setq-local tired--inserted (make-hash-table :test #'equal))
