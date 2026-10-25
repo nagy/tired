@@ -451,6 +451,56 @@ a symlink, and removes every tired buffer it opened."
     (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
     (should (equal (tired--ignored-regexp) (tired--ignored-regexp)))))
 
+(ert-deftest tired-name-faces-colorizes-a-matching-name ()
+  "A `tired-name-faces' rule sets the name face, and a directory keeps its own."
+  (tired-tests--with-fixture
+    (let ((tired-name-faces '(("\\.txt\\'" . bold)
+                              ("." . italic))))
+      (tired-find-directory root)
+      (should (eq 'bold (tired-tests--cell-face
+                         (tired-tests--entry "alpha.txt"))))
+      (should (eq 'tired-directory-face
+                  (tired-tests--cell-face (tired-tests--entry "sub"))))
+      ;; The first matching rule wins.
+      (should (eq 'bold (tired--name-face (tired-tests--entry "beta.txt")))))))
+
+(ert-deftest tired-name-face-defaults-to-nil ()
+  "With no rule and no Dired face, a plain file keeps no face."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (should-not (default-value 'tired-name-faces))
+    (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))))
+
+(ert-deftest tired-name-cell-sets-both-face-properties ()
+  "A name cell carries `face' and `font-lock-face', so refontification keeps it."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (let ((cell (tired--name-cell (tired-tests--entry "sub"))))
+      (should (eq 'tired-directory-face (get-text-property 0 'face cell)))
+      (should (eq 'tired-directory-face
+                  (get-text-property 0 'font-lock-face cell))))))
+
+(ert-deftest tired-name-face-survives-font-lock ()
+  "Font-lock refontification does not strip the directory face."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (setq-local font-lock-defaults
+                '((("alpha\\.txt\\>" (0 'bold)))))
+    (let ((noninteractive nil))
+      (font-lock-mode 1))
+    (unwind-protect
+        (progn
+          (font-lock-ensure)
+          (goto-char (point-min))
+          (search-forward "sub")
+          (should (eq 'tired-directory-face
+                      (get-text-property (match-beginning 0) 'font-lock-face)))
+          (goto-char (point-min))
+          (search-forward "alpha.txt")
+          (should (eq 'bold (get-text-property (match-beginning 0) 'face))))
+      (let ((noninteractive nil))
+        (font-lock-mode -1)))))
+
 (ert-deftest tired-jump-from-file-buffer ()
   "Jumping from a file buffer opens its directory and marks the file."
   (tired-tests--with-fixture

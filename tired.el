@@ -140,6 +140,14 @@ directory read per directory on every refresh, so the option stays
 nil by default."
   :type 'boolean)
 
+(defcustom tired-name-faces nil
+  "Alist of (REGEXP . FACE) that colorizes entry names.
+The first rule whose REGEXP matches the entry name wins.  A rule
+reaches files, symbolic links and special files.  A directory keeps
+its own face.  The default is nil, so only the Dired faces colorize
+a name."
+  :type '(alist :key-type regexp :value-type face))
+
 (defface tired-directory-face
   '((t :inherit dired-directory))
   "Face for directory names.")
@@ -449,19 +457,41 @@ and a lock file name.  The cache follows the variable."
   "Return non-nil when NAME matches `completion-ignored-extensions'."
   (string-match-p (tired--ignored-regexp) name))
 
+(defun tired--user-name-face (name)
+  "Return the face from the first `tired-name-faces' rule that matches NAME."
+  (seq-some (lambda (rule)
+              (and (string-match-p (car rule) name) (cdr rule)))
+            tired-name-faces))
+
 (defun tired--name-face (entry)
   "Return the face for the name of ENTRY, or nil for a plain name.
-The order follows `dired-font-lock-keywords': directory, ignored
-suffix, symbolic link, special file."
-  (cond
-   ((tired-entry-dirp entry) 'tired-directory-face)
-   ((tired--ignored-name-p (tired-entry-name entry)) 'tired-ignored-face)
-   ((and (eq (tired-entry-type entry) 'symlink)
-         (tired-entry-broken entry))
-    'tired-broken-symlink-face)
-   ((eq (tired-entry-type entry) 'symlink) 'tired-symlink-face)
-   ((eq (tired-entry-type entry) 'special) 'tired-special-face)
-   (t nil)))
+The fixed order runs directory, broken link, user rule, ignored
+suffix, symbolic link, special file.  The order otherwise follows
+`dired-font-lock-keywords'."
+  (let ((name (tired-entry-name entry)))
+    (cond
+     ((tired-entry-dirp entry) 'tired-directory-face)
+     ((and (eq (tired-entry-type entry) 'symlink)
+           (tired-entry-broken entry))
+      'tired-broken-symlink-face)
+     ((tired--user-name-face name))
+     ((tired--ignored-name-p name) 'tired-ignored-face)
+     ((eq (tired-entry-type entry) 'symlink) 'tired-symlink-face)
+     ((eq (tired-entry-type entry) 'special) 'tired-special-face)
+     (t nil))))
+
+(defun tired--face-properties (face)
+  "Return the text properties that show FACE.
+`face' works when `font-lock-mode' is off.  `font-lock-face' survives
+`font-lock-unfontify-region', which removes `face'.  A name cell
+carries both, as `package-menu--print-info-simple' does."
+  (list 'face face 'font-lock-face face))
+
+(defun tired--propertize-name (name face)
+  "Return NAME with FACE applied, or NAME alone when FACE is nil."
+  (if face
+      (apply #'propertize name (tired--face-properties face))
+    name))
 
 (defun tired--name-cell (entry)
   "Return the name column string for ENTRY."
@@ -469,16 +499,17 @@ suffix, symbolic link, special file."
         (face (tired--name-face entry)))
     (pcase (tired-entry-type entry)
       ('directory
-       (concat (if face (propertize name 'face face) name)
-               "/"))
+       (concat (tired--propertize-name name face) "/"))
       ('symlink
-       (concat (if face (propertize name 'face face) name)
+       (concat (tired--propertize-name name face)
                " -> "
-               (propertize (or (tired-entry-link entry) "?")
-                           'face (if (tired-entry-broken entry)
-                                     'tired-broken-symlink-face
-                                   'tired-symlink-target-face))))
-      (_ (if face (propertize name 'face face) name)))))
+               (apply #'propertize
+                      (or (tired-entry-link entry) "?")
+                      (tired--face-properties
+                       (if (tired-entry-broken entry)
+                           'tired-broken-symlink-face
+                         'tired-symlink-target-face)))))
+      (_ (tired--propertize-name name face)))))
 
 (defvar tired--size-cache nil
   "Hash table that maps a truename to the size of a directory subtree.

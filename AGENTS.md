@@ -157,6 +157,17 @@ column and redraws.
   the `ls` line layout and call `dired-move-to-filename`, which needs a
   mark column and an inode field on one line.  A tabulated-list row
   keeps its columns apart.
+- Name cells carry both `face` and `font-lock-face`, as
+  `package-menu--print-info-simple` does.  `face` covers a buffer with
+  font-lock off.  `font-lock-face` survives
+  `font-lock-unfontify-region`, which removes `face`.
+- `tired-mode` does not set `font-lock-defaults`.  No upstream
+  tabulated-list mode does: the printer already built the row strings,
+  so colorization belongs in the entry data.  `proced` uses font-lock
+  but derives from `special-mode`.  Do not add a global keyword set for
+  the wdired-style editing issue (d7a0ef4): a suffix rule would
+  recolour a half-typed name.  Recolour one name cell region instead if
+  that feature wants it.
 - AGPL3+ header in every Elisp file.
 
 ## Gotchas
@@ -204,6 +215,11 @@ column and redraws.
   `tired-broken-symlink-face`.  A circular link counts as broken.  The
   user option `tired-check-symlinks` turns the check off, because a
   remote directory costs one round trip per link.
+- `tired-name-faces` colors a name from a regexp.  `tired--name-face`
+  applies a fixed order: directory, broken link, user rule, ignored
+  suffix, symlink, special file.  The first rule that matches wins.
+  A directory never takes a user rule, because the directory face marks
+  the tree structure.
 - Recursive directory sizes stay off by default, because the option
   makes every refresh read every directory below the shown one.
   `tired--subtree-size` never follows a symbolic link, so a link cycle

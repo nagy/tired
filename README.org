@@ -104,6 +104,30 @@ cache does not outlive the redraw.  A deep tree makes every refresh
 read every directory below it, so =g= and automatic refresh slow down
 with tree depth.
 
+* Name colors
+
+A name takes its face from the matching Dired face: `dired-directory',
+`dired-symlink', `dired-broken-symlink', `dired-special' and
+`dired-ignored'.  A Dired theme setting therefore reaches a tired row
+without further work.
+
+Set =tired-name-faces= to colorize more names.  Each rule is a pair of
+a regexp and a face.  The first rule that matches the name wins, and a
+directory keeps its own face:
+
+#+begin_src elisp
+  (setq tired-name-faces
+        '(("\\.nix\\'" . font-lock-keyword-face)
+          ("\\.rs\\'"  . font-lock-function-name-face)))
+#+end_src
+
+A name cell carries both the =face= and the =font-lock-face= property.
+The first one shows when Font Lock mode is off.  The second one stays
+when a Font Lock pass refontifies the buffer, which removes =face=.
+=tired-mode= does not enable Font Lock mode.  A Font Lock keyword set
+matches text in a buffer, but a tired row holds its columns apart, so
+a suffix rule anchored at the end of a line cannot match.
+
 * Single-child collapse
 
 A directory that leads to exactly one file collapses into one row for
