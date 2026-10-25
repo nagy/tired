@@ -172,6 +172,12 @@ Jumping and bookmarks:
   point lands on the directory that was left.
 - `tired-bookmark-make-record` stores the directory in the record and
   `tired-bookmark-jump` reopens it.
+- `tired-find-file` completes over the whole subtree below
+  `tired--directory`, through `tired--find-candidates` and
+  `directory-files-recursively`.  A directory candidate ends with a
+  slash and opens a tired buffer, a file candidate opens the file.  The
+  walk prunes hidden directories when `tired--hide-dotfiles' holds and
+  never follows a directory symlink.
 
 Copy commands:
 

@@ -1423,6 +1423,49 @@ joins the range."
     (tired-tests--write "junk.db" "not a database")
     (should-not (tired-file-sections (expand-file-name "junk.db" root)))))
 
+(ert-deftest tired-find-file-completes-over-the-subtree ()
+  "The finder offers files and directories below the shown directory."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (let (offered)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt collection &rest _)
+                   (setq offered collection)
+                   "sub/deep/leaf.txt")))
+        (tired-find-file))
+      (should (member "sub/deep/leaf.txt" offered))
+      (should (member "sub/" offered))
+      (should (equal buffer-file-name
+                     (expand-file-name "sub/deep/leaf.txt" root))))))
+
+(ert-deftest tired-find-file-hides-dotfiles-when-set ()
+  "A hidden path stays out of the finder list."
+  (tired-tests--with-fixture
+    (tired-tests--write "sub/.secret" "s")
+    (tired-find-directory root)
+    (let ((tired--hide-dotfiles t)
+          offered)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt collection &rest _)
+                   (setq offered collection)
+                   "alpha.txt")))
+        (tired-find-file))
+      (should-not (seq-some (lambda (name) (string-match-p "/\\." name))
+                            offered))
+      (should (equal buffer-file-name
+                     (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-find-file-opens-a-chosen-directory ()
+  "A directory candidate opens as a tired buffer."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _) "sub/")))
+      (tired-find-file))
+    (should (derived-mode-p 'tired-mode))
+    (should (equal tired--directory
+                   (file-name-as-directory (expand-file-name "sub" root))))))
+
 (ert-deftest tired-open-section-visits-its-line ()
   "RET on a section row visits the file at the section line."
   (tired-tests--with-fixture

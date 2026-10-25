@@ -44,6 +44,7 @@
 ;;   TAB     insert, expand or fold the subtree at point
 ;;   e       expand the sections of the file at point
 ;;   E       collapse the sections of the file at point
+;;   j       find a path anywhere below the shown directory
 ;;   M-i     remove the inserted children of the directory at point
 ;;   s       sort the listing
 ;;   SPC     toggle selection, then move to the next line
@@ -1391,6 +1392,51 @@ folds or unfolds its own children."
       (tired--toggle-expand (tired-entry-path row)))
      (t (user-error "No subtree at point")))))
 
+(defun tired--find-candidates (directory)
+  "Return the completion candidates below DIRECTORY.
+A candidate holds the name relative to DIRECTORY.  A directory
+candidate ends with a slash.  Hidden paths stay out when
+`tired--hide-dotfiles' holds.  Symbolic links to directories stay
+unfollowed."
+  (let* ((base (file-name-as-directory (expand-file-name directory)))
+         (hidden-p (lambda (path)
+                     (and tired--hide-dotfiles
+                          (string-match-p
+                           "\\(?:\\`\\|/\\)\\.[^/]"
+                           (file-relative-name path base))))))
+    (mapcar (lambda (path)
+              (let ((name (file-relative-name path base)))
+                (if (file-directory-p path)
+                    (concat name "/")
+                  name)))
+            (seq-remove hidden-p
+                        (directory-files-recursively
+                         base "" t
+                         (lambda (subdir)
+                           (not (funcall hidden-p subdir))))))))
+
+(defun tired-find-file (&optional other-window)
+  "Visit a path below the shown directory, chosen by name.
+Completion offers every file and directory in the subtree, so a
+partial name with slashes narrows the choice.  Hidden paths stay out
+when `tired-hide-dotfiles' holds.  A chosen directory opens as a
+tired buffer.  With OTHER-WINDOW, use another window."
+  (interactive "P")
+  (unless tired--directory
+    (user-error "Not in a tired buffer"))
+  (let ((candidates (tired--find-candidates tired--directory)))
+    (unless candidates
+      (user-error "No file below %s"
+                  (abbreviate-file-name tired--directory)))
+    (let ((path (expand-file-name
+                 (completing-read "Find file: " candidates nil t)
+                 tired--directory)))
+      (cond
+       ((file-directory-p path)
+        (tired-find-directory path other-window))
+       (other-window (find-file-other-window path))
+       (t (find-file path))))))
+
 ;;;###autoload
 (defun tired-jump (&optional other-window)
   "Visit the directory of the current buffer in a tired buffer.
@@ -2043,6 +2089,7 @@ selection is cleared afterwards."
   "TAB" #'tired-toggle-subdir
   "e" #'tired-expand-file
   "E" #'tired-collapse-file
+  "j" #'tired-find-file
   "s" #'tired-sort
   "SPC" #'tired-select-toggle-next
   "M-SPC" #'tired-select-toggle
