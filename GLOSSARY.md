@@ -58,6 +58,26 @@ One row that represents a directory chain whose subtree holds exactly
 one file.
 _Avoid_: Flatten, fold, compress
 
+**Section**:
+One item that a handler extracted from a file, such as a heading, a
+declaration or a PDF bookmark.  A section row follows the row of its
+file.
+_Avoid_: Subtree, outline item, node, chunk
+
+**Expand**:
+Show the sections of a file under its row.  Insert shows the children
+of a directory, and expand shows the sections of a file.
+_Avoid_: Open, unfold, drill, zoom
+
+**Handler**:
+A function in `tired-file-handlers' that turns one file into sections.
+_Avoid_: Parser, provider, extractor
+
+**Fold**:
+Hide the child sections of one section row.  A fold is local to a
+section.  A collapse concerns a directory chain.
+_Avoid_: Collapse, close, hide
+
 **Trash**:
 The session directory `tired-trash-directory' under
 `temporary-file-directory' that holds every path a tired command

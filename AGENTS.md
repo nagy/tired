@@ -5,7 +5,9 @@
 Single-file Emacs package (`tired.el`) that shows a directory as a
 `tabulated-list-mode` buffer.  Entries come from `directory-files` and
 `file-attributes`.  The package never parses `ls -l` output.  Entry
-points are `M-x tired` and `M-x tired-find-directory`.
+points are `M-x tired` and `M-x tired-find-directory`.  A file row can
+also expand into the sections that a handler extracts from that file,
+so the listing holds two row types: `tired-entry` and `tired-section`.
 
 Minimum Emacs version is 31.1.  Emacs 31 changed
 `tabulated-list-print-entry` to require a vector of column descriptors
@@ -32,7 +34,10 @@ Nix outputs:
 
 - `packages.tired` (= `default`) is `nix/default.nix` (`melpaBuild`).
   Its `checkPhase` byte-compiles with warnings as errors and runs the
-  ERT suite.
+  ERT suite.  `checkInputs` holds the tree-sitter Rust grammar and the
+  phase exports `TREESIT_EXTRA_LOAD_PATH` for it, so the Rust section
+  test runs instead of skipping.  The suite reads that variable itself;
+  a developer machine without a grammar skips the test.
 - `checks.lint` is `nix/lint.nix`: `package-lint` and `checkdoc`.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix` because
@@ -74,15 +79,31 @@ Data flow:
    and name filter) and sorts them for one directory.  Directories
    always come first.
 4. `tired--display-rows` walks the tree depth-first and returns
-   `(ENTRY . DEPTH)` conses.  Children of inserted directories follow
-   their parent row.  A `file-truename` set stops symlink cycles.
-   `tired--collapsed-display-entry` replaces a directory entry with a
-   clone of the file at the end of a single-entry chain.  Collapse runs
-   after sorting, so the row keeps the directory's position.  Results
-   cache in `tired--collapse-cache`, keyed by the chain's top directory.
-   A collapsed row suppresses its inserted children.
-5. `tired--tabulated-entries` renders each row as a vector, indented by
-   its depth.  Emacs 31 requires the vector form.
+   `(ROW . DEPTH)` conses, where ROW is an entry or a section.  Children
+   of inserted directories follow their parent row.  The sections of an
+   expanded file follow the file row.  A `file-truename` set stops
+   symlink cycles.  `tired--collapsed-display-entry` replaces a
+   directory entry
+   with a clone of the file at the end of a single-entry chain.  Collapse
+   runs after sorting, so the row keeps the directory's position.
+   Results cache in `tired--collapse-cache`, keyed by the chain's top
+   directory.  A collapsed row suppresses its inserted children and its
+   sections.
+5. `tired-file-sections` turns one file into `tired-section` structs.
+   `tired-file-handler` matches `tired-file-handlers` against the
+   absolute file name, first rule wins.  `tired--call-handler` runs the
+   handler in a `with-temp-buffer` that holds the file contents and sets
+   `buffer-file-name`; the handler selects its own major mode and
+   returns plists.  `tired--section-plist` normalises each plist.  The
+   result caches in `tired--sections` as `(MTIME . LIST)`, so a redraw
+   does not re-parse.  `tired--section-rows` turns the list into
+   `(SECTION . DEPTH)` conses.  The declared `:level` sets depth relative
+   to the first section, and a folded section in `tired--folded` hides
+   its children.  `tired--name-visible-p` decides whether a file row and
+   its sections pass the filter.
+6. `tired--tabulated-entries` renders each row as a vector, indented by
+   its depth.  Emacs 31 requires the vector form.  A section row fills
+   the name column only.
    `tabulated-list-print` draws the buffer.  `tired--size-cell` fills
    the size column.  With `tired-directory-size' on, it calls
    `tired--directory-total', which walks the subtree through
@@ -94,31 +115,41 @@ Data flow:
    `tired--selection-set` mirrors it as a hash set for O(1) membership.
    `tired--selection-size` sums the sizes of selected non-directory
    entries for the mode line.  `tired--selection-targets` reads the
-   selection first, then `tired--region-entries`, then the entry at
-   point; a command that acts on the region deactivates it.
-7. `tired--entry-visible-p` applies the narrow snapshot, then the
-   dotfile setting, then the name filter.  `tired--narrow-ancestors`
-   adds the directories that contain a narrowed path, so inserted
-   sections keep their parent rows.
+   selection first, then `tired--region-entries`, then the row at point;
+   a command that acts on the region deactivates it.  A section row
+   resolves to the file entry that owns it, and `tired-select-toggle`
+   refuses a section row.
+7. `tired--in-narrow-p`, `tired--name-visible-p` and
+   `tired--entry-visible-p` apply the narrow snapshot, the dotfile
+   setting and the name filter.  `tired--narrow-ancestors` adds the
+   directories that contain a narrowed path, so inserted sections keep
+   their parent rows.  A file row stays visible when a section label
+   matches the filter, and that file then shows only the matching
+   sections.
 8. `tired--reload-tables` re-reads the root directory and every inserted
-   directory, and drops inserted directories that vanished.
+   directory, and drops inserted directories and expanded files that
+   vanished.
    `tired-refresh` calls it, prunes dead selection and narrow paths and
    then calls `tired--redraw`.
 9. `tired--redraw` sizes the name column from the longest visible row,
    clamped between `tired-name-column-min-width' and the window width
    minus the fixed columns.  It rebuilds the header line, prints the
-   rows, restores point by entry path and reapplies the selection
-   overlays.  Commands that only change the view (filter, sort,
-   dotfiles, insert) call `tired--redraw`, not `tired-refresh`.
+   rows, restores point by row key (`tired--row-key`: path for an entry,
+   path and line for a section) and reapplies the selection overlays.
+   Commands that only change the view (filter, sort, dotfiles, insert,
+   expand, fold) call `tired--redraw`, not `tired-refresh`.
 10. `tired--window-size-changed` runs from `window-size-change-functions`
     and redraws every visited tired buffer with the width of its own
     window, so a resize refits the name column.
-11. `tired--sync-watches` keeps one file notification watch per shown
-    directory: the root plus every inserted directory.  It runs at the
-    end of `tired--redraw`, so inserting or removing a section updates
-    the watch set.  A notification schedules `tired--auto-revert-now`
-    through a debounce timer.  The callback captures its buffer, and
-    `kill-buffer-hook` calls `tired--stop-watching`.
+11. `tired--sync-watches` keeps one file notification watch per path in
+    `tired--watch-paths`: the root, every inserted directory and every
+    expanded file.  A file needs its own watch because a directory watch
+    does not report an edit to a file inside it.  The function runs at
+    the end of `tired--redraw`, so inserting, expanding or removing a
+    subtree updates the watch set.  A notification schedules
+    `tired--auto-revert-now` through a debounce timer.  The callback
+    captures its buffer, and `kill-buffer-hook` calls
+    `tired--stop-watching`.
 12. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
    value, C-g restores the previous filter.
@@ -202,8 +233,49 @@ column and redraws.
 - File commands never ask a confirmation question and never call a
   shell.  Removal goes through `tired--trash-move`, never through
   `delete-file` or `delete-directory`, so undo can restore the path.
+- A section row is not selectable.  It carries its file path, so the
+  path commands reach the file.  Do not add section rows to
+  `tired--selection`, because `tired--redraw` and
+  `tired--prune-selection` key the selection by path alone.
+- A section handler reads the file in a temporary buffer and selects
+  its own major mode.  Do not parse from a visiting buffer and do not
+  make the framework guess the mode.
+- Section handlers stay free of a hard dependency.  The Rust handler
+  calls `(require 'treesit)` at run time and returns nil when the
+  grammar is absent.  Byte-compile needs a `declare-function` for every
+  `treesit-function` and `org-element-function` it calls.
 
 ## Gotchas
+
+- A listing row is either a `tired-entry` or a `tired-section`.  Use
+  `tired--row-at-point` and `tired--row-key`, not `tired-entry-p`
+  accessors, on a row from the buffer.  Point and mark restore compare
+  row keys, because a section key is `(PATH . LINE)` and a path
+  comparison would land on the file row.
+- Sections never sort.  `tired--section-rows` keeps handler order, so
+  document order survives every sort key.  A sort reorders the file
+  rows only.
+- `tired--sections` caches by modification time.  A redraw must not
+  clear it, because the point restore runs inside the redraw.  A
+  vanished file drops out in `tired--reload-tables`.
+- An expanded file needs its own file notification watch.  A directory
+  watch reports a create or a rename in that directory, not an edit to
+  a file inside it.
+- Section depth comes from the declared `:level`, minus the level of
+  the first section.  Without that subtraction an org file whose first
+  heading is `**` would indent from a phantom parent.
+- A folded section hides its descendants until a section with an equal
+  or lower level appears.  The test needs both halves of the
+  comparison, or the fold swallows the rest of the file.
+- The filter matches a file name against the whole file.  A file row
+  that fails the filter stays visible when one of its labels matches,
+  and then only the matching sections show.  Narrow does not use the
+  label: a narrowed-out file hides all of its sections.
+- `tired--call-handler` catches every error and reports through
+  `display-warning`.  One broken handler must not break the listing.
+- The Rust section test skips itself without a grammar.  The Nix check
+  supplies the grammar and exports `TREESIT_EXTRA_LOAD_PATH`; the test
+  reads that variable at load time.
 
 - Flake sources are git-tracked files only.  `git add` a new file before
   `nix flake check`, or the build cannot see it.

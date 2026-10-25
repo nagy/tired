@@ -12,6 +12,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Name column fits the longest entry, clamped to the window width
 - Directories first, then sort by name, size, modification time or mode
 - Insert subdirectories as nested, indented sections
+- Expand a file into sections: org headings, Emacs Lisp top-level
+  forms, Rust items through tree-sitter
 - Transient selection that file commands act on
 - Range selection through the Emacs region, with shift motion and mouse drag
 - Copy, move, delete, mkdir and touch without a confirmation question
@@ -53,7 +55,9 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =g=     | =tired-refresh=            | Reload the listing                       |
 | =l=     | =tired-refresh=            | Reload the listing                       |
 | =i=     | =tired-insert-subdir=      | Insert the directory at point            |
-| =TAB=   | =tired-toggle-subdir=      | Toggle insertion of the directory        |
+| =TAB=   | =tired-toggle-subdir=      | Insert, expand or fold the subtree        |
+| =e=     | =tired-expand-file=        | Expand the sections of the file          |
+| =E=     | =tired-collapse-file=      | Collapse the sections of the file        |
 | =M-i=   | =tired-remove-subdir=      | Remove an inserted section               |
 | =s=     | =tired-sort=               | Sort by a column                         |
 | =SPC=   | =tired-select-toggle-next= | Toggle selection, move down              |
@@ -214,6 +218,63 @@ Sorting applies inside each directory, so sections never interleave.
 Directories still sort before files.  The listing never descends
 through a symlink twice, so a link back to an ancestor cannot loop.
 
+* File sections
+
+Press =TAB= or =e= on a file row to show the sections that a handler
+extracts from that file.  =TAB= again collapses them.  Sections follow
+the file row and indent below it.  A section with child sections folds
+on =TAB=.
+
+Three handlers ship with the package:
+
+| File type     | Sections                                              |
+|---------------+-------------------------------------------------------|
+| Org (=\.org=)  | Every heading, indented by its outline level          |
+| Emacs Lisp    | Every top-level form, named by its head and argument  |
+| Rust (=\.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it |
+
+=RET= on a section row visits the file at the section line.  A section
+row fills the name column only.
+
+The variable =tired-file-handlers= maps a regexp to a handler.  The
+regexp matches the absolute file name and the first match wins.  A
+handler receives the file path, runs in a temporary buffer that holds
+the file contents, selects its own major mode and returns a list of
+plists:
+
+#+begin_src elisp
+  (defun my-outline-sections (_path)
+    "Return the outline of the current buffer as section plists."
+    (let (sections)
+      (goto-char (point-min))
+      (while (re-search-forward "^@@ .*$" nil t)
+        (push (list :label (string-trim (substring (match-string 0) 3))
+                    :line (line-number-at-pos (match-beginning 0))
+                    :level 0
+                    :kind 'heading)
+              sections))
+      (nreverse sections)))
+
+  (add-to-list 'tired-file-handlers '("\\.txt\\'" . my-outline-sections))
+#+end_src
+
+The optional keys =:column= and =:action= also work.  An =:action= is
+a function, or a cons of a function and extra arguments, and it
+replaces the default visit.
+
+A section is not selectable, because a section stands for its file.
+The path commands, delete and copy act on the file that owns the
+section.  The filter matches a file name against the whole file, so a
+matched file keeps every section.  A filter that only a section label
+matches shows that section alone.
+
+The sections of an expanded file re-read when the file changes.  The
+listing watches every expanded file, because a directory watch does
+not report an edit to a file inside that directory.
+
+The Rust handler needs the tree-sitter grammar for Rust.  Without the
+grammar the handler returns no sections and the file row stays plain.
+
 * Build and test
 
 #+begin_src sh
@@ -230,11 +291,17 @@ Without Nix:
   emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 #+end_src
 
+The Rust section test skips itself when no grammar is present.  Point
+=TREESIT_EXTRA_LOAD_PATH= at the directory that holds
+=libtree-sitter-rust.so= to run it.
+
 * Design notes
 
 - Directory entries are =tired-entry= structs in a hash table.  The
   listing table is rebuilt on refresh, so the displayed data never goes
   stale.
+- A file section is a =tired-section= struct.  A listing row is either
+  an entry or a section, and the tree walk emits both.
 - Rows are vectors, as Emacs 31 `tabulated-list-print-entry' requires.
 - Sorting happens in Elisp, not in =tabulated-list=.  Directories stay
   first in both sort directions.

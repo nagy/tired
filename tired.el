@@ -41,7 +41,9 @@
 ;;   g       refresh the listing
 ;;   l       refresh the listing, including inserted sections
 ;;   i       insert the children of the directory at point
-;;   TAB     toggle insertion of the directory at point
+;;   TAB     insert, expand or fold the subtree at point
+;;   e       expand the sections of the file at point
+;;   E       collapse the sections of the file at point
 ;;   M-i     remove the inserted children of the directory at point
 ;;   s       sort the listing
 ;;   SPC     toggle selection, then move to the next line
@@ -79,6 +81,14 @@
 ;; it afterwards.  An active region is a second target source: mark a
 ;; row, move with S-<down> or the mouse, and every row in between
 ;; becomes a target.  A non-empty selection wins over the region.
+;;
+;; A file row opens into sections when a handler claims the file.
+;; `tired-file-handlers' maps a regexp on the absolute file name to a
+;; function.  The function reads the file in a temporary buffer and
+;; returns a list of plists with `:label', `:line', `:level' and
+;; `:kind'.  Org files yield headings, Emacs Lisp files yield top-level
+;; forms, and Rust files yield items through tree-sitter.  TAB expands
+;; a file row, and TAB on a section row folds that section.
 ;;
 ;; File operations act at once, without a confirmation question.
 ;; Delete moves each path into `tired-trash-directory', and a copy or
@@ -163,6 +173,19 @@ its own face.  The default is nil, so only the Dired faces colorize
 a name."
   :type '(alist :key-type regexp :value-type face))
 
+(defcustom tired-file-handlers
+  '(("\\.org\\'" . tired-file-sections-org)
+    ("\\.el\\'" . tired-file-sections-elisp)
+    ("\\.rs\\'" . tired-file-sections-rust))
+  "Alist of regexp to a function that extracts sections from a file.
+The regexp matches the absolute file name, and the first match wins.
+The function receives the file name and runs in a temporary buffer
+that holds the file contents.  It selects its own major mode, then
+returns a list of plists with the keys `:label', `:line', `:level'
+and `:kind', plus the optional keys `:column' and `:action'.  An
+empty list means the file has no sections."
+  :type '(alist :key-type regexp :value-type function))
+
 (defface tired-directory-face
   '((t :inherit dired-directory))
   "Face for directory names.")
@@ -191,6 +214,14 @@ a name."
   '((t :inherit highlight :extend t))
   "Face for entries in the transient selection.")
 
+(defface tired-section-face
+  '((t :inherit default))
+  "Face for a section row without a more specific face.")
+
+(defface tired-section-heading-face
+  '((t :inherit bold))
+  "Face for a section row whose kind is `heading'.")
+
 (cl-defstruct (tired-entry (:constructor tired--entry-create))
   "One entry of a directory listing.
 NAME is the file name without its directory.  PATH is the absolute
@@ -209,6 +240,22 @@ does not resolve."
   mode
   link
   broken)
+
+(cl-defstruct (tired-section (:constructor tired--section-create))
+  "One row that a file handler extracted from a file.
+LABEL is the display string without indentation.  PATH is the
+absolute file name that holds the section.  LINE is 1-based.  COLUMN
+is 0-based, or nil.  LEVEL is the nesting level that the handler
+declared.  KIND is a symbol such as `heading' or `function'.  ACTION
+is nil for a plain visit, or a function, or a cons of a function and
+its arguments."
+  label
+  path
+  line
+  column
+  level
+  kind
+  action)
 
 (defvar-local tired--directory nil
   "Absolute name of the directory shown in the current buffer.")
@@ -258,6 +305,17 @@ One of `name', `size', `modified' or `mode'.")
 The value is the final file entry, or nil when the chain does not
 collapse.  Refresh clears the cache.")
 
+(defvar-local tired--expanded nil
+  "Hash set of absolute file names whose sections appear in the listing.")
+
+(defvar-local tired--sections nil
+  "Hash table mapping an absolute file name to its parsed sections.
+The value is a cons of the file modification time and the section
+list.  A changed time re-parses the file.")
+
+(defvar-local tired--folded nil
+  "Hash set of `(PATH . LINE)' keys for folded sections.")
+
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
 The table maps file names to `tired-entry' structs."
@@ -298,19 +356,27 @@ A circular link counts as broken.  The user option
   (and tired-check-symlinks
        (not (ignore-errors (file-exists-p (file-truename path))))))
 
-(defun tired--entry-visible-p (entry)
-  "Return non-nil when ENTRY passes the narrow, dotfile and name filters."
+(defun tired--in-narrow-p (entry)
+  "Return non-nil when ENTRY is inside the narrow snapshot."
+  (or (not tired--narrowed)
+      (and (hash-table-p tired--narrowed-set)
+           (gethash (tired-entry-path entry) tired--narrowed-set))))
+
+(defun tired--name-visible-p (entry)
+  "Return non-nil when ENTRY passes the dotfile and name filters."
   (let ((case-fold-search t))
-    (and (or (not tired--narrowed)
-             (and (hash-table-p tired--narrowed-set)
-                  (gethash (tired-entry-path entry) tired--narrowed-set)))
-         (or (not tired--hide-dotfiles)
+    (and (or (not tired--hide-dotfiles)
              (not (string-prefix-p "."
                                    (file-name-nondirectory
                                     (tired-entry-name entry)))))
          (or (null tired--filter)
              (string-match-p (regexp-quote tired--filter)
                              (tired-entry-name entry))))))
+
+(defun tired--entry-visible-p (entry)
+  "Return non-nil when ENTRY passes the narrow, dotfile and name filters."
+  (and (tired--in-narrow-p entry)
+       (tired--name-visible-p entry)))
 
 (defun tired--key-before-p (key a b)
   "Return non-nil when A sorts before B by KEY, ignoring direction."
@@ -415,13 +481,169 @@ result is nil when ENTRY is not a directory or does not collapse."
                 (file-relative-name (tired-entry-path file) directory))
           clone)))))
 
+;;; File sections
+
+(defun tired-file-handler (path)
+  "Return the section handler that `tired-file-handlers' selects for PATH.
+Return nil when no rule matches PATH."
+  (let ((name (expand-file-name path)))
+    (cdr (seq-find (lambda (rule) (string-match-p (car rule) name))
+                   tired-file-handlers))))
+
+(defun tired--call-handler (handler path)
+  "Return the raw section plists that HANDLER extracts from PATH.
+Run HANDLER in a temporary buffer that holds the file contents, so a
+handler parses what the disk holds and never a visiting buffer.
+HANDLER selects its own major mode.  Return nil when the file is
+unreadable or when HANDLER signals an error."
+  (condition-case err
+      (with-temp-buffer
+        (insert-file-contents path)
+        (setq-local buffer-file-name path)
+        (funcall handler path))
+    (error
+     (display-warning 'tired
+                      (format "Section handler %s failed on %s: %s"
+                              handler (abbreviate-file-name path)
+                              (error-message-string err))
+                      :warning)
+     nil)))
+
+(defun tired--section-plist (item path)
+  "Return ITEM as a `tired-section' struct for PATH.
+ITEM is a plist with `:label' and `:line', plus the optional keys
+`:column', `:level', `:kind' and `:action'."
+  (tired--section-create
+   :label (or (plist-get item :label) "")
+   :path path
+   :line (or (plist-get item :line) 1)
+   :column (plist-get item :column)
+   :level (or (plist-get item :level) 0)
+   :kind (or (plist-get item :kind) 'section)
+   :action (plist-get item :action)))
+
+(defun tired-file-sections (path &optional force)
+  "Return the sections of PATH as a list of `tired-section' structs.
+Parse the file when FORCE is non-nil or when its modification time
+changed.  Return nil when no handler matches, when the file is gone
+or when the handler found nothing."
+  (let* ((handler (tired-file-handler path))
+         (attributes (and handler (file-attributes path)))
+         (time (and attributes
+                    (file-attribute-modification-time attributes)))
+         (cached (and (hash-table-p tired--sections)
+                      (gethash path tired--sections)))
+         (sections
+          (cond
+           ((null attributes) nil)
+           ((and (not force) cached (equal (car cached) time)) (cdr cached))
+           (t (mapcar (lambda (item) (tired--section-plist item path))
+                      (tired--call-handler handler path))))))
+    (when (and attributes (hash-table-p tired--sections))
+      (puthash path (cons time sections) tired--sections))
+    sections))
+
+(defun tired--expanded-p (path)
+  "Return non-nil when the sections of PATH appear in the listing."
+  (and (hash-table-p tired--expanded)
+       (gethash (expand-file-name path) tired--expanded)))
+
+(defun tired--set-expanded (path value)
+  "Record VALUE as the expansion state of PATH."
+  (when (hash-table-p tired--expanded)
+    (if value
+        (puthash (expand-file-name path) t tired--expanded)
+      (remhash (expand-file-name path) tired--expanded))))
+
+(defun tired--section-key (section)
+  "Return the identity of SECTION inside the listing.
+The key holds the file name and the line, so two sections on the
+same line fold together and no other row collides with them."
+  (cons (tired-section-path section) (tired-section-line section)))
+
+(defun tired--section-folded-p (section)
+  "Return non-nil when SECTION hides its child sections."
+  (and (hash-table-p tired--folded)
+       (gethash (tired--section-key section) tired--folded)))
+
+(defun tired--set-folded (section value)
+  "Record VALUE as the fold state of SECTION."
+  (when (hash-table-p tired--folded)
+    (if value
+        (puthash (tired--section-key section) t tired--folded)
+      (remhash (tired--section-key section) tired--folded))))
+
+(defun tired--section-visible-p (section)
+  "Return non-nil when SECTION passes the name filter."
+  (or (null tired--filter)
+      (string-match-p (regexp-quote tired--filter)
+                      (tired-section-label section))))
+
+(defun tired--section-face (section)
+  "Return the face for SECTION from its kind."
+  (pcase (tired-section-kind section)
+    ((or 'heading 'title) 'tired-section-heading-face)
+    (_ 'tired-section-face)))
+
+(defun tired--section-cell (section)
+  "Return the name column string for SECTION, without indentation."
+  (tired--propertize-name (tired-section-label section)
+                          (tired--section-face section)))
+
+(defun tired--section-rows (entry depth)
+  "Return (SECTION . DEPTH) conses for the sections of ENTRY.
+DEPTH is the depth of the file row, so every section indents below
+it.  The level of the first section is the base, and a deeper
+section adds one indent per extra level.  A folded section hides its
+children."
+  (let* ((sections (tired-file-sections (tired-entry-path entry)))
+         (base (and sections (tired-section-level (car sections))))
+         (hidden nil)
+         rows)
+    (dolist (section sections)
+      (let ((level (tired-section-level section)))
+        (when (and hidden (<= level hidden))
+          (setq hidden nil))
+        (unless hidden
+          (when (tired--section-folded-p section)
+            (setq hidden level))
+          (push (cons section (+ depth 1 (max 0 (- level (or base 0)))))
+                rows))))
+    (nreverse rows)))
+
+(defun tired--row-path (row)
+  "Return the absolute file name that ROW describes.
+A section returns the file that holds it, so the path commands reach
+the file from a section row."
+  (if (tired-section-p row)
+      (tired-section-path row)
+    (tired-entry-path row)))
+
+(defun tired--row-key (row)
+  "Return the identity of ROW inside the listing.
+An entry keys on its path.  A section keys on its path and its line,
+so two sections of one file stay distinct."
+  (when row
+    (cond
+     ((tired-section-p row) (tired--section-key row))
+     ((tired-entry-p row)
+      (directory-file-name (expand-file-name (tired-entry-path row)))))))
+
+(defun tired--row-name-cell (row)
+  "Return the name cell for ROW, without indentation."
+  (if (tired-section-p row)
+      (tired--section-cell row)
+    (tired--name-cell row)))
+
 (defun tired--display-rows (&optional visible-only)
-  "Return (ENTRY . DEPTH) conses for the whole listing.
-Children of inserted directories follow the row of their parent and
-indent by DEPTH.  With VISIBLE-ONLY, skip hidden, filtered and
-narrowed-out entries.  A directory seen twice through symlinks
-appears once.  A directory that leads to exactly one file collapses
-into one row for that file, keeping the directory's sort position."
+  "Return (ROW . DEPTH) conses for the whole listing.
+ROW is a `tired-entry' or a `tired-section'.  Children of inserted
+directories follow the row of their parent and indent by DEPTH.  The
+sections of an expanded file follow the row of that file.  With
+VISIBLE-ONLY, skip hidden, filtered and narrowed-out entries.  A
+directory seen twice through symlinks appears once.  A directory that
+leads to exactly one file collapses into one row for that file,
+keeping the directory's sort position."
   (let ((rows nil)
         (seen (make-hash-table :test #'equal)))
     (cl-labels
@@ -432,10 +654,27 @@ into one row for that file, keeping the directory's sort position."
                (dolist (entry (tired--sorted-directory-entries directory nil))
                  (let* ((collapsed
                          (tired--collapsed-display-entry directory entry))
-                        (display (or collapsed entry)))
+                        (display (or collapsed entry))
+                        (sections (and (not collapsed)
+                                       (not (tired-entry-dirp entry))
+                                       (tired--expanded-p
+                                        (tired-entry-path entry))
+                                       (tired--section-rows display depth)))
+                        (name-visible (tired--name-visible-p display))
+                        (shown (cond
+                                ((not visible-only) sections)
+                                ((not (tired--in-narrow-p display)) nil)
+                                (name-visible sections)
+                                (t (seq-filter
+                                    (lambda (row)
+                                      (tired--section-visible-p (car row)))
+                                    sections)))))
                    (when (or (not visible-only)
-                             (tired--entry-visible-p display))
+                             (and (tired--in-narrow-p display)
+                                  (or name-visible shown)))
                      (push (cons display depth) rows))
+                   (dolist (row shown)
+                     (push row rows))
                    (when (and (not collapsed)
                               (tired-entry-dirp entry)
                               (tired--inserted-p
@@ -445,8 +684,9 @@ into one row for that file, keeping the directory's sort position."
     (nreverse rows)))
 
 (defun tired--visible-entries ()
-  "Return the entries that are currently shown, in display order."
-  (mapcar #'car (tired--display-rows t)))
+  "Return the entries that are currently shown, in display order.
+Section rows are not entries, so they stay out of the result."
+  (seq-filter #'tired-entry-p (mapcar #'car (tired--display-rows t))))
 
 (defvar tired--ignored-source nil
   "Value of `completion-ignored-extensions' behind the cached regexp.")
@@ -575,15 +815,23 @@ so a changed file leaves no stale size behind."
      (tired--directory-total (tired-entry-path entry))))
    (t "")))
 
-(defun tired--row (entry depth)
-  "Return the tabulated list row for ENTRY at DEPTH.
+(defun tired--row (row depth)
+  "Return the tabulated list row for ROW at DEPTH.
+ROW is a `tired-entry' or a `tired-section'.  A section fills the
+name column only, because one table format serves every row.
 Emacs 31 requires a vector of column descriptors here; a list makes
 `tabulated-list-print-entry' signal a type error."
-  (vector (concat (make-string (* 2 depth) ?\s)
-                  (tired--name-cell entry))
-          (tired--size-cell entry)
-          (format-time-string tired-date-format (tired-entry-mtime entry))
-          (tired-entry-mode entry)))
+  (if (tired-section-p row)
+      (vector (concat (make-string (* 2 depth) ?\s)
+                      (tired--section-cell row))
+              ""
+              ""
+              "")
+    (vector (concat (make-string (* 2 depth) ?\s)
+                    (tired--name-cell row))
+            (tired--size-cell row)
+            (format-time-string tired-date-format (tired-entry-mtime row))
+            (tired-entry-mode row))))
 
 (defun tired--tabulated-entries ()
   "Return `tabulated-list-entries' for the current listing.
@@ -620,7 +868,7 @@ other columns."
         (setq longest
               (max longest
                    (+ (* 2 (cdr row))
-                      (string-width (tired--name-cell (car row))))))))
+                      (string-width (tired--row-name-cell (car row))))))))
     (max tired-name-column-min-width
          (min longest available))))
 
@@ -661,6 +909,9 @@ column from the current listing."
           (when (and (hash-table-p tired--inserted)
                      (> (hash-table-count tired--inserted) 0))
             (format ", %d inserted" (hash-table-count tired--inserted)))
+          (when (and (hash-table-p tired--expanded)
+                     (> (hash-table-count tired--expanded) 0))
+            (format ", %d expanded" (hash-table-count tired--expanded)))
           (when tired--filter
             (format ", filter: %s" tired--filter))
           (unless tired-collapse-single-child
@@ -669,17 +920,18 @@ column from the current listing."
             ", auto-revert off")
           "]"))
 
-(defun tired--entry-at-point ()
-  "Return the entry at point, or nil when there is none."
+(defun tired--row-at-point ()
+  "Return the row at point, or nil when there is none.
+The row is a `tired-entry' or a `tired-section'."
   (let ((id (tabulated-list-get-id)))
-    (and (tired-entry-p id) id)))
+    (and (or (tired-entry-p id) (tired-section-p id)) id)))
 
-(defun tired--entry-at (position)
-  "Return the entry on the line at POSITION, or nil."
+(defun tired--row-at (position)
+  "Return the row on the line at POSITION, or nil."
   (when position
     (save-excursion
       (goto-char position)
-      (tired--entry-at-point))))
+      (tired--row-at-point))))
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
@@ -705,16 +957,22 @@ column from the current listing."
 (defun tired--selection-targets ()
   "Return the entries a command acts on.
 The transient selection comes first, then the active region, then
-the entry at point."
+the row at point.  A section row stands for the file that holds it."
   (or (tired--selected-entries)
       (tired--region-entries)
-      (let ((entry (tired--entry-at-point)))
-        (when entry (list entry)))))
+      (let ((row (tired--row-at-point)))
+        (cond
+         ((tired-entry-p row) (list row))
+         ((tired-section-p row)
+          (let ((entry (tired--entry-for-path
+                        (tired-section-path row))))
+            (when entry (list entry))))))))
 
 (defun tired--region-entries ()
   "Return the entries inside the active region, or nil.
 The row on which the region ends does not join, because the region
-ends at the beginning of that line."
+ends at the beginning of that line.  A section row does not join,
+because a region targets files."
   (when (use-region-p)
     (let ((end (region-end))
           entries)
@@ -723,8 +981,8 @@ ends at the beginning of that line."
         (beginning-of-line)
         (while (and (not (eobp))
                     (< (line-beginning-position) end))
-          (let ((entry (tired--entry-at-point)))
-            (when entry (push entry entries)))
+          (let ((row (tired--row-at-point)))
+            (when (tired-entry-p row) (push row entries)))
           (forward-line 1)))
       (nreverse entries))))
 
@@ -759,7 +1017,7 @@ ends at the beginning of that line."
   (save-excursion
     (goto-char (point-min))
     (while (not (eobp))
-      (when (tired--selected-p (tired--entry-at-point))
+      (when (tired--selected-p (tired--row-at-point))
         (let ((overlay (make-overlay (line-beginning-position)
                                      (min (point-max) (1+ (line-end-position))))))
           (overlay-put overlay 'face 'tired-selected-face)
@@ -776,36 +1034,58 @@ first line when PATH is absent."
           (found nil))
       (goto-char (point-min))
       (while (and (not found) (not (eobp)))
-        (let ((entry (tired--entry-at-point)))
-          (if (and entry (equal (tired-entry-path entry) path))
+        (let ((row (tired--row-at-point)))
+          (if (and (tired-entry-p row)
+                   (equal (tired-entry-path row) path))
               (setq found t)
             (forward-line 1))))
       (unless found
         (goto-char (point-min)))
       found)))
 
-(defun tired--goto-entry (entry)
-  "Move point to the line showing ENTRY, when it is still listed."
-  (when (tired-entry-p entry)
-    (tired--goto-path (tired-entry-path entry))))
+(defun tired--goto-row (row)
+  "Move point to the line that shows ROW.
+Return non-nil when the listing still shows ROW.  A section matches
+on its path and its line, so two sections of one file stay apart.
+Leave point at the first line when the row is absent."
+  (when row
+    (let ((key (tired--row-key row))
+          (found nil))
+      (goto-char (point-min))
+      (while (and (not found) (not (eobp)))
+        (if (equal (tired--row-key (tired--row-at-point)) key)
+            (setq found t)
+          (forward-line 1)))
+      (unless found
+        (goto-char (point-min)))
+      found)))
 
-(defun tired--restore-mark (entry)
-  "Put the mark back on the row of ENTRY, when the listing shows it.
+(defun tired--goto-entry (row)
+  "Move point to the line showing ROW, when it is still listed."
+  (when (or (tired-entry-p row) (tired-section-p row))
+    (tired--goto-row row)))
+
+(defun tired--restore-mark (row)
+  "Put the mark back on the line of ROW, when the listing shows it.
 Keep the region active, or inactive, as it was before the redraw."
-  (when (and entry
+  (when (and row
              (marker-position (mark-marker)))
     (save-excursion
-      (when (tired--goto-path (tired-entry-path entry))
+      (when (tired--goto-row row)
         (set-marker (mark-marker) (point) (current-buffer))))))
 
-(defun tired--watch-directories ()
-  "Return the directories that need a file notification watch.
+(defun tired--watch-paths ()
+  "Return the paths that need a file notification watch.
 The root directory is always watched.  Inserted directories join the
 list.  Collapsed directories stay unwatched, so their changes arrive
-with the next explicit refresh."
-  (cons (directory-file-name (expand-file-name tired--directory))
-        (when (hash-table-p tired--inserted)
-          (hash-table-keys tired--inserted))))
+with the next explicit refresh.  Every expanded file joins as well,
+because a directory watch does not report an edit to a file inside
+that directory."
+  (append (list (directory-file-name (expand-file-name tired--directory)))
+          (and (hash-table-p tired--inserted)
+               (hash-table-keys tired--inserted))
+          (and (hash-table-p tired--expanded)
+               (hash-table-keys tired--expanded))))
 
 (defun tired--stop-watching ()
   "Cancel the debounce timer and remove every file notification watch."
@@ -817,10 +1097,10 @@ with the next explicit refresh."
   (setq tired--watches nil))
 
 (defun tired--sync-watches ()
-  "Add missing watches and remove watches for collapsed directories."
+  "Add missing watches and remove watches for vanished paths."
   (if (not tired-auto-revert)
       (tired--stop-watching)
-    (let ((wanted (tired--watch-directories)))
+    (let ((wanted (tired--watch-paths)))
       (dolist (directory wanted)
         (unless (assoc directory tired--watches)
           (let* ((buffer (current-buffer))
@@ -882,8 +1162,8 @@ listing refreshes once."
   "Redraw the listing from the cached entries.
 WINDOW is the window that shows the buffer, or nil for the selected
 window.  Its width limits the name column."
-  (let* ((point-entry (tired--entry-at-point))
-         (mark-entry (tired--entry-at (mark t))))
+  (let* ((point-entry (tired--row-at-point))
+         (mark-entry (tired--row-at (mark t))))
     (setq tabulated-list-format
           (tired--format (tired--name-column-width window)))
     (tabulated-list-init-header)
@@ -927,7 +1207,8 @@ A resize changes the space available to the name column."
 
 (defun tired--reload-tables ()
   "Read the root directory and every inserted directory.
-Drop inserted directories that no longer exist."
+Drop inserted directories that no longer exist.  Drop expanded
+files that vanished."
   (setq tired--tables (make-hash-table :test #'equal))
   (setq tired--collapse-cache (make-hash-table :test #'equal))
   (puthash (directory-file-name tired--directory)
@@ -941,7 +1222,16 @@ Drop inserted directories that no longer exist."
                  (push directory gone)))
              tired--inserted)
     (dolist (directory gone)
-      (tired--forget-inserted directory))))
+      (tired--forget-inserted directory)))
+  (let (gone)
+    (maphash (lambda (path _ignore)
+               (unless (file-regular-p path)
+                 (push path gone)))
+             tired--expanded)
+    (dolist (path gone)
+      (remhash path tired--expanded)
+      (when (hash-table-p tired--sections)
+        (remhash path tired--sections)))))
 
 (defun tired-refresh ()
   "Reload the listing from disk and redraw the buffer."
@@ -976,6 +1266,9 @@ When OTHER-WINDOW is non-nil, show the buffer in another window."
         (tired-mode))
       (unless (equal tired--directory directory)
         (setq tired--inserted (make-hash-table :test #'equal))
+        (setq tired--expanded (make-hash-table :test #'equal))
+        (setq tired--sections (make-hash-table :test #'equal))
+        (setq tired--folded (make-hash-table :test #'equal))
         (tired--set-selection nil))
       (setq tired--directory directory)
       (tired-refresh))
@@ -1008,10 +1301,11 @@ DIRECTORY defaults to the directory at point.  Inserted children
 follow their parent row and indent by one level.  Inserting an
 already inserted directory changes nothing."
   (interactive)
-  (let* ((entry (tired--entry-at-point))
+  (let* ((entry (tired--row-at-point))
          (directory (or directory
-                        (and entry (tired-entry-path entry))
-                        (user-error "No entry at point"))))
+                        (and (tired-entry-p entry)
+                             (tired-entry-path entry))
+                        (user-error "No directory at point"))))
     (unless (file-directory-p directory)
       (user-error "Not a directory: %s" directory))
     (setq directory (directory-file-name (expand-file-name directory)))
@@ -1022,21 +1316,76 @@ already inserted directory changes nothing."
 (defun tired-remove-subdir ()
   "Remove the inserted children of the directory at point."
   (interactive)
-  (let ((entry (tired--entry-at-point)))
-    (unless (and entry (tired--inserted-p (tired-entry-path entry)))
+  (let ((entry (tired--row-at-point)))
+    (unless (and (tired-entry-p entry)
+                 (tired--inserted-p (tired-entry-path entry)))
       (user-error "No inserted directory at point"))
     (tired--forget-inserted (tired-entry-path entry))
     (tired--redraw)))
 
-(defun tired-toggle-subdir ()
-  "Insert or remove the children of the directory at point."
+(defun tired-expand-file (&optional path)
+  "Show the sections of the file at point under its row.
+PATH defaults to the file at point.  Signal a user error when no
+handler claims the file, or when the handler found no section."
   (interactive)
-  (let ((entry (tired--entry-at-point)))
-    (unless entry
-      (user-error "No entry at point"))
-    (if (tired--inserted-p (tired-entry-path entry))
-        (tired-remove-subdir)
-      (tired-insert-subdir))))
+  (let* ((row (tired--row-at-point))
+         (path (or path
+                   (and (tired-entry-p row) (tired-entry-path row))
+                   (user-error "No entry at point"))))
+    (unless (tired-file-handler path)
+      (user-error "No section handler for %s"
+                  (file-name-nondirectory path)))
+    (unless (tired-file-sections path)
+      (user-error "No sections in %s" (file-name-nondirectory path)))
+    (tired--set-expanded path t)
+    (tired--redraw)
+    (message "Expanded %s" (file-name-nondirectory path))))
+
+(defun tired-collapse-file (&optional path)
+  "Hide the sections of the file at point.
+PATH defaults to the file at point.  Signal a user error when the
+file is not expanded."
+  (interactive)
+  (let* ((row (tired--row-at-point))
+         (path (or path
+                   (and (tired-entry-p row) (tired-entry-path row))
+                   (and (tired-section-p row) (tired-section-path row))
+                   (user-error "No entry at point"))))
+    (unless (tired--expanded-p path)
+      (user-error "%s is not expanded" (file-name-nondirectory path)))
+    (tired--set-expanded path nil)
+    (tired--redraw)))
+
+(defun tired--toggle-expand (path)
+  "Expand the file PATH, or collapse it when it is expanded."
+  (if (tired--expanded-p path)
+      (tired-collapse-file path)
+    (tired-expand-file path)))
+
+(defun tired--toggle-fold (section)
+  "Fold SECTION, or unfold it when it is folded."
+  (if (tired--section-folded-p section)
+      (tired--set-folded section nil)
+    (tired--set-folded section t))
+  (tired--redraw))
+
+(defun tired-toggle-subdir ()
+  "Insert, expand or fold the subtree at point.
+A directory row inserts or removes its children.  A file row with a
+section handler expands or collapses its sections.  A section row
+folds or unfolds its own children."
+  (interactive)
+  (let ((row (tired--row-at-point)))
+    (cond
+     ((tired-section-p row) (tired--toggle-fold row))
+     ((not (tired-entry-p row)) (user-error "No entry at point"))
+     ((file-directory-p (tired-entry-path row))
+      (if (tired--inserted-p (tired-entry-path row))
+          (tired-remove-subdir)
+        (tired-insert-subdir)))
+     ((tired-file-handler (tired-entry-path row))
+      (tired--toggle-expand (tired-entry-path row)))
+     (t (user-error "No subtree at point")))))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)
@@ -1074,11 +1423,16 @@ another window."
   (tired-find-directory (bookmark-prop-get bookmark 'directory)))
 
 (defun tired-select-toggle ()
-  "Add the entry at point to the selection, or remove it."
+  "Add the entry at point to the selection, or remove it.
+Signal a user error on a section row, because a section stands for
+its file and a file row already covers that file."
   (interactive)
-  (let ((entry (tired--entry-at-point)))
-    (unless entry
-      (user-error "No entry at point"))
+  (let ((entry (tired--row-at-point)))
+    (cond
+     ((tired-section-p entry)
+      (user-error "A section row is not selectable"))
+     ((not (tired-entry-p entry))
+      (user-error "No entry at point")))
     (let ((path (tired-entry-path entry)))
       (if (tired--selected-p entry)
           (tired--set-selection (delete path tired--selection))
@@ -1544,8 +1898,9 @@ The command asks no question and never calls a shell.  A later
   "Return the directory that creation commands start from.
 The entry at point decides: a directory row starts inside that
 directory, every other row starts at the shown directory."
-  (let ((entry (tired--entry-at-point)))
-    (if (and entry (file-directory-p (tired-entry-path entry)))
+  (let ((entry (tired--row-at-point)))
+    (if (and (tired-entry-p entry)
+             (file-directory-p (tired-entry-path entry)))
         (file-name-as-directory (tired-entry-path entry))
       tired--directory)))
 
@@ -1604,29 +1959,63 @@ created file, or puts the earlier modification time back."
     (message "%s %s" (if exists "Touched" "Created")
              (abbreviate-file-name path))))
 
+(defun tired--open-section (section &optional other-window)
+  "Visit the target of SECTION, in another window when requested.
+A section without an action opens its file at the section line and
+column.  An action is a function, or a cons of a function and extra
+arguments.  The function receives SECTION and OTHER-WINDOW after the
+extra arguments."
+  (let ((action (tired-section-action section)))
+    (cond
+     ((null action)
+      (let* ((path (tired-section-path section))
+             (buffer (if other-window
+                         (find-file-other-window path)
+                       (find-file path))))
+        (with-current-buffer buffer
+          (goto-char (point-min))
+          (forward-line (max 0 (1- (tired-section-line section))))
+          (when (tired-section-column section)
+            (move-to-column (tired-section-column section)))
+          (recenter))))
+     ((consp action)
+      (apply (car action) section
+             (append (cdr action) (list other-window))))
+     (t (funcall action section other-window)))))
+
 (defun tired--open-entry (entry &optional other-window)
   "Visit ENTRY, in another window when OTHER-WINDOW is non-nil.
-Directories, including symlinks to directories, open in a tired
-buffer.  All other entry types open with `find-file'."
-  (let ((path (tired-entry-path entry)))
-    (if (file-directory-p path)
-        (tired-find-directory path other-window)
-      (if other-window
-          (find-file-other-window path)
-        (find-file path)))))
+A section visits its own target.  Directories, including symlinks to
+directories, open in a tired buffer.  All other entry types open
+with `find-file'."
+  (if (tired-section-p entry)
+      (tired--open-section entry other-window)
+    (let ((path (tired-entry-path entry)))
+      (if (file-directory-p path)
+          (tired-find-directory path other-window)
+        (if other-window
+            (find-file-other-window path)
+          (find-file path))))))
 
 (defun tired-open (&optional other-window)
   "Visit the target entries.
-Without a selection, visit the entry at point.  Visit every target
-in another window when OTHER-WINDOW is non-nil.  The selection is
-cleared afterwards."
+Visit every target in another window when OTHER-WINDOW is non-nil.
+Without a selection or an active region, the row at point is the
+target, so a section row visits its own file position.  The
+selection is cleared afterwards."
   (interactive "P")
-  (let ((targets (tired--selection-targets))
-        (origin (current-buffer)))
-    (unless targets
-      (user-error "No entry at point"))
-    (dolist (entry targets)
-      (tired--open-entry entry other-window))
+  (let* ((row (tired--row-at-point))
+         (section-p (and (tired-section-p row)
+                         (null tired--selection)
+                         (not (use-region-p))))
+         (targets (unless section-p (tired--selection-targets)))
+         (origin (current-buffer)))
+    (cond
+     (section-p (tired--open-entry row other-window))
+     (targets
+      (dolist (entry targets)
+        (tired--open-entry entry other-window)))
+     (t (user-error "No entry at point")))
     (when (buffer-live-p origin)
       (with-current-buffer origin
         (tired-select-none)
@@ -1648,6 +2037,8 @@ cleared afterwards."
   "i" #'tired-insert-subdir
   "M-i" #'tired-remove-subdir
   "TAB" #'tired-toggle-subdir
+  "e" #'tired-expand-file
+  "E" #'tired-collapse-file
   "s" #'tired-sort
   "SPC" #'tired-select-toggle-next
   "M-SPC" #'tired-select-toggle
@@ -1692,6 +2083,9 @@ The directory contents come from `directory-files' and
   (setq-local tired--watches nil)
   (setq-local tired--revert-timer nil)
   (setq-local tired--collapse-cache (make-hash-table :test #'equal))
+  (setq-local tired--expanded (make-hash-table :test #'equal))
+  (setq-local tired--sections (make-hash-table :test #'equal))
+  (setq-local tired--folded (make-hash-table :test #'equal))
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
@@ -1704,6 +2098,151 @@ The directory contents come from `directory-files' and
                       '((:eval (tired--mode-line)))))
   (when tired-highlight-line
     (hl-line-mode 1)))
+
+;;; Section handlers
+
+(declare-function org-element-map "org-element"
+                  (data types fun &optional info first-match no-recursion
+                        with-affiliated no-footnotes))
+(declare-function org-element-parse-buffer "org-element"
+                  (&optional granularity visible-only))
+(declare-function org-element-property "org-element" (property element))
+(declare-function treesit-available-p "treesit" nil)
+(declare-function treesit-buffer-root-node "treesit" (&optional language))
+(declare-function treesit-node-child-by-field-name "treesit"
+                  (node field-name))
+(declare-function treesit-node-children "treesit" (node &optional named))
+(declare-function treesit-node-start "treesit" (node))
+(declare-function treesit-node-text "treesit" (node &optional no-propertize))
+(declare-function treesit-node-type "treesit" (node))
+(declare-function treesit-ready-p "treesit" (language &optional quiet))
+
+(defun tired-file-sections-org (_path)
+  "Return the headings of the current org buffer as section plists.
+The buffer already holds the file, so the handler ignores PATH.
+Parse with `org-element', so a heading inside a source block or an
+example block stays out of the listing.  The line of a heading is
+the line of its stars."
+  (require 'org)
+  (require 'org-element)
+  (delay-mode-hooks (org-mode))
+  (org-element-map (org-element-parse-buffer 'headline) 'headline
+    (lambda (headline)
+      (list :label (or (org-element-property :raw-value headline) "")
+            :line (line-number-at-pos (org-element-property :begin headline))
+            :level (org-element-property :level headline)
+            :kind 'heading))))
+
+(defconst tired--elisp-read-error (make-symbol "tired--read-error")
+  "Sentinel that marks a form which `read' rejected.")
+
+(defun tired--elisp-label (form)
+  "Return a short label for the top-level FORM, or nil.
+The label holds the head symbol plus its first argument when that
+argument is a symbol or a quoted symbol."
+  (when (consp form)
+    (let ((head (car form))
+          (argument (cadr form)))
+      (cond
+       ((not (symbolp head)) nil)
+       ((null argument) (symbol-name head))
+       ((symbolp argument) (format "%s %s" head argument))
+       ((and (consp argument)
+             (eq (car argument) 'quote)
+             (symbolp (cadr argument)))
+        (format "%s %s" head (cadr argument)))
+       (t (symbol-name head))))))
+
+(defun tired-file-sections-elisp (_path)
+  "Return the top-level forms of the current Emacs Lisp buffer.
+The buffer already holds the file, so the handler ignores PATH.
+Only top-level forms become sections, so a form inside `progn'
+stays out.  A form that `read' rejects ends the scan."
+  (let (sections)
+    (goto-char (point-min))
+    (while (progn (skip-chars-forward " \t\n\f\r") (not (eobp)))
+      (let ((start (point))
+            (form (condition-case nil
+                      (read (current-buffer))
+                    (error tired--elisp-read-error))))
+        (if (eq form tired--elisp-read-error)
+            (goto-char (point-max))
+          (when-let* ((label (tired--elisp-label form)))
+            (push (list :label label
+                        :line (line-number-at-pos start)
+                        :level 0
+                        :kind (if (string-prefix-p "def"
+                                                   (symbol-name (car form)))
+                                  'definition
+                                'form))
+                  sections)))))
+    (nreverse sections)))
+
+(defconst tired--rust-kinds
+  '((function_item . function)
+    (function_signature_item . function)
+    (struct_item . struct)
+    (enum_item . enum)
+    (union_item . union)
+    (trait_item . trait)
+    (impl_item . impl)
+    (mod_item . module)
+    (type_item . type)
+    (const_item . constant)
+    (static_item . constant)
+    (macro_definition . macro))
+  "Alist of Rust tree-sitter node types to section kinds.")
+
+(defconst tired--rust-containers
+  '(impl_item mod_item trait_item)
+  "Rust node types whose child items nest one level deeper.")
+
+(defun tired--rust-kind (node)
+  "Return the section kind for NODE, or nil when NODE is no item."
+  (alist-get (intern (treesit-node-type node)) tired--rust-kinds))
+
+(defun tired--rust-container-p (node)
+  "Return non-nil when the child items of NODE nest one level deeper."
+  (memq (intern (treesit-node-type node)) tired--rust-containers))
+
+(defun tired--rust-label (node kind)
+  "Return the label for NODE of KIND.
+Use the name field, then the type field of an impl block."
+  (let ((name (or (treesit-node-child-by-field-name node "name")
+                  (treesit-node-child-by-field-name node "type"))))
+    (format "%s %s" kind (if name (treesit-node-text name t) "?"))))
+
+(defun tired--rust-walk (node level)
+  "Return the section plists of NODE and its children at LEVEL.
+An impl block, a trait or a module raises the level of its children
+by one, so the methods of an impl block indent under it."
+  (let* ((kind (tired--rust-kind node))
+         (here (when kind
+                 (list (list :label (tired--rust-label node kind)
+                             :line (line-number-at-pos
+                                    (treesit-node-start node))
+                             :level level
+                             :kind kind))))
+         (child-level (if (tired--rust-container-p node)
+                          (1+ level)
+                        level))
+         (below (mapcan (lambda (child)
+                          (tired--rust-walk child child-level))
+                        (treesit-node-children node t))))
+    (append here below)))
+
+(defun tired-file-sections-rust (_path)
+  "Return the items of the current Rust buffer as section plists.
+The buffer already holds the file, so the handler ignores PATH.
+Read functions, structs, enums, traits, impl blocks, modules,
+constants and macros through tree-sitter.  Return nil when the
+Rust grammar is missing."
+  (require 'treesit)
+  (when (and (treesit-available-p) (treesit-ready-p 'rust t))
+    (delay-mode-hooks (rust-ts-mode))
+    (let ((root (treesit-buffer-root-node 'rust)))
+      (when root
+        (tired--rust-walk root 0)))))
 
 (provide 'tired)
 

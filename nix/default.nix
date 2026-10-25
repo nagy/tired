@@ -2,6 +2,10 @@
   lib,
   emacsPackages,
   melpaBuild ? emacsPackages.melpaBuild,
+  # Tree-sitter grammars for the check phase only.  The Rust section
+  # handler test skips itself when the grammar is absent, so a null
+  # value keeps the build small and still passes.
+  treesitGrammars ? emacsPackages.treesit-grammars.with-grammars (p: [ p.tree-sitter-rust ]),
   # The flake passes the version derived from the commit date.  Keep a
   # plain default so the expression also evaluates outside the flake.
   version ? "0.1.0",
@@ -29,8 +33,15 @@ melpaBuild {
   # the package gets, and it keeps the source warning-free.
   turnCompilationWarningToError = true;
 
+  # The ERT suite reads this variable, so the Rust handler test finds
+  # libtree-sitter-rust and does not skip.
+  checkInputs = lib.optional (treesitGrammars != null) treesitGrammars;
+
   checkPhase = ''
     runHook preCheck
+    ${lib.optionalString (treesitGrammars != null) ''
+      export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
+    ''}
     emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
       -f batch-byte-compile tired.el tired-tests.el
     emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit

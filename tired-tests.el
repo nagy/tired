@@ -28,9 +28,19 @@
 (require 'seq)
 (require 'tired)
 
+(declare-function treesit-ready-p "treesit" (language &optional quiet))
 ;; Keep unrelated tests free of real file notification watches and
 ;; pending timers.  The auto-revert tests bind this to t themselves.
 (setq tired-auto-revert nil)
+
+;; The Nix check passes the directory that holds the tree-sitter
+;; grammars.  A developer machine without the Rust grammar skips the
+;; Rust test instead of failing.
+(let ((directory (getenv "TREESIT_EXTRA_LOAD_PATH")))
+  (when (and directory (locate-library "treesit"))
+    (require 'treesit)
+    (setq treesit-extra-load-path
+          (cons directory treesit-extra-load-path))))
 
 (defmacro tired-tests--with-fixture (&rest body)
   "Run BODY inside a fresh directory that holds test entries.
@@ -73,12 +83,41 @@ a symlink, and removes every tired buffer it opened."
   (goto-char (point-min))
   (let ((found nil))
     (while (and (not found) (not (eobp)))
-      (let ((entry (tired--entry-at-point)))
-        (if (and entry (equal (tired-entry-name entry) name))
+      (let ((entry (tired--row-at-point)))
+        (if (and (tired-entry-p entry)
+                 (equal (tired-entry-name entry) name))
             (setq found t)
           (forward-line 1))))
     (unless found
       (error "Entry not listed: %s" name))))
+
+(defun tired-tests--goto-section (label)
+  "Move point to the section row whose label is LABEL."
+  (goto-char (point-min))
+  (let ((found nil))
+    (while (and (not found) (not (eobp)))
+      (let ((row (tired--row-at-point)))
+        (if (and (tired-section-p row)
+                 (equal (tired-section-label row) label))
+            (setq found t)
+          (forward-line 1))))
+    (unless found
+      (error "Section not listed: %s" label))))
+
+(defun tired-tests--sections ()
+  "Return (LABEL . DEPTH) conses for the section rows in the listing."
+  (delq nil
+        (mapcar (lambda (row)
+                  (let ((entry (car row)))
+                    (when (tired-section-p entry)
+                      (cons (tired-section-label entry) (cdr row)))))
+                (tired--display-rows t))))
+
+(defmacro tired-tests--write (name content)
+  "Write CONTENT to NAME inside `root'."
+  (declare (indent 1) (debug t))
+  `(with-temp-file (expand-file-name ,name root)
+     (insert ,content)))
 
 (defun tired-tests--entry (name)
   "Return the listed entry called NAME."
@@ -648,7 +687,7 @@ a symlink, and removes every tired buffer it opened."
     (tired-sort 'size 'reverse)
     (tired-tests--goto "link")
     (tired-refresh)
-    (should (equal (tired-entry-name (tired--entry-at-point)) "link"))
+    (should (equal (tired-entry-name (tired--row-at-point)) "link"))
     (should (eq 'size tired--sort-key))
     (should tired--sort-flip)))
 
@@ -820,7 +859,7 @@ a symlink, and removes every tired buffer it opened."
             (tired-jump)
             (should (derived-mode-p 'tired-mode))
             (should (equal tired--directory root))
-            (should (equal (tired-entry-name (tired--entry-at-point))
+            (should (equal (tired-entry-name (tired--row-at-point))
                            "alpha.txt")))
         (kill-buffer file-buffer)))))
 
@@ -833,7 +872,7 @@ a symlink, and removes every tired buffer it opened."
       (tired-open)
       (tired-jump)
       (should (eq (current-buffer) origin))
-      (should (equal (tired-entry-name (tired--entry-at-point)) "sub")))))
+      (should (equal (tired-entry-name (tired--row-at-point)) "sub")))))
 
 (ert-deftest tired-jump-uses-default-directory ()
   "Jumping from a buffer without a file uses `default-directory'."
@@ -1035,10 +1074,10 @@ joins the range."
     (beginning-of-line)
     (push-mark (point) t t)
     (tired-refresh)
-    (should (equal (tired-entry-name (tired--entry-at (mark t)))
+    (should (equal (tired-entry-name (tired--row-at (mark t)))
                    "beta.txt"))
     (tired-sort 'size)
-    (should (equal (tired-entry-name (tired--entry-at (mark t)))
+    (should (equal (tired-entry-name (tired--row-at (mark t)))
                    "beta.txt"))))
 
 (ert-deftest tired-mode-line-counts-the-region ()
@@ -1117,11 +1156,11 @@ joins the range."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t))
       (tired-find-directory root)
-      (should (equal (tired--watch-directories)
+      (should (equal (tired--watch-paths)
                      (list (directory-file-name root))))
       (tired-tests--goto "sub")
       (tired-insert-subdir)
-      (should (equal (sort (tired--watch-directories) #'string<)
+      (should (equal (sort (tired--watch-paths) #'string<)
                      (sort (list (directory-file-name root)
                                  (expand-file-name "sub" root))
                            #'string<))))))
@@ -1267,6 +1306,222 @@ joins the range."
     (tired-refresh)
     (should (member "chain" (tired-tests--names)))
     (should-not (member "chain/a/b/file.txt" (tired-tests--names)))))
+
+(ert-deftest tired-file-handler-picks-the-first-matching-rule ()
+  "The registry matches the absolute name and the first rule wins."
+  (tired-tests--with-fixture
+    (let ((tired-file-handlers
+           (list (cons (concat (regexp-quote root) "alpha") #'ignore)
+                 (cons "\\.txt\\'" #'identity))))
+      (should (eq (tired-file-handler (expand-file-name "alpha.txt" root))
+                  #'ignore))
+      (should (eq (tired-file-handler (expand-file-name "beta.txt" root))
+                  #'identity))
+      (should-not (tired-file-handler (expand-file-name "sub" root))))))
+
+(ert-deftest tired-expand-org-file-shows-nested-headings ()
+  "TAB on an org file row shows its headings with levels as depth."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org"
+                        "#+title: Notes\n\n* Intro\nBody.\n\n** Detail\nMore.\n\n* Plans\n- item\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))
+    (should (tired--expanded-p (expand-file-name "notes.org" root)))
+    (should (string-match-p "1 expanded" (tired--mode-line)))))
+
+(ert-deftest tired-sections-of-an-elisp-file ()
+  "An Emacs Lisp file lists its top-level forms in document order."
+  (tired-tests--with-fixture
+    (tired-tests--write "code.el"
+                        ";;; code\n(defvar code-x 1)\n\n(defun code-foo (a) a)\n(provide 'code)\n")
+    (tired-find-directory root)
+    (tired-tests--goto "code.el")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("defvar code-x" . 1)
+                     ("defun code-foo" . 1)
+                     ("provide code" . 1))))))
+
+(ert-deftest tired-sections-of-a-rust-file ()
+  "A Rust file lists items and nests the methods of an impl block."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "lib.rs"
+                        "struct Config { n: u8 }\n\nimpl Config {\n    fn new() -> Self { Config { n: 0 } }\n}\n\nfn main() {}\n")
+    (tired-find-directory root)
+    (tired-tests--goto "lib.rs")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("struct Config" . 1)
+                     ("impl Config" . 1)
+                     ("function new" . 2)
+                     ("function main" . 1))))))
+
+(ert-deftest tired-open-section-visits-its-line ()
+  "RET on a section row visits the file at the section line."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Detail")
+    (tired-open)
+    (should (equal (buffer-file-name)
+                   (expand-file-name "notes.org" root)))
+    (should (= 3 (line-number-at-pos)))))
+
+(ert-deftest tired-section-rows-are-not-selectable ()
+  "A selection command refuses a section row."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Intro")
+    (should-error (tired-select-toggle) :type 'user-error)
+    (should-not tired--selection)))
+
+(ert-deftest tired-path-commands-use-the-file-of-a-section ()
+  "A section stands for its file, so the path commands reach that file."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Intro")
+    (let ((row (tired--row-at-point))
+          (path (expand-file-name "notes.org" root)))
+      (should (tired-section-p row))
+      (should (equal (tired--row-path row) path))
+      (should (equal (tired-entry-name (car (tired--selection-targets)))
+                     "notes.org")))))
+
+(ert-deftest tired-fold-hides-the-child-sections ()
+  "TAB on a section row hides its children and TAB again shows them."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Intro")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("Intro" . 1) ("Plans" . 1))))
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))))
+
+(ert-deftest tired-collapse-file-hides-the-sections ()
+  "E collapses the sections that TAB expanded."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (should (tired-tests--sections))
+    (tired-tests--goto "notes.org")
+    (tired-collapse-file)
+    (should-not (tired-tests--sections))))
+
+(ert-deftest tired-expand-file-rejects-a-file-without-handler ()
+  "A file that no rule claims reports the missing handler."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (should-error (tired-expand-file) :type 'user-error)
+    (should-not (tired--expanded-p (expand-file-name "alpha.txt" root)))))
+
+(ert-deftest tired-section-cache-follows-modification-time ()
+  "The handler runs once per modification time, not once per redraw."
+  (tired-tests--with-fixture
+    (tired-tests--write "alpha.txt" "abc")
+    (let ((calls 0)
+          (path (expand-file-name "alpha.txt" root)))
+      (let ((tired-file-handlers
+             (list (cons "\\.txt\\'"
+                         (lambda (_path)
+                           (cl-incf calls)
+                           '((:label "alpha" :line 1)))))))
+        (tired-find-directory root)
+        (tired-file-sections path)
+        (tired-file-sections path)
+        (should (= 1 calls))
+        (set-file-times path (time-add (current-time) 60))
+        (tired-file-sections path)
+        (should (= 2 calls))
+        (should (equal (tired-section-label (car (tired-file-sections path)))
+                       "alpha"))))))
+
+(ert-deftest tired-broken-handler-keeps-the-listing ()
+  "A handler that signals an error yields no sections and no crash."
+  (tired-tests--with-fixture
+    (tired-tests--write "alpha.txt" "abc")
+    (let ((tired-file-handlers
+           (list (cons "\\.txt\\'" (lambda (_path) (error "boom"))))))
+      (tired-find-directory root)
+      (tired-tests--goto "alpha.txt")
+      (should-error (tired-expand-file) :type 'user-error)
+      (should (member "alpha.txt" (tired-tests--names))))))
+
+(ert-deftest tired-refresh-drops-a-vanished-expanded-file ()
+  "Refresh forgets an expanded file that a command removed."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (let ((path (expand-file-name "notes.org" root)))
+      (delete-file path)
+      (tired-refresh)
+      (should-not (tired--expanded-p path))
+      (should-not (tired-tests--sections)))))
+
+(ert-deftest tired-watch-paths-cover-expanded-files ()
+  "An expanded file gets its own notification watch."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t))
+      (tired-tests--write "notes.org" "* Intro\n")
+      (tired-find-directory root)
+      (tired-tests--goto "notes.org")
+      (tired-toggle-subdir)
+      (should (member (expand-file-name "notes.org" root)
+                      (tired--watch-paths))))))
+
+(ert-deftest tired-redraw-keeps-point-on-a-section-row ()
+  "A redraw returns point to the same section, not to the file row."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Detail")
+    (tired-sort 'size)
+    (should (equal (tired-section-label (tired--row-at-point)) "Detail"))))
+
+(ert-deftest tired-filter-keeps-the-sections-of-a-visible-file ()
+  "A filter on the file name keeps that file and all of its sections."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
+    (tired-tests--write "other.org" "* Other\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto "other.org")
+    (tired-toggle-subdir)
+    (tired--apply-filter "notes")
+    (should (equal (tired-tests--sections)
+                   '(("Intro" . 1) ("Detail" . 2))))
+    (should (equal (tired-tests--names) '("notes.org")))))
+
+(ert-deftest tired-toggle-subdir-rejects-a-file-without-subtree ()
+  "TAB on a plain file reports that no subtree exists."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (should-error (tired-toggle-subdir) :type 'user-error)))
 
 (provide 'tired-tests)
 
