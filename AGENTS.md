@@ -37,7 +37,9 @@ Nix outputs:
   `treefmt-nix.flakeModule` also adds the `checks.treefmt` check.
 
 Version string is `0.1.0-unstable-<commit date>`, derived from the flake
-source info.  A commit changes the version.
+source info.  A commit changes the version.  `postPatch` rewrites the
+`;; Version:` header to the same string before `melpaBuild` derives the
+ELPA package version from the build argument.
 
 ## Architecture
 

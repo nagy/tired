@@ -17,6 +17,14 @@ melpaBuild {
   # No external Elisp packages; everything used ships with Emacs.
   packageRequires = [ ];
 
+  # The installed directory name comes from `pname' + `version', while
+  # package.el reads `;; Version:' from the header.  Keep both equal so
+  # package-lint, package.el and the store path agree.
+  postPatch = ''
+    substituteInPlace tired.el \
+      --replace-fail ';; Version: 0.1.0' ';; Version: ${version}'
+  '';
+
   # A byte-compile warning fails the build.  This is the cheapest lint
   # the package gets, and it keeps the source warning-free.
   turnCompilationWarningToError = true;
