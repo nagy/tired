@@ -1,4 +1,4 @@
-;;; tired-evil.el --- Evil bindings for tired  -*- lexical-binding: t -*-
+;;; tired-evil.el --- Evil bindings for Tired  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -24,9 +24,9 @@
 
 ;;; Commentary:
 
-;; This file is optional.  It gives a tired buffer evil bindings that
+;; This file is optional.  It gives a Tired buffer evil bindings that
 ;; keep the motions: j, k, gg, G, C-d, C-u, /, n and N keep their
-;; meaning, and every tired command gets a direct key.
+;; meaning, and every Tired command gets a direct key.
 ;;
 ;;   (require 'tired-evil)
 ;;   (tired-evil-mode 1)
@@ -113,14 +113,14 @@ Enable `tired-evil-mode' instead of this mode."
 (tired-evil--bind 'visual tired-evil-visual-keys)
 
 (defun tired-evil--enable-buffer ()
-  "Turn on `tired-evil-local-mode' in a tired buffer."
+  "Turn on `tired-evil-local-mode' in a Tired buffer."
   (when (derived-mode-p 'tired-mode)
     (tired-evil-local-mode 1)))
 
 ;;;###autoload
 (define-minor-mode tired-evil-mode
   "Global minor mode that gives `tired-mode' buffers evil bindings.
-The bindings leave the evil motions alone and put every tired
+The bindings leave the evil motions alone and put every Tired
 command on a direct key.  Turn it off to give the buffer back to
 `tired-mode-map'."
   :global t

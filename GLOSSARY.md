@@ -11,7 +11,7 @@ One file, directory or symlink inside the shown directory.
 _Avoid_: Item, row, file
 
 **Listing**:
-The ordered set of visible entries in a tired buffer.
+The ordered set of visible entries in a Tired buffer.
 _Avoid_: Index, table
 
 **Directory buffer**:
@@ -98,7 +98,7 @@ _Avoid_: Collapse, close, hide
 
 **Trash**:
 The session directory `tired-trash-directory' under
-`temporary-file-directory' that holds every path a tired command
+`temporary-file-directory' that holds every path a Tired command
 removed.  Undo moves a path back from the trash.
 _Avoid_: Wastebasket, deleted items
 

@@ -2,7 +2,7 @@
 #+author: Daniel Nagy
 #+language: en
 
-tired shows a directory as a =tabulated-list-mode= buffer.  It reads
+Tired shows a directory as a =tabulated-list-mode= buffer.  It reads
 entries with =directory-files= and =file-attributes=.  It never parses
 the output of =ls -l=.  Requires Emacs 31.1 or later.
 
@@ -41,13 +41,13 @@ without showing it, the way =dired-noselect= does.
 
 Loading =tired= adds =tired-noselect= to =find-directory-functions=,
 so =find-file=, =find-file-other-window=, =find-alternate-file= and a
-directory bookmark open a tired buffer instead of Dired.  Dired stays
+directory bookmark open a Tired buffer instead of Dired.  Dired stays
 in the list as the fallback.
 
 * Jumping and bookmarks
 
 =M-x tired-jump= visits the directory of the current buffer.  From a
-tired buffer it opens the parent directory and puts point on the
+Tired buffer it opens the parent directory and puts point on the
 directory that was shown.  From a buffer without a visited file it uses
 =default-directory=.  Bind it to =C-x C-j= in your init if you like.
 
@@ -57,7 +57,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 * Finding a path
 
 =j= completes over every path below the shown directory.  A chosen
-file opens, a chosen directory opens as a tired buffer.  =J= does the
+file opens, a chosen directory opens as a Tired buffer.  =J= does the
 same in another window.  Hidden paths stay out when =.= hides
 dotfiles.  The finder walks the subtree, so it reaches files inside
 directories that the listing does not insert.
@@ -138,37 +138,37 @@ package needs no evil.  Load the file and turn on the global mode:
 #+end_src
 
 The bindings leave the evil motions alone.  =j=, =k=, =gg=, =G=,
-=C-d=, =C-u=, =/=, =n= and =N= keep their meaning, and every tired
+=C-d=, =C-u=, =/=, =n= and =N= keep their meaning, and every Tired
 command gets a direct key:
 
-| Key          | Command                          |
-|--------------+----------------------------------|
-| =RET=        | =tired-open=                     |
-| =o=          | =tired-open-other-window=        |
-| =-=, =^=     | =tired-up-directory=             |
-| =TAB=        | =tired-toggle-subdir=            |
-| =gf=, =gF=   | =tired-find-file=, other window  |
-| =i=, =M-i=   | insert, remove a subdirectory    |
-| =e=, =E=     | expand, collapse file sections   |
-| =C=          | =tired-toggle-collapse=          |
-| =gr=         | =tired-refresh=                  |
-| =s=          | =tired-sort=                     |
-| =f=, =F=     | filter, clear the filter         |
-| =.=          | =tired-toggle-dotfiles=          |
-| =N=          | =tired-toggle-narrow=            |
-| =A=          | =tired-toggle-auto-revert=       |
+| Key        | Command                         |
+|------------+---------------------------------|
+| =RET=        | =tired-open=                      |
+| =o=          | =tired-open-other-window=         |
+| =-=, =^=       | =tired-up-directory=              |
+| =TAB=        | =tired-toggle-subdir=             |
+| =gf=, =gF=     | =tired-find-file=, other window   |
+| =i=, =M-i=     | insert, remove a subdirectory   |
+| =e=, =E=       | expand, collapse file sections  |
+| =C=          | =tired-toggle-collapse=           |
+| =gr=         | =tired-refresh=                   |
+| =s=          | =tired-sort=                      |
+| =f=, =F=       | filter, clear the filter        |
+| =.=          | =tired-toggle-dotfiles=           |
+| =N=          | =tired-toggle-narrow=             |
+| =A=          | =tired-toggle-auto-revert=        |
 | =SPC=, =M-SPC= | toggle the selection next, here |
-| =t=, =u=, =~= | select all, none, invert        |
-| =D=, =c=, =m= | delete, copy, move               |
-| =+=, =M-t=   | create a directory, a file       |
-| =U=          | =tired-undo=                     |
-| =y=, =w=     | copy names, copy paths           |
-| =q=          | bury the buffer                  |
+| =t=, =u=, =~=    | select all, none, invert        |
+| =D=, =c=, =m=    | delete, copy, move              |
+| =+=, =M-t=     | create a directory, a file      |
+| =U=          | =tired-undo=                      |
+| =y=, =w=       | copy names, copy paths          |
+| =q=          | bury the buffer                 |
 
 Visual state keeps its text objects.  The keys that act on files stay
 bound there, so =V= followed by a motion and =D= deletes the range,
 because the region already feeds every file command.  =tired-evil-mode=
-adds and removes the keys for every tired buffer, existing or new.
+adds and removes the keys for every Tired buffer, existing or new.
 
 * File operations
 
@@ -196,7 +196,7 @@ mkdir or touch puts the paths back where they were:
 
 A global undo system can take these actions.  Add a function to
 =tired-undo-push-functions=.  It receives a description and a
-function that reverts the action.  While the hook is empty, tired
+function that reverts the action.  While the hook is empty, Tired
 keeps the action on a stack for =tired-undo=.
 
 * Directory sizes
@@ -221,7 +221,7 @@ with tree depth.
 
 A name takes its face from the matching Dired face: `dired-directory',
 `dired-symlink', `dired-broken-symlink', `dired-special' and
-`dired-ignored'.  A Dired theme setting therefore reaches a tired row
+`dired-ignored'.  A Dired theme setting therefore reaches a Tired row
 without further work.
 
 Set =tired-name-faces= to colorize more names.  Each rule is a pair of
@@ -238,7 +238,7 @@ A name cell carries both the =face= and the =font-lock-face= property.
 The first one shows when Font Lock mode is off.  The second one stays
 when a Font Lock pass refontifies the buffer, which removes =face=.
 =tired-mode= does not enable Font Lock mode.  A Font Lock keyword set
-matches text in a buffer, but a tired row holds its columns apart, so
+matches text in a buffer, but a Tired row holds its columns apart, so
 a suffix rule anchored at the end of a line cannot match.
 
 * Single-child collapse
@@ -338,7 +338,7 @@ replaces the default visit.  The org handler uses that hook, so its
 headings narrow the visited buffer.
 
 A =:label= may carry text properties.  A handler that fontifies its
-buffer can return a propertized label, and tired keeps the faces
+buffer can return a propertized label, and Tired keeps the faces
 instead of applying the section face.  The Emacs Lisp handler
 fontifies with =emacs-lisp-mode= for this reason, so a =defun= row
 colors its keyword and its function name the way the file does.

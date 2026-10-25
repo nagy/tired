@@ -24,7 +24,7 @@
 
 ;;; Commentary:
 
-;; tired is a directory editor built on `tabulated-list-mode'.  It
+;; Tired is a directory editor built on `tabulated-list-mode'.  It
 ;; reads directory contents with Emacs primitives and never parses
 ;; the output of `ls -l'.
 ;;
@@ -33,7 +33,7 @@
 ;;   M-x tired
 ;;   M-x tired-other-window
 ;;
-;; `find-file' visits a directory in a tired buffer, because loading
+;; `find-file' visits a directory in a Tired buffer, because loading
 ;; this library puts `tired-noselect' into `find-directory-functions'.
 ;;
 ;; Key bindings in `tired-mode':
@@ -79,7 +79,7 @@
 ;;   M-x tired-jump  visit the directory of the current buffer
 ;;
 ;; The mode sets `bookmark-make-record-function', so `bookmark-set'
-;; records a tired buffer and `bookmark-jump' restores it.
+;; records a Tired buffer and `bookmark-jump' restores it.
 ;;
 ;; The selection is transient.  It lives only in the buffer, it is
 ;; pruned when entries disappear, and commands that act on it clear
@@ -1221,7 +1221,7 @@ window.  Its width limits the name column."
     (force-mode-line-update)))
 
 (defun tired--window-size-changed (frame)
-  "Redraw tired listings in the windows of FRAME.
+  "Redraw Tired listings in the windows of FRAME.
 A resize changes the space available to the name column."
   (dolist (window (window-list frame 'nomini))
     (with-current-buffer (window-buffer window)
@@ -1278,7 +1278,7 @@ files that vanished."
   "Reload the listing from disk and redraw the buffer."
   (interactive)
   (unless tired--directory
-    (user-error "Not in a tired buffer"))
+    (user-error "Not in a Tired buffer"))
   (tired--reload-tables)
   (tired--set-selection (tired--prune-selection tired--selection))
   (tired--set-narrowed (tired--prune-selection tired--narrowed))
@@ -1290,12 +1290,12 @@ IGNORE-AUTO and NOCONFIRM are accepted for `revert-buffer-function'."
   (tired-refresh))
 
 (defun tired--buffer-name (directory)
-  "Return the tired buffer name for DIRECTORY."
-  (format "tired: %s" (abbreviate-file-name directory)))
+  "Return the Tired buffer name for DIRECTORY."
+  (format "Tired: %s" (abbreviate-file-name directory)))
 
 ;;;###autoload
 (defun tired-noselect (directory)
-  "Return a tired buffer for DIRECTORY, without selecting it.
+  "Return a Tired buffer for DIRECTORY, without selecting it.
 The buffer name depends on DIRECTORY, so a second call reuses the
 same buffer.  The buffer gets DIRECTORY as `default-directory'."
   (let ((directory (file-name-as-directory (expand-file-name directory))))
@@ -1316,13 +1316,13 @@ same buffer.  The buffer gets DIRECTORY as `default-directory'."
         (tired-refresh))
       buffer)))
 
-;; Loading this library turns `find-file' on a directory into a tired
+;; Loading this library turns `find-file' on a directory into a Tired
 ;; visit.  dired stays in the list as the fallback.
 (add-to-list 'find-directory-functions #'tired-noselect)
 
 ;;;###autoload
 (defun tired (directory)
-  "Show DIRECTORY in a tired buffer.
+  "Show DIRECTORY in a Tired buffer.
 Interactively, offer `default-directory' as the default.  This
 command is the short way to open a listing, in the manner of
 `dired'."
@@ -1332,7 +1332,7 @@ command is the short way to open a listing, in the manner of
 
 ;;;###autoload
 (defun tired-other-window (directory)
-  "Show DIRECTORY in a tired buffer in another window."
+  "Show DIRECTORY in a Tired buffer in another window."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
   (switch-to-buffer-other-window (tired-noselect directory)))
@@ -1341,7 +1341,7 @@ command is the short way to open a listing, in the manner of
   "Open the parent of the current directory."
   (interactive)
   (unless tired--directory
-    (user-error "Not in a tired buffer"))
+    (user-error "Not in a Tired buffer"))
   (tired (file-name-directory (directory-file-name tired--directory))))
 
 (defun tired-insert-subdir (&optional directory)
@@ -1464,10 +1464,10 @@ unfollowed."
 Completion offers every file and directory in the subtree, so a
 partial name with slashes narrows the choice.  Hidden paths stay out
 when `tired-hide-dotfiles' holds.  A chosen directory opens as a
-tired buffer.  With OTHER-WINDOW, use another window."
+Tired buffer.  With OTHER-WINDOW, use another window."
   (interactive "P")
   (unless tired--directory
-    (user-error "Not in a tired buffer"))
+    (user-error "Not in a Tired buffer"))
   (let ((candidates (tired--find-candidates tired--directory)))
     (unless candidates
       (user-error "No file below %s"
@@ -1489,8 +1489,8 @@ Completion works like `tired-find-file'."
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)
-  "Visit the directory of the current buffer in a tired buffer.
-In a tired buffer, visit the parent directory and put point on the
+  "Visit the directory of the current buffer in a Tired buffer.
+In a Tired buffer, visit the parent directory and put point on the
 directory that was shown.  Without a visited file, use
 `default-directory'.  When OTHER-WINDOW is non-nil, show the buffer in
 another window."
@@ -1513,13 +1513,13 @@ another window."
     (tired--goto-path anchor)))
 
 (defun tired-bookmark-make-record ()
-  "Return a bookmark record for the current tired buffer."
+  "Return a bookmark record for the current Tired buffer."
   (list (abbreviate-file-name tired--directory)
         (cons 'handler #'tired-bookmark-jump)
         (cons 'directory tired--directory)))
 
 (defun tired-bookmark-jump (bookmark)
-  "Jump to the tired buffer described by BOOKMARK."
+  "Jump to the Tired buffer described by BOOKMARK."
   (tired (bookmark-prop-get bookmark 'directory)))
 
 (defun tired-select-toggle ()
@@ -1636,7 +1636,7 @@ keeps the filter, \[keyboard-quit] restores the previous one.  An
 empty filter removes it."
   (interactive)
   (unless tired--directory
-    (user-error "Not in a tired buffer"))
+    (user-error "Not in a Tired buffer"))
   (let ((origin (current-buffer))
         (original tired--filter))
     (condition-case nil
@@ -1750,10 +1750,10 @@ machine reboots.  Emacs copies the path and then deletes it when
 the trash sits on another file system.")
 
 (defvar tired-undo-push-functions nil
-  "Abnormal hook that takes every undoable tired action.
+  "Abnormal hook that takes every undoable Tired action.
 Each function receives DESCRIPTION and FUNCTION.  DESCRIPTION is a
 string that names the action.  FUNCTION reverts the action and
-takes no argument.  While the hook is empty, tired keeps the
+takes no argument.  While the hook is empty, Tired keeps the
 action on `tired--undo-actions' for `tired-undo'.")
 
 (defvar tired--undo-actions nil
@@ -1794,7 +1794,7 @@ Return non-nil when the move happened."
     t))
 
 (defun tired--refresh-buffers ()
-  "Refresh every live tired buffer."
+  "Refresh every live Tired buffer."
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (when (and (derived-mode-p 'tired-mode) tired--directory)
@@ -1816,7 +1816,7 @@ non-nil, so the command signals a user error then."
   (interactive)
   (let ((action (pop tired--undo-actions)))
     (unless action
-      (user-error "Nothing for tired to undo"))
+      (user-error "Nothing for Tired to undo"))
     (funcall (cdr action))
     (message "Undid %s" (car action))))
 
@@ -2093,7 +2093,7 @@ extra arguments."
 (defun tired--open-entry (entry &optional other-window)
   "Visit ENTRY, in another window when OTHER-WINDOW is non-nil.
 A section visits its own target.  Directories, including symlinks to
-directories, open in a tired buffer.  All other entry types open
+directories, open in a Tired buffer.  All other entry types open
 with `find-file'."
   (if (tired-section-p entry)
       (tired--open-section entry other-window)
@@ -2174,7 +2174,7 @@ selection is cleared afterwards."
   "q" #'quit-window)
 
 ;;;###autoload
-(define-derived-mode tired-mode tabulated-list-mode "tired"
+(define-derived-mode tired-mode tabulated-list-mode "Tired"
   "Major mode for editing a directory as a tabulated list.
 The directory contents come from `directory-files' and
 `file-attributes', never from parsing `ls -l' output.

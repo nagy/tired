@@ -159,7 +159,7 @@ Data flow:
    Commands that only change the view (filter, sort, dotfiles, insert,
    expand, fold) call `tired--redraw`, not `tired-refresh`.
 10. `tired--window-size-changed` runs from `window-size-change-functions`
-    and redraws every visited tired buffer with the width of its own
+    and redraws every visited Tired buffer with the width of its own
     window, so a resize refits the name column.
 11. `tired--sync-watches` keeps one file notification watch per path in
     `tired--watch-paths`: the root, every inserted directory and every
@@ -184,8 +184,8 @@ Data flow:
 Jumping and bookmarks:
 
 - `tired-jump` derives the target directory from the current buffer:
-  `tired--directory` in a tired buffer, `buffer-file-name` in a file
-  buffer, `default-directory` otherwise.  From a tired buffer the target
+  `tired--directory` in a Tired buffer, `buffer-file-name` in a file
+  buffer, `default-directory` otherwise.  From a Tired buffer the target
   is the parent directory and the anchor is the shown directory, so
   point lands on the directory that was left.
 - `tired-bookmark-make-record` stores the directory in the record and
@@ -193,7 +193,7 @@ Jumping and bookmarks:
 - `tired-find-file` completes over the whole subtree below
   `tired--directory`, through `tired--find-candidates` and
   `directory-files-recursively`.  A directory candidate ends with a
-  slash and opens a tired buffer, a file candidate opens the file.
+  slash and opens a Tired buffer, a file candidate opens the file.
   `tired-find-file-other-window` passes the other-window flag through,
   the way `dired-find-file-other-window` does.  The walk prunes hidden
   directories when `tired--hide-dotfiles' holds and never follows a
@@ -230,7 +230,7 @@ File operations:
   paths back from the trash, so no byte is destroyed.  With
   `tired-undo-push-functions` set, that hook takes the pair and
   `tired--undo-actions` stays empty.  Otherwise `tired-undo` pops and
-  runs the pair, and `tired--refresh-buffers` redraws every tired
+  runs the pair, and `tired--refresh-buffers` redraws every Tired
   buffer.
 
 Sorting is implemented in `tired--lessp`, not in `tabulated-list`,
@@ -242,14 +242,14 @@ column and redraws.
 Evil integration:
 
 - `tired-evil.el` is a second library, so `tired` never requires evil.
-  It requires evil and tired, and it binds keys in normal and visual
+  It requires evil and Tired, and it binds keys in normal and visual
   state only.
 - `tired-evil-keys` and `tired-evil-visual-keys` hold the key tables.
   `tired-evil--bind` feeds them to `evil-define-minor-mode-key` for the
   private minor mode `tired-evil-local-mode`.
 - `tired-evil-mode` is the global switch.  It adds
   `tired-evil--enable-buffer` to `tired-mode-hook` and turns the local
-  mode on in every existing tired buffer.  Turning it off removes the
+  mode on in every existing Tired buffer.  Turning it off removes the
   hook and the local mode, so the buffer falls back to
   `tired-mode-map`.
 - The visual table is short on purpose: visual state needs its text
@@ -264,7 +264,7 @@ Evil integration:
   description string to a command symbol, and `tired-evil--bind` calls
   `key-parse` before `evil-define-minor-mode-key`, because `define-key`
   reads a plain string as literal characters, so `"RET"` would bind
-  three keys.  A new tired command belongs in `tired-evil-keys`, and in
+  three keys.  A new Tired command belongs in `tired-evil-keys`, and in
   `tired-evil-visual-keys` when it reads the region.
 - Public commands carry an `;;;###autoload` cookie only when they are
   entry points (`tired`, `tired-other-window`, `tired-mode`,
@@ -273,7 +273,7 @@ Evil integration:
 - Byte-compilation with warnings as errors must pass.
 - Faces inherit from Dired faces (`dired-directory`, `dired-symlink`,
   `dired-symlink-filename`, `dired-broken-symlink`, `dired-special`,
-  `dired-ignored`), so a user Dired theme setting reaches tired rows.
+  `dired-ignored`), so a user Dired theme setting reaches Tired rows.
   `dired-font-lock-keywords` itself stays unused: those keywords match
   the `ls` line layout and call `dired-move-to-filename`, which needs a
   mark column and an inode field on one line.  A tabulated-list row
@@ -363,6 +363,10 @@ Evil integration:
 - The buffer name keys the directory, so `tired-noselect` reuses the
   buffer through `tired--buffer-name`.  A renamed buffer would make a
   second buffer for the same directory.
+- The user-visible display names take a capital: the mode line string is
+  "Tired", like "Dired", and `tired--buffer-name` starts with
+  "Tired: ".  The function names, the feature symbol and the file names
+  stay lowercase, because Emacs reads them as code.
 
 - A listing row is either a `tired-entry` or a `tired-section`.  Use
   `tired--row-at-point` and `tired--row-key`, not `tired-entry-p`

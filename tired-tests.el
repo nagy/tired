@@ -1,4 +1,4 @@
-;;; tired-tests.el --- ERT tests for tired  -*- lexical-binding: t -*-
+;;; tired-tests.el --- ERT tests for Tired  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -52,7 +52,7 @@
   "Run BODY inside a fresh directory that holds test entries.
 The variable `root' is bound to the temporary directory.  The
 fixture contains a subdirectory, regular files, a hidden file and
-a symlink, and removes every tired buffer it opened."
+a symlink, and removes every Tired buffer it opened."
   (declare (indent 0) (debug t))
   `(let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
           (default-directory root))
@@ -154,7 +154,7 @@ a symlink, and removes every tired buffer it opened."
     (should (eq (tired-noselect root) (tired-noselect root)))))
 
 (ert-deftest find-file-opens-a-directory-in-tired-mode ()
-  "Loading tired makes `find-file' visit a directory with tired."
+  "Loading Tired makes `find-file' visit a directory with Tired."
   (tired-tests--with-fixture
     (should (memq #'tired-noselect find-directory-functions))
     (with-current-buffer (find-file-noselect root)
@@ -686,7 +686,7 @@ a symlink, and removes every tired buffer it opened."
     (kill-buffer (current-buffer))))
 
 (ert-deftest tired-open-directory-replaces-the-listing ()
-  "Opening a directory entry shows it in a tired buffer."
+  "Opening a directory entry shows it in a Tired buffer."
   (tired-tests--with-fixture
     (tired root)
     (let ((origin (current-buffer)))
@@ -893,7 +893,7 @@ a symlink, and removes every tired buffer it opened."
         (kill-buffer file-buffer)))))
 
 (ert-deftest tired-jump-from-tired-buffer-goes-up ()
-  "Jumping from a tired buffer opens the parent and marks the directory."
+  "Jumping from a Tired buffer opens the parent and marks the directory."
   (tired-tests--with-fixture
     (tired root)
     (let ((origin (current-buffer)))
@@ -913,7 +913,7 @@ a symlink, and removes every tired buffer it opened."
       (should (equal tired--directory root)))))
 
 (ert-deftest tired-bookmark-round-trip ()
-  "A tired bookmark records the directory and restores the buffer."
+  "A Tired bookmark records the directory and restores the buffer."
   (tired-tests--with-fixture
     (tired root)
     (let ((record (tired-bookmark-make-record)))
@@ -1214,7 +1214,7 @@ joins the range."
         (should (= 1 (length removed)))))))
 
 (ert-deftest tired-kill-buffer-removes-watches ()
-  "Killing a tired buffer removes its file notification watches."
+  "Killing a Tired buffer removes its file notification watches."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t) (removed nil) (counter 0))
       (cl-letf (((symbol-function 'file-notify-add-watch)
@@ -1534,7 +1534,7 @@ joins the range."
                    (expand-file-name "sub/inner.txt" root)))))
 
 (ert-deftest tired-find-file-opens-a-chosen-directory ()
-  "A directory candidate opens as a tired buffer."
+  "A directory candidate opens as a Tired buffer."
   (tired-tests--with-fixture
     (tired root)
     (cl-letf (((symbol-function 'completing-read)
@@ -1753,7 +1753,7 @@ joins the range."
     (should-error (tired-toggle-subdir) :type 'user-error)))
 
 (ert-deftest tired-evil-mode-binds-the-tired-commands ()
-  "The global evil mode gives a tired buffer dired-style keys."
+  "The global evil mode gives a Tired buffer dired-style keys."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
   (tired-tests--with-fixture
@@ -1769,7 +1769,7 @@ joins the range."
           (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
           (should (eq (key-binding (key-parse "SPC"))
                       #'tired-select-toggle-next))
-          ;; Motion stays evil, so a tired buffer is still navigable.
+          ;; Motion stays evil, so a Tired buffer is still navigable.
           (should (eq (key-binding (key-parse "j")) #'evil-next-line))
           (should (eq (key-binding (key-parse "gg"))
                       #'evil-goto-first-line)))
@@ -1798,7 +1798,7 @@ joins the range."
       (evil-local-mode -1))))
 
 (ert-deftest tired-evil-mode-covers-a-buffer-made-later ()
-  "A tired buffer that appears after the mode is on takes the keys."
+  "A Tired buffer that appears after the mode is on takes the keys."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
   (tired-tests--with-fixture
