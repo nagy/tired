@@ -198,29 +198,33 @@ collapse.  Refresh clears the cache.")
   "Return a hash table of entries for DIRECTORY.
 The table maps file names to `tired-entry' structs."
   (let ((table (make-hash-table :test #'equal)))
-    (dolist (name (directory-files directory nil nil t))
-      (unless (member name '("." ".."))
-        (puthash name (tired--make-entry directory name) table)))
+    (dolist (pair (directory-files-and-attributes directory nil nil t))
+      (let ((name (car pair)))
+        (unless (member name '("." ".."))
+          (puthash name (tired--make-entry directory name (cdr pair))
+                   table))))
     table))
 
-(defun tired--make-entry (directory name)
-  "Return a `tired-entry' for NAME inside DIRECTORY."
+(defun tired--make-entry (directory name &optional attributes)
+  "Return a `tired-entry' for NAME inside DIRECTORY.
+ATTRIBUTES defaults to the result of `file-attributes' for the file.
+`tired--read-entries' passes attributes that it already fetched."
   (let* ((path (expand-file-name name directory))
-         (attributes (file-attributes path)))
+         (attributes (or attributes (file-attributes path)))
+         (type (file-attribute-type attributes)))
     (tired--entry-create
      :name name
      :path path
-     :type (pcase (file-attribute-type attributes)
+     :type (pcase type
              ('t 'directory)
              ((pred stringp) 'symlink)
              ('nil 'file)
              (_ 'special))
-     :dirp (eq t (file-attribute-type attributes))
+     :dirp (eq t type)
      :size (file-attribute-size attributes)
      :mtime (float-time (file-attribute-modification-time attributes))
      :mode (file-attribute-modes attributes)
-     :link (let ((type (file-attribute-type attributes)))
-             (and (stringp type) type)))))
+     :link (and (stringp type) type))))
 
 (defun tired--entry-visible-p (entry)
   "Return non-nil when ENTRY passes the narrow, dotfile and name filters."

@@ -60,9 +60,10 @@ Files:
 
 Data flow:
 
-1. `tired--read-entries` calls `directory-files` and builds a hash table
-   of `tired-entry` structs.  `tired--make-entry` fills each struct from
-   `file-attributes`.
+1. `tired--read-entries` calls `directory-files-and-attributes` and
+   builds a hash table of `tired-entry` structs.  `tired--make-entry`
+   fills each struct from those attributes, so each file takes one
+   directory read and one stat, with no second `expand-file-name` call.
 2. `tired--tables` holds one such table per shown directory.  The root
    directory is always present.  `tired--inserted` holds the directories
    whose children appear in the listing; the user adds them with
