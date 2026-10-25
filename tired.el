@@ -43,7 +43,7 @@
 ;;   M-SPC   toggle selection of the entry at point
 ;;   t       select every visible entry
 ;;   u       clear the selection
-;;   f       filter entries by name substring
+;;   f       narrow the listing while typing a filter
 ;;   F       remove the filter
 ;;   .       toggle hidden entries
 ;;   y       copy the name of the targets
@@ -343,14 +343,9 @@ first line when PATH is absent."
   (when (tired-entry-p entry)
     (tired--goto-path (tired-entry-path entry))))
 
-(defun tired-refresh ()
-  "Reload the listing from disk and redraw the buffer."
-  (interactive)
-  (unless tired--directory
-    (user-error "Not in a tired buffer"))
+(defun tired--redraw ()
+  "Redraw the listing from the cached entries."
   (let ((point-entry (tired--entry-at-point)))
-    (setq tired--entries (tired--read-entries tired--directory))
-    (setq tired--selection (tired--prune-selection tired--selection))
     (setq tabulated-list-format (tired--format))
     (tabulated-list-init-header)
     (setq tired--header-base header-line-format)
@@ -362,6 +357,15 @@ first line when PATH is absent."
     (tired--goto-entry point-entry)
     (tired--apply-selection-overlays)
     (force-mode-line-update)))
+
+(defun tired-refresh ()
+  "Reload the listing from disk and redraw the buffer."
+  (interactive)
+  (unless tired--directory
+    (user-error "Not in a tired buffer"))
+  (setq tired--entries (tired--read-entries tired--directory))
+  (setq tired--selection (tired--prune-selection tired--selection))
+  (tired--redraw))
 
 (defun tired--revert (_ignore-auto _noconfirm)
   "Revert the buffer by refreshing the listing.
@@ -485,12 +489,38 @@ with the opposite direction."
           tired--sort-flip (and reverse t)))
   (tired-refresh))
 
-(defun tired-set-filter (filter)
-  "Show only entries whose name contains FILTER.
+(defun tired--apply-filter (filter)
+  "Set `tired--filter' to FILTER and redraw the listing.
 An empty FILTER removes the current filter."
-  (interactive (list (read-string "Filter (substring): " tired--filter)))
-  (setq tired--filter (unless (string-empty-p filter) filter))
-  (tired-refresh))
+  (setq tired--filter (unless (or (null filter) (string-empty-p filter)) filter))
+  (tired--redraw))
+
+(defun tired-filter ()
+  "Narrow the listing while typing a filter.
+Every change updates the listing immediately.  \[exit-minibuffer]
+keeps the filter, \[keyboard-quit] restores the previous one.  An
+empty filter removes it."
+  (interactive)
+  (unless tired--directory
+    (user-error "Not in a tired buffer"))
+  (let ((origin (current-buffer))
+        (original tired--filter))
+    (condition-case nil
+        (let ((result
+               (minibuffer-with-setup-hook
+                   (lambda ()
+                     (add-hook 'after-change-functions
+                               (lambda (&rest _)
+                                 (with-current-buffer origin
+                                   (tired--apply-filter
+                                    (minibuffer-contents))))
+                               nil t))
+                 (read-string "Filter: " original))))
+          (with-current-buffer origin
+            (tired--apply-filter result)))
+      (quit
+       (with-current-buffer origin
+         (tired--apply-filter original))))))
 
 (defun tired-clear-filter ()
   "Remove the name filter."
@@ -571,7 +601,7 @@ cleared afterwards."
   "S-SPC" #'tired-select-toggle
   "t" #'tired-select-all
   "u" #'tired-select-none
-  "f" #'tired-set-filter
+  "f" #'tired-filter
   "F" #'tired-clear-filter
   "." #'tired-toggle-dotfiles
   "y" #'tired-copy-name

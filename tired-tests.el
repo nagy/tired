@@ -139,10 +139,31 @@ a symlink, and removes every tired buffer it opened."
   "A filter keeps only matching names."
   (tired-tests--with-fixture
     (tired-find-directory root)
-    (tired-set-filter "BETA")
+    (tired--apply-filter "BETA")
     (should (equal (tired-tests--names) '("beta.txt")))
     (tired-clear-filter)
     (should (= 5 (length (tired-tests--names))))))
+
+(ert-deftest tired-filter-command-commits-with-ret ()
+  "RET in the live filter keeps the typed value."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) "BETA")))
+      (tired-filter))
+    (should (equal tired--filter "BETA"))
+    (should (equal (tired-tests--names) '("beta.txt")))))
+
+(ert-deftest tired-filter-command-restores-on-quit ()
+  "C-g in the live filter restores the previous filter."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired--apply-filter "beta")
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) (signal 'quit nil))))
+      (tired-filter))
+    (should (equal tired--filter "beta"))
+    (should (equal (tired-tests--names) '("beta.txt")))))
 
 (ert-deftest tired-selection-drives-targets ()
   "Selecting an entry makes it the target of file commands."

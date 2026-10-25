@@ -46,7 +46,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =M-SPC= | =tired-select-toggle=      | Toggle selection at point                |
 | =t=     | =tired-select-all=         | Select every visible entry               |
 | =u=     | =tired-select-none=        | Clear the selection                      |
-| =f=     | =tired-set-filter=         | Filter entries by name substring         |
+| =f=     | =tired-filter=             | Narrow live, RET keeps, C-g restores    |
 | =F=     | =tired-clear-filter=       | Remove the filter                        |
 | =.=     | =tired-toggle-dotfiles=    | Toggle hidden entries                    |
 | =y=     | =tired-copy-name=          | Copy names of the targets                |
@@ -55,6 +55,10 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 
 The selection is transient.  It belongs to the buffer and it is pruned
 when entries disappear.  Commands that act on it clear it afterwards.
+
+The filter is live.  =f= opens a minibuffer and every keystroke
+redraws the listing.  =RET= keeps the typed filter, =C-g= restores the
+previous one, and an empty input removes the filter.
 
 * Build and test
 

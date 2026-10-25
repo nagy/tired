@@ -70,8 +70,15 @@ Data flow:
    buffer.
 4. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
-5. `tired-refresh` rebuilds the hash table, prunes dead selection paths,
-   redraws the header line and restores point by entry path.
+5. `tired-refresh` re-reads the directory, prunes dead selection paths
+   and calls `tired--redraw'.
+6. `tired--redraw` rebuilds the header line, prints the rows, restores
+   point by entry path and reapplies the selection overlays.  Commands
+   that only change the view (filter, sort) call `tired--redraw', not
+   `tired-refresh'.
+7. `tired-filter` opens a minibuffer, hooks `after-change-functions',
+   and calls `tired--apply-filter' on every keystroke.  RET keeps the
+   value, C-g restores the previous filter.
 
 Jumping and bookmarks:
 
