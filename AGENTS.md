@@ -92,7 +92,13 @@ Data flow:
    point by entry path and reapplies the selection overlays.  Commands
    that only change the view (filter, sort, dotfiles, insert) call
    `tired--redraw`, not `tired-refresh`.
-10. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
+10. `tired--sync-watches` keeps one file notification watch per shown
+    directory: the root plus every inserted directory.  It runs at the
+    end of `tired--redraw`, so inserting or removing a section updates
+    the watch set.  A notification schedules `tired--auto-revert-now`
+    through a debounce timer.  The callback captures its buffer, and
+    `kill-buffer-hook` calls `tired--stop-watching`.
+11. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
    value, C-g restores the previous filter.
 
@@ -147,6 +153,12 @@ column and redraws.
   Do not add nil-ID header rows for dired parity.
 - `tired--display-rows` guards recursion with `file-truename`.  Without
   it, a symlink back to an ancestor loops forever.
+- Auto-revert watches cover the root directory and inserted directories
+  only.  Collapsed sections stay unwatched on purpose.  Emacs lock files
+  (`.#name`) are filtered out of the notification callback.
+- Batch Emacs does not dispatch file notification events during
+  `sit-for' or `accept-process-output'.  The ERT tests stub
+  `file-notify-add-watch` instead of waiting for real events.
 - `file-attributes` does not follow symlinks by default.  The struct
   records the link type and target, and commands use `file-directory-p`
   to follow directory symlinks.

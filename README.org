@@ -13,6 +13,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Insert subdirectories as nested, indented sections
 - Transient selection that file commands act on
 - Live name filter and hidden file toggle
+- Automatic refresh on directory changes, debounced
 - Native Elisp listing, no external process
 
 * Usage
@@ -53,6 +54,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =u=     | =tired-select-none=        | Clear the selection                      |
 | =~=     | =tired-select-invert=      | Invert the selection                     |
 | =N=     | =tired-toggle-narrow=      | Narrow to the selection, or widen        |
+| =A=     | =tired-toggle-auto-revert= | Toggle automatic refresh                 |
 | =f=     | =tired-filter=             | Narrow live, RET keeps, C-g restores    |
 | =F=     | =tired-clear-filter=       | Remove the filter                        |
 | =.=     | =tired-toggle-dotfiles=    | Toggle hidden entries                    |
@@ -77,6 +79,19 @@ signals an error when the shown directory belongs to no project.
 directories that contain the selected entries.  =N= again widens it.
 The mode line shows the total size of the selected non-directory
 entries next to the selection count.
+
+* Automatic refresh
+
+The listing refreshes itself when a shown directory changes.  The
+root directory and every inserted section get a file notification
+watch.  Events coalesce for `tired-auto-revert-delay' seconds, so a
+build writing many files causes one refresh.  Collapsed sections stay
+unwatched until the next insertion or explicit refresh.  Emacs lock
+files do not trigger a refresh, and an open minibuffer postpones the
+refresh.  =A= toggles the feature for the current buffer.
+
+Remote directories need a working file notification backend.  Without
+one, the watches fail silently and =g= remains available.
 
 * Inserted directories
 

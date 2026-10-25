@@ -41,3 +41,8 @@ _Avoid_: Search, query
 A listing limited to a snapshot of the selection plus the directories
 that contain the selected entries.
 _Avoid_: Filter, focus
+
+**Watch**:
+A file notification registration for one shown directory, used by
+automatic refresh.
+_Avoid_: Monitor, poll

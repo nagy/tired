@@ -28,6 +28,10 @@
 (require 'seq)
 (require 'tired)
 
+;; Keep unrelated tests free of real file notification watches and
+;; pending timers.  The auto-revert tests bind this to t themselves.
+(setq tired-auto-revert nil)
+
 (defmacro tired-tests--with-fixture (&rest body)
   "Run BODY inside a fresh directory that holds test entries.
 The variable `root' is bound to the temporary directory.  The
@@ -515,6 +519,89 @@ a symlink, and removes every tired buffer it opened."
     (tired-refresh)
     (should-not tired--narrowed)
     (should (= 4 (length (tired-tests--names))))))
+
+(ert-deftest tired-watch-directories-follow-inserted-sections ()
+  "The watch list holds the root and every inserted directory."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t))
+      (tired-find-directory root)
+      (should (equal (tired--watch-directories)
+                     (list (directory-file-name root))))
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (should (equal (sort (tired--watch-directories) #'string<)
+                     (sort (list (directory-file-name root)
+                                 (expand-file-name "sub" root))
+                           #'string<))))))
+
+(ert-deftest tired-sync-watches-adds-and-removes ()
+  "Inserted sections gain a watch and removed sections lose it."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t) (added nil) (removed nil) (counter 0))
+      (cl-letf (((symbol-function 'file-notify-add-watch)
+                 (lambda (directory _aspects _callback)
+                   (push directory added)
+                   (list 'fake (cl-incf counter))))
+                ((symbol-function 'file-notify-rm-watch)
+                 (lambda (descriptor) (push descriptor removed))))
+        (tired-find-directory root)
+        (tired-tests--goto "sub")
+        (tired-insert-subdir)
+        (should (member (expand-file-name "sub" root) added))
+        (tired-refresh)
+        (should (= 2 (length added)))
+        (tired-remove-subdir)
+        (should (= 1 (length removed)))))))
+
+(ert-deftest tired-kill-buffer-removes-watches ()
+  "Killing a tired buffer removes its file notification watches."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t) (removed nil) (counter 0))
+      (cl-letf (((symbol-function 'file-notify-add-watch)
+                 (lambda (&rest _) (list 'fake (cl-incf counter))))
+                ((symbol-function 'file-notify-rm-watch)
+                 (lambda (descriptor) (push descriptor removed))))
+        (let ((buffer (tired-find-directory root)))
+          (should (= 1 (length tired--watches)))
+          (kill-buffer buffer)
+          (should (= 1 (length removed))))))))
+
+(ert-deftest tired-file-change-coalesces-into-one-timer ()
+  "A second event keeps the pending timer instead of adding another."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t))
+      (tired-find-directory root)
+      (tired--file-changed nil)
+      (let ((timer tired--revert-timer))
+        (should (timerp timer))
+        (tired--file-changed nil)
+        (should (eq timer tired--revert-timer))
+        (cancel-timer timer)
+        (setq tired--revert-timer nil)))))
+
+(ert-deftest tired-auto-revert-refreshes-once-and-skips-minibuffer ()
+  "The timer callback refreshes, except while a minibuffer is active."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t) (calls 0))
+      (tired-find-directory root)
+      (let ((buffer (current-buffer)))
+        (cl-letf (((symbol-function 'tired-refresh)
+                   (lambda () (cl-incf calls))))
+          (tired--auto-revert-now buffer)
+          (should (= 1 calls))
+          (setq calls 0)
+          (cl-letf (((symbol-function 'active-minibuffer-window)
+                     (lambda () t)))
+            (tired--auto-revert-now buffer))
+          (should (= 0 calls)))))))
+
+(ert-deftest tired-file-change-ignores-lockfiles ()
+  "Emacs lock file events do not schedule a refresh."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t))
+      (tired-find-directory root)
+      (tired--file-changed '(descriptor created "/tmp/.#alpha.txt"))
+      (should-not tired--revert-timer))))
 
 (provide 'tired-tests)
 

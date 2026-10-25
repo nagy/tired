@@ -49,6 +49,7 @@
 ;;   u       clear the selection
 ;;   ~       invert the selection over the visible entries
 ;;   N       narrow to the selection, or widen again
+;;   A       toggle automatic refresh on directory changes
 ;;   f       narrow the listing while typing a filter
 ;;   F       remove the filter
 ;;   .       toggle hidden entries
@@ -73,6 +74,7 @@
 
 (require 'bookmark)
 (require 'cl-lib)
+(require 'filenotify)
 (require 'hl-line)
 (require 'project)
 (require 'seq)
@@ -96,6 +98,16 @@ See `format-time-string' for the available conversions."
 (defcustom tired-highlight-line t
   "When non-nil, highlight the line at point with `hl-line-mode'."
   :type 'boolean)
+
+(defcustom tired-auto-revert t
+  "When non-nil, refresh the listing when a watched directory changes."
+  :type 'boolean)
+
+(defcustom tired-auto-revert-delay 0.5
+  "Seconds to wait after a file notification before refreshing.
+A delay coalesces bursts of events, such as a build writing many
+files, into one refresh."
+  :type 'number)
 
 (defface tired-directory-face
   '((t :inherit font-lock-function-name-face))
@@ -156,6 +168,12 @@ One of `name', `size', `modified' or `mode'.")
 
 (defvar-local tired--header-base nil
   "Header line string built by `tabulated-list-init-header'.")
+
+(defvar-local tired--watches nil
+  "Alist of watched directory names to file notification descriptors.")
+
+(defvar-local tired--revert-timer nil
+  "Pending `tired-auto-revert-delay' timer, or nil.")
 
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
@@ -339,6 +357,8 @@ Emacs 31 requires a vector of column descriptors here; a list makes
             (format ", %d inserted" (hash-table-count tired--inserted)))
           (when tired--filter
             (format ", filter: %s" tired--filter))
+          (unless tired-auto-revert
+            ", auto-revert off")
           "]"))
 
 (defun tired--entry-at-point ()
@@ -420,6 +440,86 @@ first line when PATH is absent."
   (when (tired-entry-p entry)
     (tired--goto-path (tired-entry-path entry))))
 
+(defun tired--watch-directories ()
+  "Return the directories that need a file notification watch.
+The root directory is always watched.  Inserted directories join the
+list.  Collapsed directories stay unwatched, so their changes arrive
+with the next explicit refresh."
+  (cons (directory-file-name (expand-file-name tired--directory))
+        (when (hash-table-p tired--inserted)
+          (hash-table-keys tired--inserted))))
+
+(defun tired--stop-watching ()
+  "Cancel the debounce timer and remove every file notification watch."
+  (when (timerp tired--revert-timer)
+    (cancel-timer tired--revert-timer)
+    (setq tired--revert-timer nil))
+  (dolist (watch tired--watches)
+    (ignore-errors (file-notify-rm-watch (cdr watch))))
+  (setq tired--watches nil))
+
+(defun tired--sync-watches ()
+  "Add missing watches and remove watches for collapsed directories."
+  (if (not tired-auto-revert)
+      (tired--stop-watching)
+    (let ((wanted (tired--watch-directories)))
+      (dolist (directory wanted)
+        (unless (assoc directory tired--watches)
+          (let* ((buffer (current-buffer))
+                 (callback (lambda (_event)
+                             (when (buffer-live-p buffer)
+                               (with-current-buffer buffer
+                                 (tired--schedule-revert)))))
+                 (descriptor (ignore-errors
+                               (file-notify-add-watch directory
+                                                      '(change)
+                                                      callback))))
+            (when descriptor
+              (push (cons directory descriptor) tired--watches)))))
+      (setq tired--watches
+            (seq-filter
+             (lambda (watch)
+               (if (member (car watch) wanted)
+                   t
+                 (ignore-errors (file-notify-rm-watch (cdr watch)))
+                 nil))
+             tired--watches)))))
+
+(defun tired--schedule-revert ()
+  "Schedule a refresh after `tired-auto-revert-delay' seconds."
+  (unless (timerp tired--revert-timer)
+    (setq tired--revert-timer
+          (run-at-time tired-auto-revert-delay nil
+                       #'tired--auto-revert-now (current-buffer)))))
+
+(defun tired--auto-revert-now (buffer)
+  "Refresh BUFFER after a file change.
+Skip the refresh while a minibuffer is active, so an open completion
+or filter prompt keeps its input."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq tired--revert-timer nil)
+      (when (and tired-auto-revert
+                 (not (active-minibuffer-window)))
+        (tired-refresh)))))
+
+(defun tired--file-changed (event)
+  "Handle file notification EVENT by scheduling a refresh.
+Ignore Emacs lock files and events without a file name.  One
+directory notification can describe several entries, so the whole
+listing refreshes once."
+  (let ((file (nth 2 event)))
+    (unless (and file (string-prefix-p ".#" (file-name-nondirectory file)))
+      (tired--schedule-revert))))
+
+(defun tired-toggle-auto-revert ()
+  "Toggle automatic refresh of the current buffer."
+  (interactive)
+  (setq-local tired-auto-revert (not tired-auto-revert))
+  (tired--sync-watches)
+  (force-mode-line-update)
+  (message "Auto-revert %s" (if tired-auto-revert "on" "off")))
+
 (defun tired--redraw ()
   "Redraw the listing from the cached entries."
   (let ((point-entry (tired--entry-at-point)))
@@ -433,6 +533,7 @@ first line when PATH is absent."
     (tabulated-list-print t)
     (tired--goto-entry point-entry)
     (tired--apply-selection-overlays)
+    (tired--sync-watches)
     (force-mode-line-update)))
 
 (defun tired--forget-inserted (directory)
@@ -834,6 +935,7 @@ cleared afterwards."
   "u" #'tired-select-none
   "~" #'tired-select-invert
   "N" #'tired-toggle-narrow
+  "A" #'tired-toggle-auto-revert
   "f" #'tired-filter
   "F" #'tired-clear-filter
   "." #'tired-toggle-dotfiles
@@ -859,6 +961,9 @@ The directory contents come from `directory-files' and
   (setq-local tired--hide-dotfiles tired-hide-dotfiles)
   (setq-local tired--tables (make-hash-table :test #'equal))
   (setq-local tired--inserted (make-hash-table :test #'equal))
+  (setq-local tired--watches nil)
+  (setq-local tired--revert-timer nil)
+  (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
   (setq-local tabulated-list-padding 1)
