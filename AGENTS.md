@@ -36,10 +36,11 @@ Nix outputs:
   `flake.nix` (`melpaBuild`).  It takes its arguments through
   `callPackage`, so `nix-build -E` with `callPackage` still works.
   Its `checkPhase` byte-compiles with warnings as errors and runs the
-  ERT suite.  `checkInputs` holds the tree-sitter Rust grammar and the
-  phase exports `TREESIT_EXTRA_LOAD_PATH` for it, so the Rust section
-  test runs instead of skipping.  The suite reads that variable itself;
-  a developer machine without a grammar skips the test.
+  ERT suite.  `checkInputs` holds the tree-sitter Rust and Markdown
+  grammars and the phase exports `TREESIT_EXTRA_LOAD_PATH` for them, so
+  the section tests run instead of skipping.  The suite reads that
+  variable itself; a developer machine without a grammar skips the
+  matching test.
 - `checks.lint` is `mkLint` in `flake.nix`: `package-lint` and
   `checkdoc`.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
@@ -103,6 +104,12 @@ Data flow:
    to the first section, and a folded section in `tired--folded` hides
    its children.  `tired--name-visible-p` decides whether a file row and
    its sections pass the filter.
+   The Rust and Markdown handlers share `tired--treesit-sections`.  A
+   language contributes a spec plist: `:language`, `:mode`, `:kinds`,
+   `:containers`, `:fields`, and an optional `:label`, `:level` and
+   `:require`.  The SQLite handler opens the file read-only through the
+   built-in `sqlite' support and gives its sections synthetic line
+   ordinals.
 6. `tired--tabulated-entries` renders each row as a vector, indented by
    its depth.  Emacs 31 requires the vector form.  A section row fills
    the name column only.
@@ -242,10 +249,25 @@ column and redraws.
 - A section handler reads the file in a temporary buffer and selects
   its own major mode.  Do not parse from a visiting buffer and do not
   make the framework guess the mode.
-- Section handlers stay free of a hard dependency.  The Rust handler
-  calls `(require 'treesit)` at run time and returns nil when the
-  grammar is absent.  Byte-compile needs a `declare-function` for every
-  `treesit-function` and `org-element-function` it calls.
+- Section handlers stay free of a hard dependency.  The Rust and
+  Markdown handlers call `(require 'treesit)` at run time and return nil
+  when the grammar is absent.  The Markdown handler also requires
+  `markdown-ts-mode', because that mode has no autoload here.  The
+  SQLite handler checks `(fboundp 'sqlite-available-p)` and wraps the
+  open in `condition-case`, so a file that is not a database yields no
+  sections and no warning.  Byte-compile needs a `declare-function` for
+  every `treesit-function`, `org-element-function` and sqlite function
+  it calls.
+- A tree-sitter spec spells node types as strings, not symbols, so
+  `tired--treesit-kind` compares against `treesit-node-type` with
+  `equal`.  A new grammar costs one spec and one handler that calls
+  `tired--treesit-sections`.
+- A handler with no real line gives every section a distinct synthetic
+  `:line`.  The section fold state and the point restore key on
+  `(PATH . LINE)`, so two sections that share a line fold together and
+  the redraw lands on the wrong row.  The SQLite handler counts its
+  sections for this reason.  Such a handler also supplies an `:action',
+  because visiting the raw file at line 1 is meaningless.
 
 ## Gotchas
 
@@ -275,9 +297,10 @@ column and redraws.
   label: a narrowed-out file hides all of its sections.
 - `tired--call-handler` catches every error and reports through
   `display-warning`.  One broken handler must not break the listing.
-- The Rust section test skips itself without a grammar.  The Nix check
-  supplies the grammar and exports `TREESIT_EXTRA_LOAD_PATH`; the test
-  reads that variable at load time.
+- The section tests skip themselves without a grammar.  The Nix check
+  supplies the grammars and exports `TREESIT_EXTRA_LOAD_PATH`; the test
+  reads that variable at load time.  The Markdown test needs both the
+  `markdown` and `markdown-inline` grammars.
 
 - Flake sources are git-tracked files only.  `git add` a new file before
   `nix flake check`, or the build cannot see it.

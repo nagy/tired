@@ -87,8 +87,10 @@
 ;; function.  The function reads the file in a temporary buffer and
 ;; returns a list of plists with `:label', `:line', `:level' and
 ;; `:kind'.  Org files yield headings, Emacs Lisp files yield top-level
-;; forms, and Rust files yield items through tree-sitter.  TAB expands
-;; a file row, and TAB on a section row folds that section.
+;; forms, Rust and Markdown files yield items through tree-sitter, and
+;; SQLite databases yield tables and columns through the built-in
+;; `sqlite' support.  TAB expands a file row, and TAB on a section row
+;; folds that section.
 ;;
 ;; File operations act at once, without a confirmation question.
 ;; Delete moves each path into `tired-trash-directory', and a copy or
@@ -176,7 +178,9 @@ a name."
 (defcustom tired-file-handlers
   '(("\\.org\\'" . tired-file-sections-org)
     ("\\.el\\'" . tired-file-sections-elisp)
-    ("\\.rs\\'" . tired-file-sections-rust))
+    ("\\.rs\\'" . tired-file-sections-rust)
+    ("\\.\\(?:md\\|markdown\\)\\'" . tired-file-sections-markdown)
+    ("\\.\\(?:db\\|sqlite\\|sqlite3\\)\\'" . tired-file-sections-sqlite))
   "Alist of regexp to a function that extracts sections from a file.
 The regexp matches the absolute file name, and the first match wins.
 The function receives the file name and runs in a temporary buffer
@@ -582,7 +586,7 @@ same line fold together and no other row collides with them."
 (defun tired--section-face (section)
   "Return the face for SECTION from its kind."
   (pcase (tired-section-kind section)
-    ((or 'heading 'title) 'tired-section-heading-face)
+    ((or 'heading 'title 'table) 'tired-section-heading-face)
     (_ 'tired-section-face)))
 
 (defun tired--section-cell (section)
@@ -2111,11 +2115,17 @@ The directory contents come from `directory-files' and
 (declare-function treesit-buffer-root-node "treesit" (&optional language))
 (declare-function treesit-node-child-by-field-name "treesit"
                   (node field-name))
+(declare-function treesit-node-child "treesit" (node n &optional named))
 (declare-function treesit-node-children "treesit" (node &optional named))
 (declare-function treesit-node-start "treesit" (node))
 (declare-function treesit-node-text "treesit" (node &optional no-propertize))
 (declare-function treesit-node-type "treesit" (node))
 (declare-function treesit-ready-p "treesit" (language &optional quiet))
+(declare-function sqlite-available-p "sqlite.c" nil)
+(declare-function sqlite-close "sqlite.c" (db))
+(declare-function sqlite-open "sqlite.c" (file &optional readonly disable-uri))
+(declare-function sqlite-select "sqlite.c"
+                  (db query &optional values return-type))
 
 (defun tired-file-sections-org (_path)
   "Return the headings of the current org buffer as section plists.
@@ -2178,58 +2188,123 @@ stays out.  A form that `read' rejects ends the scan."
                   sections)))))
     (nreverse sections)))
 
-(defconst tired--rust-kinds
-  '((function_item . function)
-    (function_signature_item . function)
-    (struct_item . struct)
-    (enum_item . enum)
-    (union_item . union)
-    (trait_item . trait)
-    (impl_item . impl)
-    (mod_item . module)
-    (type_item . type)
-    (const_item . constant)
-    (static_item . constant)
-    (macro_definition . macro))
-  "Alist of Rust tree-sitter node types to section kinds.")
+(defconst tired--rust-section-spec
+  '(:language rust
+    :mode rust-ts-mode
+    :kinds (("function_item" . function)
+            ("function_signature_item" . function)
+            ("struct_item" . struct)
+            ("enum_item" . enum)
+            ("union_item" . union)
+            ("trait_item" . trait)
+            ("impl_item" . impl)
+            ("mod_item" . module)
+            ("type_item" . type)
+            ("const_item" . constant)
+            ("static_item" . constant)
+            ("macro_definition" . macro))
+    :containers ("impl_item" "mod_item" "trait_item")
+    :fields ("name" "type"))
+  "Tree-sitter section spec for a Rust file.")
 
-(defconst tired--rust-containers
-  '(impl_item mod_item trait_item)
-  "Rust node types whose child items nest one level deeper.")
+(defconst tired--markdown-section-spec
+  '(:language markdown
+    :mode markdown-ts-mode
+    :require markdown-ts-mode
+    :kinds (("atx_heading" . heading)
+            ("setext_heading" . heading))
+    :label tired--markdown-section-label
+    :level tired--markdown-section-level)
+  "Tree-sitter section spec for a Markdown file.")
 
-(defun tired--rust-kind (node)
-  "Return the section kind for NODE, or nil when NODE is no item."
-  (alist-get (intern (treesit-node-type node)) tired--rust-kinds))
+(defun tired--treesit-field-text (node fields)
+  "Return the text of the first field of NODE that FIELDS names.
+Return nil when NODE carries none of the fields."
+  (seq-some (lambda (field)
+              (when-let* ((child (treesit-node-child-by-field-name
+                                  node field)))
+                (treesit-node-text child t)))
+            fields))
 
-(defun tired--rust-container-p (node)
-  "Return non-nil when the child items of NODE nest one level deeper."
-  (memq (intern (treesit-node-type node)) tired--rust-containers))
+(defun tired--treesit-kind (node spec)
+  "Return the section kind that SPEC declares for NODE, or nil."
+  (alist-get (treesit-node-type node) (plist-get spec :kinds)
+             nil nil #'equal))
 
-(defun tired--rust-label (node kind)
-  "Return the label for NODE of KIND.
-Use the name field, then the type field of an impl block."
-  (let ((name (or (treesit-node-child-by-field-name node "name")
-                  (treesit-node-child-by-field-name node "type"))))
-    (format "%s %s" kind (if name (treesit-node-text name t) "?"))))
+(defun tired--treesit-label (node kind spec)
+  "Return the label for NODE of KIND under SPEC.
+SPEC may name a `:label' function.  Without one, use the first
+`:fields' entry that NODE carries and fall back to KIND alone."
+  (if-let* ((function (plist-get spec :label)))
+      (funcall function node kind)
+    (format "%s %s" kind
+            (or (tired--treesit-field-text
+                 node (or (plist-get spec :fields) '("name")))
+                "?"))))
 
-(defun tired--rust-walk (node level)
-  "Return the section plists of NODE and its children at LEVEL.
-An impl block, a trait or a module raises the level of its children
-by one, so the methods of an impl block indent under it."
-  (let* ((kind (tired--rust-kind node))
+(defun tired--treesit-level (node spec depth)
+  "Return the level for NODE under SPEC, or DEPTH.
+SPEC may name a `:level' function, so a grammar that spells the level
+in a marker node does not rely on the tree depth."
+  (if-let* ((function (plist-get spec :level)))
+      (funcall function node)
+    depth))
+
+(defun tired--treesit-walk (node spec depth)
+  "Return the section plists of NODE and its children under SPEC.
+DEPTH is the current nesting depth.  A node type listed in
+`:containers' raises the depth of its children by one."
+  (let* ((kind (tired--treesit-kind node spec))
          (here (when kind
-                 (list (list :label (tired--rust-label node kind)
+                 (list (list :label (tired--treesit-label node kind spec)
                              :line (line-number-at-pos
                                     (treesit-node-start node))
-                             :level level
+                             :level (tired--treesit-level node spec depth)
                              :kind kind))))
-         (child-level (if (tired--rust-container-p node)
-                          (1+ level)
-                        level))
-         (below (mapcan (lambda (child)
-                          (tired--rust-walk child child-level))
-                        (treesit-node-children node t))))
-    (append here below)))
+         (next-depth (if (member (treesit-node-type node)
+                                 (plist-get spec :containers))
+                         (1+ depth)
+                       depth)))
+    (append here
+            (mapcan (lambda (child)
+                      (tired--treesit-walk child spec next-depth))
+                    (treesit-node-children node t)))))
+
+(defun tired--treesit-sections (spec)
+  "Return the section plists of the current buffer according to SPEC.
+SPEC is a plist with `:language', an optional `:mode', an optional
+`:require', `:kinds', optional `:containers', optional `:fields',
+optional `:label' and optional `:level'.  Return nil when the
+grammar is missing, so the caller keeps a plain file row."
+  (require 'treesit)
+  (let ((language (plist-get spec :language)))
+    (when (and (treesit-available-p) (treesit-ready-p language t))
+      (when-let* ((library (plist-get spec :require)))
+        (require library))
+      (when-let* ((mode (plist-get spec :mode)))
+        (delay-mode-hooks (funcall mode)))
+      (when-let* ((root (treesit-buffer-root-node language)))
+        (tired--treesit-walk root spec 0)))))
+
+(defun tired--markdown-section-level (node)
+  "Return the heading level of the Markdown NODE.
+An ATX heading counts its hash markers.  A setext heading takes
+level 1 from an `=' underline and level 2 from any other underline."
+  (if (equal (treesit-node-type node) "atx_heading")
+      (length (treesit-node-text (treesit-node-child node 0) t))
+    (if (seq-some (lambda (child)
+                    (equal (treesit-node-type child) "setext_h1_underline"))
+                  (treesit-node-children node))
+        1
+      2)))
+
+(defun tired--markdown-section-label (node _kind)
+  "Return the text of the Markdown heading NODE without its marker.
+KIND stays unused."
+  (let ((content (or (treesit-node-child-by-field-name
+                      node "heading_content")
+                     node)))
+    (string-trim (treesit-node-text content t))))
 
 (defun tired-file-sections-rust (_path)
   "Return the items of the current Rust buffer as section plists.
@@ -2237,12 +2312,81 @@ The buffer already holds the file, so the handler ignores PATH.
 Read functions, structs, enums, traits, impl blocks, modules,
 constants and macros through tree-sitter.  Return nil when the
 Rust grammar is missing."
-  (require 'treesit)
-  (when (and (treesit-available-p) (treesit-ready-p 'rust t))
-    (delay-mode-hooks (rust-ts-mode))
-    (let ((root (treesit-buffer-root-node 'rust)))
-      (when root
-        (tired--rust-walk root 0)))))
+  (tired--treesit-sections tired--rust-section-spec))
+
+(defun tired-file-sections-markdown (_path)
+  "Return the headings of the current Markdown buffer as section plists.
+The buffer already holds the file, so the handler ignores PATH.
+Read ATX and setext headings through tree-sitter, so a heading
+inside a fenced code block stays out of the listing.  Return nil
+when the Markdown grammar is missing."
+  (tired--treesit-sections tired--markdown-section-spec))
+
+(defun tired--sqlite-column-label (row)
+  "Return the label for the `PRAGMA table_info' ROW of one column.
+ROW holds the column id, name, declared type, NOT NULL flag, default
+value and primary key flag."
+  (let ((name (nth 1 row))
+        (type (nth 2 row))
+        (notnull (nth 3 row))
+        (primary (nth 5 row)))
+    (concat (if (and type (not (string-empty-p type)))
+                (format "%s %s" name type)
+              name)
+            (if (and notnull (not (zerop notnull))) " NOT NULL" "")
+            (if (and primary (not (zerop primary))) " PRIMARY KEY" ""))))
+
+(defun tired--sqlite-open-table (section table &optional _other-window)
+  "Show TABLE of the database that SECTION belongs to.
+Open the database in `sqlite-mode' and move point to the row of
+TABLE.  OTHER-WINDOW stays unused, because `sqlite-mode-open-file'
+chooses the window itself."
+  (require 'sqlite-mode)
+  (sqlite-mode-open-file (tired-section-path section))
+  (goto-char (point-min))
+  (when (re-search-forward (concat "^" (regexp-quote table) "\\_>") nil t)
+    (beginning-of-line)))
+
+(defun tired-file-sections-sqlite (path)
+  "Return the tables and columns of the SQLite database at PATH.
+The handler uses the built-in `sqlite' support, so it needs no
+external tool.  Each table is a section and its columns follow one
+level deeper.  A database has no lines, so a section carries a
+synthetic ordinal and its action opens the table in `sqlite-mode'.
+Return nil when Emacs lacks SQLite support or when PATH holds no
+readable database."
+  (when (and (fboundp 'sqlite-available-p) (sqlite-available-p))
+    (condition-case nil
+        (let ((db (sqlite-open path t))
+              (line 0)
+              sections)
+          (unwind-protect
+              (dolist (row (sqlite-select
+                            db
+                            (concat "SELECT name FROM sqlite_master "
+                                    "WHERE type IN ('table', 'view') "
+                                    "AND name NOT LIKE 'sqlite_%' "
+                                    "ORDER BY name")))
+                (let ((table (car row)))
+                  (push (list :label table
+                              :line (setq line (1+ line))
+                              :level 0
+                              :kind 'table
+                              :action (cons #'tired--sqlite-open-table
+                                            (list table)))
+                        sections)
+                  (dolist (column (sqlite-select
+                                   db (format "PRAGMA table_info(%S)" table)))
+                    (push (list :label (tired--sqlite-column-label column)
+                                :line (setq line (1+ line))
+                                :level 1
+                                :kind 'column
+                                :action (cons #'tired--sqlite-open-table
+                                              (list table)))
+                          sections))))
+            (sqlite-close db))
+          (nreverse sections))
+      (error nil))))
 
 (provide 'tired)
 

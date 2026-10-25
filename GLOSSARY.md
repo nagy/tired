@@ -73,6 +73,18 @@ _Avoid_: Open, unfold, drill, zoom
 A function in `tired-file-handlers' that turns one file into sections.
 _Avoid_: Parser, provider, extractor
 
+**Section spec**:
+A plist that names the tree-sitter language, mode, node types, container
+types and label fields that `tired--treesit-sections` uses to build the
+sections of one language.
+_Avoid_: Config, node table, grammar rule
+
+**Synthetic line**:
+The ordinal that a handler gives a section when its file has no lines,
+such as a database table.  The ordinal keeps fold state and point
+restore apart.
+_Avoid_: Fake line, dummy line
+
 **Fold**:
 Hide the child sections of one section row.  A fold is local to a
 section.  A collapse concerns a directory chain.

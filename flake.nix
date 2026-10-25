@@ -36,11 +36,14 @@
           lib,
           emacsPackages,
           melpaBuild ? emacsPackages.melpaBuild,
-          # Tree-sitter grammars for the check phase only.  The Rust
-          # section handler test skips itself when the grammar is absent,
-          # so a null value keeps the build small and still passes.
+          # Tree-sitter grammars for the check phase only.  A handler
+          # whose grammar is absent returns no sections, so the file
+          # row stays plain and the ERT test skips itself.  A null value
+          # keeps the build small and still passes.
           treesitGrammars ? emacsPackages.treesit-grammars.with-grammars (p: [
             p.tree-sitter-rust
+            p.tree-sitter-markdown
+            p.tree-sitter-markdown-inline
           ]),
           # The flake passes the version derived from the commit date.
           # Keep a plain default so the expression also evaluates outside

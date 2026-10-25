@@ -1360,6 +1360,69 @@ joins the range."
                      ("function new" . 2)
                      ("function main" . 1))))))
 
+(ert-deftest tired-sections-of-a-markdown-file ()
+  "A Markdown file lists ATX and setext headings and skips code fences."
+  (skip-unless (and (require 'treesit nil t)
+                    (treesit-ready-p 'markdown t)
+                    (treesit-ready-p 'markdown-inline t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.md"
+                        "# Intro\n\n## Detail\n\n```sh\n# not a heading\n```\n\nClosing\n=======\n")
+    (tired-find-directory root)
+    (tired-tests--goto "notes.md")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("Intro" . 1) ("Detail" . 2) ("Closing" . 1))))))
+
+(ert-deftest tired-sections-of-a-sqlite-database ()
+  "A SQLite file lists its tables and columns with a table action."
+  (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
+  (tired-tests--with-fixture
+    (let ((path (expand-file-name "data.sqlite" root)))
+      (let ((db (sqlite-open path nil)))
+        (sqlite-execute db "CREATE TABLE logs (msg TEXT)")
+        (sqlite-execute db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+        (sqlite-close db))
+      (tired-find-directory root)
+      (tired-tests--goto "data.sqlite")
+      (tired-toggle-subdir)
+      (should (equal (tired-tests--sections)
+                     '(("logs" . 1)
+                       ("msg TEXT" . 2)
+                       ("users" . 1)
+                       ("id INTEGER PRIMARY KEY" . 2)
+                       ("name TEXT NOT NULL" . 2))))
+      (let ((table (car (tired-file-sections path))))
+        (should (eq (tired-section-kind table) 'table))
+        (should (consp (tired-section-action table)))))))
+
+(ert-deftest tired-sqlite-table-action-opens-sqlite-mode ()
+  "RET on a table section opens the database at that table."
+  (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
+  (tired-tests--with-fixture
+    (let ((path (expand-file-name "data.sqlite" root)))
+      (let ((db (sqlite-open path nil)))
+        (sqlite-execute db "CREATE TABLE users (id INTEGER)")
+        (sqlite-close db))
+      (tired-find-directory root)
+      (tired-tests--goto "data.sqlite")
+      (tired-toggle-subdir)
+      (tired-tests--goto-section "users")
+      (tired-open)
+      (let ((buffer (get-buffer "*SQLite data.sqlite*")))
+        (should buffer)
+        (with-current-buffer buffer
+          (should (derived-mode-p 'sqlite-mode))
+          (should (looking-at "users")))
+        (kill-buffer buffer)))))
+
+(ert-deftest tired-sqlite-handler-rejects-a-non-database ()
+  "A .db file that holds no database yields no sections."
+  (tired-tests--with-fixture
+    (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
+    (tired-tests--write "junk.db" "not a database")
+    (should-not (tired-file-sections (expand-file-name "junk.db" root)))))
+
 (ert-deftest tired-open-section-visits-its-line ()
   "RET on a section row visits the file at the section line."
   (tired-tests--with-fixture
