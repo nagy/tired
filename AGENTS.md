@@ -81,7 +81,12 @@ Data flow:
    A collapsed row suppresses its inserted children.
 5. `tired--tabulated-entries` renders each row as a vector, indented by
    its depth.  Emacs 31 requires the vector form.
-   `tabulated-list-print` draws the buffer.
+   `tabulated-list-print` draws the buffer.  `tired--size-cell` fills
+   the size column.  With `tired-directory-size' on, it calls
+   `tired--directory-total', which walks the subtree through
+   `tired--subtree-size' and leaves the result in `tired--size-cache'.
+   The binding in `tired--tabulated-entries` covers one redraw, so a
+   nested directory costs one read per redraw.
 6. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
    `tired--selection-set` mirrors it as a hash set for O(1) membership.
@@ -199,6 +204,11 @@ column and redraws.
   `tired-broken-symlink-face`.  A circular link counts as broken.  The
   user option `tired-check-symlinks` turns the check off, because a
   remote directory costs one round trip per link.
+- Recursive directory sizes stay off by default, because the option
+  makes every refresh read every directory below the shown one.
+  `tired--subtree-size` never follows a symbolic link, so a link cycle
+  cannot loop.  Do not hoist `tired--size-cache` above one redraw:
+  nothing invalidates an entry when a file changes.
 - `tired--ignored-regexp` caches a regexp for
   `completion-ignored-extensions`, an autosave name and a lock file
   name.  `tired--ignored-source` holds the value the cache derives

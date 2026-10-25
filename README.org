@@ -16,6 +16,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Live name filter and hidden file toggle
 - Automatic refresh on directory changes, debounced
 - Single-child directory chains collapse into their one file
+- Optional recursive size of a directory
 - Native Elisp listing, no external process
 
 * Usage
@@ -84,6 +85,24 @@ signals an error when the shown directory belongs to no project.
 directories that contain the selected entries.  =N= again widens it.
 The mode line shows the total size of the selected non-directory
 entries next to the selection count.
+
+* Directory sizes
+
+The size column stays empty for a directory by default.  Set
+=tired-directory-size= to a non-nil value and the column shows the sum
+of every regular file under the directory, computed recursively:
+
+#+begin_src elisp
+  (setq tired-directory-size t)
+#+end_src
+
+Symbolic links stay unfollowed, so a link cycle cannot loop and a
+large tree outside the listing does not inflate a size.  Hidden files
+count.  One redraw memoizes each directory it visits, so a directory
+shown as a parent and as an inserted section costs one read.  The
+cache does not outlive the redraw.  A deep tree makes every refresh
+read every directory below it, so =g= and automatic refresh slow down
+with tree depth.
 
 * Single-child collapse
 

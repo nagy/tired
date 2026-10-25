@@ -132,6 +132,14 @@ Set the value to nil for remote directories, where the check costs
 one network round trip per link."
   :type 'boolean)
 
+(defcustom tired-directory-size nil
+  "When non-nil, show the recursive size of each directory.
+The size column then sums the bytes of every regular file under the
+directory.  Symbolic links stay unfollowed.  A deep tree costs one
+directory read per directory on every refresh, so the option stays
+nil by default."
+  :type 'boolean)
+
 (defface tired-directory-face
   '((t :inherit dired-directory))
   "Face for directory names.")
@@ -472,23 +480,75 @@ suffix, symbolic link, special file."
                                    'tired-symlink-target-face))))
       (_ (if face (propertize name 'face face) name)))))
 
+(defvar tired--size-cache nil
+  "Hash table that maps a truename to the size of a directory subtree.
+`tired--directory-total' binds the table for one calculation.")
+
+(defun tired--subtree-size (directory)
+  "Return the number of bytes in every regular file under DIRECTORY.
+Skip symbolic links, so a link cycle cannot loop.  Store each
+visited directory in `tired--size-cache', so one calculation reads a
+nested directory once.  An unreadable directory counts as zero."
+  (let* ((key (file-truename directory))
+         (hit (gethash key tired--size-cache 'tired--miss)))
+    (if (not (eq hit 'tired--miss))
+        hit
+      (let ((total 0))
+        (dolist (pair (ignore-errors
+                       (directory-files-and-attributes directory nil nil t)))
+          (let* ((name (car pair))
+                 (attributes (cdr pair))
+                 (type (file-attribute-type attributes)))
+            (unless (member name '("." ".."))
+              (cond
+               ((eq t type)
+                (setq total (+ total (tired--subtree-size
+                                      (expand-file-name name directory)))))
+               ((stringp type) nil)
+               (t (setq total (+ total
+                                 (or (file-attribute-size attributes) 0))))))))
+        (puthash key total tired--size-cache)
+        total))))
+
+(defun tired--directory-total (directory)
+  "Return the number of bytes in every regular file under DIRECTORY.
+Reuse the cache that `tired--tabulated-entries' binds for one redraw,
+or make a cache for this call.  The cache never outlives the redraw,
+so a changed file leaves no stale size behind."
+  (let ((tired--size-cache (or tired--size-cache
+                               (make-hash-table :test #'equal))))
+    (tired--subtree-size directory)))
+
+(defun tired--size-cell (entry)
+  "Return the size column string for ENTRY."
+  (cond
+   ((not (tired-entry-dirp entry))
+    (file-size-human-readable (tired-entry-size entry)))
+   (tired-directory-size
+    (file-size-human-readable
+     (tired--directory-total (tired-entry-path entry))))
+   (t "")))
+
 (defun tired--row (entry depth)
   "Return the tabulated list row for ENTRY at DEPTH.
 Emacs 31 requires a vector of column descriptors here; a list makes
 `tabulated-list-print-entry' signal a type error."
   (vector (concat (make-string (* 2 depth) ?\s)
                   (tired--name-cell entry))
-          (if (tired-entry-dirp entry)
-              ""
-            (file-size-human-readable (tired-entry-size entry)))
+          (tired--size-cell entry)
           (format-time-string tired-date-format (tired-entry-mtime entry))
           (tired-entry-mode entry)))
 
 (defun tired--tabulated-entries ()
-  "Return `tabulated-list-entries' for the current listing."
-  (mapcar (lambda (row)
-            (list (car row) (tired--row (car row) (cdr row))))
-          (tired--display-rows t)))
+  "Return `tabulated-list-entries' for the current listing.
+When `tired-directory-size' is non-nil, one memo table serves every
+row of the redraw, so a nested directory costs one read, not one
+read per ancestor."
+  (let ((tired--size-cache (and tired-directory-size
+                                (make-hash-table :test #'equal))))
+    (mapcar (lambda (row)
+              (list (car row) (tired--row (car row) (cdr row))))
+            (tired--display-rows t))))
 
 (defun tired--column-label (label key)
   "Return LABEL with a direction indicator when KEY is the sort key."

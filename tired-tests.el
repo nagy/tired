@@ -391,6 +391,42 @@ a symlink, and removes every tired buffer it opened."
                 (tired--name-face
                  (tired--entry-create :name "fifo" :type 'special))))))
 
+(ert-deftest tired-size-cell-stays-empty-by-default ()
+  "A directory shows no size unless `tired-directory-size' is on."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (should-not (default-value 'tired-directory-size))
+    (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))
+    (should (equal (file-size-human-readable 3)
+                   (tired--size-cell (tired-tests--entry "alpha.txt"))))))
+
+(ert-deftest tired-size-cell-sums-a-directory-recursively ()
+  "With `tired-directory-size' on, a directory sums its files."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t))
+      (tired-find-directory root)
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-tests--entry "sub"))))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root))))
+      (should (equal 53 (tired--directory-total root))))))
+
+(ert-deftest tired--subtree-size-memoizes-each-directory ()
+  "One calculation reads each nested directory once, and links stay unfollowed."
+  (tired-tests--with-fixture
+    (let ((tired--size-cache (make-hash-table :test #'equal))
+          (calls 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq calls (1+ calls))
+                   (apply original args))))
+        (should (equal 53 (tired--subtree-size root)))
+        (should (equal 53 (tired--subtree-size root))))
+      ;; The root, its child and its grandchild, once each.  The link
+      ;; back to the root stays unfollowed.
+      (should (= 3 calls)))))
+
 (ert-deftest tired-name-cell-fontifies-broken-symlink ()
   "A link that does not resolve gets the broken symlink face."
   (tired-tests--with-fixture
