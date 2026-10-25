@@ -56,6 +56,8 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =.=     | =tired-toggle-dotfiles=    | Toggle hidden entries                    |
 | =y=     | =tired-copy-name=          | Copy names of the targets                |
 | =w=     | =tired-copy-path=          | Copy full paths of the targets           |
+| =W=     | =tired-copy-relative-path= | Copy paths relative to the shown dir     |
+| =P=     | =tired-copy-project-path=  | Copy paths relative to the project root  |
 | =q=     | =quit-window=              | Bury the buffer                          |
 
 The selection is transient.  It belongs to the buffer and it is pruned
@@ -64,6 +66,10 @@ when entries disappear.  Commands that act on it clear it afterwards.
 The filter is live.  =f= opens a minibuffer and every keystroke
 redraws the listing.  =RET= keeps the typed filter, =C-g= restores the
 previous one, and an empty input removes the filter.
+
+=w= copies absolute paths, =W= copies paths relative to the shown
+directory, and =P= copies paths relative to the project root.  =P=
+signals an error when the shown directory belongs to no project.
 
 * Inserted directories
 

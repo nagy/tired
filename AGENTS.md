@@ -100,6 +100,14 @@ Jumping and bookmarks:
 - `tired-bookmark-make-record` stores the directory in the record and
   `tired-bookmark-jump` reopens it.
 
+Copy commands:
+
+- `tired-copy-path` copies absolute paths.  `tired-copy-relative-path`
+  makes paths relative to `tired--directory`.  `tired-copy-project-path`
+  makes paths relative to `(project-root (project-current nil dir))` and
+  raises `user-error` outside a project.  All three share
+  `tired--copy-targets`, so selection handling stays in one place.
+
 Sorting is implemented in `tired--lessp`, not in `tabulated-list`,
 because tabulated-list cannot keep directories first while sorting other
 columns.  `tabulated-list-format` therefore marks every column as

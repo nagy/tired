@@ -52,6 +52,8 @@
 ;;   .       toggle hidden entries
 ;;   y       copy the name of the targets
 ;;   w       copy the full path of the targets
+;;   W       copy paths relative to the shown directory
+;;   P       copy paths relative to the project root
 ;;   q       bury the buffer
 ;;
 ;; Related commands:
@@ -70,6 +72,7 @@
 (require 'bookmark)
 (require 'cl-lib)
 (require 'hl-line)
+(require 'project)
 (require 'seq)
 (require 'subr-x)
 (require 'tabulated-list)
@@ -665,16 +668,50 @@ empty filter removes it."
              (length targets)
              (if (= (length targets) 1) "" "s"))))
 
-(defun tired-copy-path ()
-  "Copy the full paths of the targets to the kill ring."
-  (interactive)
+(defun tired--copy-targets (function description)
+  "Copy FUNCTION of each target path to the kill ring.
+DESCRIPTION names the copied form in the echo area."
   (let ((targets (tired--selection-targets)))
     (unless targets
       (user-error "No entry at point"))
-    (kill-new (mapconcat #'tired-entry-path targets "\n"))
-    (message "Copied %d path%s"
+    (kill-new
+     (mapconcat (lambda (entry)
+                  (funcall function (tired-entry-path entry)))
+                targets
+                "\n"))
+    (message "Copied %d %s%s"
              (length targets)
+             description
              (if (= (length targets) 1) "" "s"))))
+
+(defun tired-copy-path ()
+  "Copy the full paths of the targets to the kill ring."
+  (interactive)
+  (tired--copy-targets #'identity "path"))
+
+(defun tired-copy-relative-path ()
+  "Copy target paths relative to the shown directory."
+  (interactive)
+  (let ((directory tired--directory))
+    (tired--copy-targets
+     (lambda (path) (file-relative-name path directory))
+     "relative path")))
+
+(defun tired--project-root ()
+  "Return the project root of the shown directory.
+Signal a user error when no project contains it."
+  (let ((project (project-current nil tired--directory)))
+    (unless project
+      (user-error "No project at %s" tired--directory))
+    (project-root project)))
+
+(defun tired-copy-project-path ()
+  "Copy target paths relative to the project root."
+  (interactive)
+  (let ((root (tired--project-root)))
+    (tired--copy-targets
+     (lambda (path) (file-relative-name path root))
+     "project path")))
 
 (defun tired--open-entry (entry &optional other-window)
   "Visit ENTRY, in another window when OTHER-WINDOW is non-nil.
@@ -730,6 +767,8 @@ cleared afterwards."
   "." #'tired-toggle-dotfiles
   "y" #'tired-copy-name
   "w" #'tired-copy-path
+  "W" #'tired-copy-relative-path
+  "P" #'tired-copy-project-path
   "q" #'quit-window)
 
 ;;;###autoload

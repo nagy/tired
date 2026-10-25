@@ -213,6 +213,47 @@ a symlink, and removes every tired buffer it opened."
                            "\n"
                            (expand-file-name "beta.txt" root))))))
 
+(ert-deftest tired-copy-relative-path-uses-buffer-directory ()
+  "Relative copies drop the shown directory prefix."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (tired-copy-relative-path)
+    (should (equal (current-kill 0) "alpha.txt\nbeta.txt"))))
+
+(ert-deftest tired-copy-relative-path-handles-inserted-entries ()
+  "Relative copies work inside inserted sections."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (tired-select-toggle)
+    (tired-copy-relative-path)
+    (should (equal (current-kill 0) "sub/inner.txt"))))
+
+(ert-deftest tired-copy-project-path-uses-project-root ()
+  "Project copies are relative to the project root."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "alpha.txt")
+    (cl-letf (((symbol-function 'tired--project-root)
+               (lambda () root)))
+      (tired-copy-project-path))
+    (should (equal (current-kill 0) "alpha.txt"))))
+
+(ert-deftest tired-copy-project-path-without-project-errors ()
+  "Project copies signal an error outside a project."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (require 'project)
+    (cl-letf (((symbol-function 'project-current)
+               (lambda (&rest _) nil)))
+      (should-error (tired-copy-project-path) :type 'user-error))))
+
 (ert-deftest tired-open-file-visits-the-file ()
   "Opening a file entry visits that file."
   (tired-tests--with-fixture
