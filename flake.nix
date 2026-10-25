@@ -30,11 +30,13 @@
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [ treefmt-nix.flakeModule ];
-      # Elisp is architecture-independent, so evaluate on every Linux
-      # architecture at no extra cost.
+      # Pure Elisp, so every supported architecture works and Darwin
+      # needs no extra native dependencies.
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
       ];
 
       perSystem =
@@ -57,7 +59,6 @@
             # melpaBuild byte-compiles with warnings as errors and runs
             # the ERT suite in checkPhase, so the package is the check.
             default = tired;
-            inherit tired;
             # checkdoc and package-lint catch what compilation cannot.
             lint = pkgs.callPackage ./nix/lint.nix { inherit (tired) src; };
           };

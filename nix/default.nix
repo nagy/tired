@@ -51,6 +51,7 @@ melpaBuild {
     license = lib.licenses.agpl3Plus;
     homepage = "https://github.com/nagy/tired";
     maintainers = with lib.maintainers; [ nagy ];
-    platforms = lib.platforms.linux;
+    # Pure Elisp and no native dependency, so Linux and Darwin both work.
+    platforms = lib.platforms.unix;
   };
 }

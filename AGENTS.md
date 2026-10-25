@@ -32,6 +32,9 @@ Nix outputs:
   Its `checkPhase` byte-compiles with warnings as errors and runs the
   ERT suite.
 - `checks.lint` is `nix/lint.nix`: `package-lint` and `checkdoc`.
+- Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
+  `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix` because
+  the package is pure Elisp.
 - `devShells.default` provides Emacs, git and the treefmt wrapper.
 - `nix fmt` formats the repo through `treefmt-nix` (nixfmt only).
   `treefmt-nix.flakeModule` also adds the `checks.treefmt` check.

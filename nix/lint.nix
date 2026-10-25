@@ -12,6 +12,7 @@ pkgs.runCommand "tired-lint"
       (pkgs.emacsPackages.emacsWithPackages (epkgs: [ epkgs.package-lint ]))
     ];
     inherit src;
+    meta.description = "tired checkdoc and package-lint checks";
   }
   ''
     export HOME=$TMPDIR
