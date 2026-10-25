@@ -30,8 +30,14 @@ _Avoid_: Marks, region, highlight
 
 **Target**:
 The entries a command acts on.  The target is the selection when it is
-non-empty, otherwise the entry at point.
+non-empty, else the active region, else the entry at point.
 _Avoid_: Operand, subject
+
+**Region**:
+The Emacs region between mark and point, used as a target source.
+Every row between the two positions joins, except the row on which the
+region ends.
+_Avoid_: Range, block, span
 
 **Filter**:
 A name substring that limits which entries appear in the listing.

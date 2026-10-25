@@ -76,7 +76,9 @@
 ;;
 ;; The selection is transient.  It lives only in the buffer, it is
 ;; pruned when entries disappear, and commands that act on it clear
-;; it afterwards.
+;; it afterwards.  An active region is a second target source: mark a
+;; row, move with S-<down> or the mouse, and every row in between
+;; becomes a target.  A non-empty selection wins over the region.
 ;;
 ;; File operations act at once, without a confirmation question.
 ;; Delete moves each path into `tired-trash-directory', and a copy or
@@ -652,6 +654,8 @@ column from the current listing."
                       (length tired--selection)
                       (file-size-human-readable (tired--selection-size)))
             "0 selected")
+          (when (and (null tired--selection) (use-region-p))
+            (format ", %d in region" (length (tired--region-entries))))
           (when tired--narrowed
             ", narrowed")
           (when (and (hash-table-p tired--inserted)
@@ -669,6 +673,13 @@ column from the current listing."
   "Return the entry at point, or nil when there is none."
   (let ((id (tabulated-list-get-id)))
     (and (tired-entry-p id) id)))
+
+(defun tired--entry-at (position)
+  "Return the entry on the line at POSITION, or nil."
+  (when position
+    (save-excursion
+      (goto-char position)
+      (tired--entry-at-point))))
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
@@ -692,11 +703,30 @@ column from the current listing."
         (setq total (+ total (or (tired-entry-size entry) 0)))))))
 
 (defun tired--selection-targets ()
-  "Return the selected entries in display order, or the entry at point."
-  (let ((selected (tired--selected-entries)))
-    (or selected
-        (let ((entry (tired--entry-at-point)))
-          (when entry (list entry))))))
+  "Return the entries a command acts on.
+The transient selection comes first, then the active region, then
+the entry at point."
+  (or (tired--selected-entries)
+      (tired--region-entries)
+      (let ((entry (tired--entry-at-point)))
+        (when entry (list entry)))))
+
+(defun tired--region-entries ()
+  "Return the entries inside the active region, or nil.
+The row on which the region ends does not join, because the region
+ends at the beginning of that line."
+  (when (use-region-p)
+    (let ((end (region-end))
+          entries)
+      (save-excursion
+        (goto-char (region-beginning))
+        (beginning-of-line)
+        (while (and (not (eobp))
+                    (< (line-beginning-position) end))
+          (let ((entry (tired--entry-at-point)))
+            (when entry (push entry entries)))
+          (forward-line 1)))
+      (nreverse entries))))
 
 (defun tired--entry-for-path (path)
   "Return the listed entry for PATH, or nil."
@@ -758,6 +788,15 @@ first line when PATH is absent."
   "Move point to the line showing ENTRY, when it is still listed."
   (when (tired-entry-p entry)
     (tired--goto-path (tired-entry-path entry))))
+
+(defun tired--restore-mark (entry)
+  "Put the mark back on the row of ENTRY, when the listing shows it.
+Keep the region active, or inactive, as it was before the redraw."
+  (when (and entry
+             (marker-position (mark-marker)))
+    (save-excursion
+      (when (tired--goto-path (tired-entry-path entry))
+        (set-marker (mark-marker) (point) (current-buffer))))))
 
 (defun tired--watch-directories ()
   "Return the directories that need a file notification watch.
@@ -843,7 +882,8 @@ listing refreshes once."
   "Redraw the listing from the cached entries.
 WINDOW is the window that shows the buffer, or nil for the selected
 window.  Its width limits the name column."
-  (let ((point-entry (tired--entry-at-point)))
+  (let* ((point-entry (tired--entry-at-point))
+         (mark-entry (tired--entry-at (mark t))))
     (setq tabulated-list-format
           (tired--format (tired--name-column-width window)))
     (tabulated-list-init-header)
@@ -854,6 +894,7 @@ window.  Its width limits the name column."
                 tired--header-base))
     (tabulated-list-print t)
     (tired--goto-entry point-entry)
+    (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--sync-watches)
     (force-mode-line-update)))
@@ -1189,6 +1230,7 @@ empty filter removes it."
     (unless targets
       (user-error "No entry at point"))
     (kill-new (mapconcat #'tired-entry-name targets "\n"))
+    (deactivate-mark)
     (message "Copied %d name%s"
              (length targets)
              (if (= (length targets) 1) "" "s"))))
@@ -1204,6 +1246,7 @@ DESCRIPTION names the copied form in the echo area."
                   (funcall function (tired-entry-path entry)))
                 targets
                 "\n"))
+    (deactivate-mark)
     (message "Copied %d %s%s"
              (length targets)
              description
@@ -1362,6 +1405,7 @@ Report the failures and refresh the listing."
             (error (push (cons path (error-message-string err)) failures)))))
       (tired-select-none)
       (tired-refresh)
+      (deactivate-mark)
       (tired--report-operation description done (nreverse failures)))))
 
 (defun tired--undo-copy (created trashed)
@@ -1585,7 +1629,8 @@ cleared afterwards."
       (tired--open-entry entry other-window))
     (when (buffer-live-p origin)
       (with-current-buffer origin
-        (tired-select-none)))))
+        (tired-select-none)
+        (deactivate-mark)))))
 
 (defun tired-open-other-window ()
   "Visit the target entries in another window."

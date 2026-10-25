@@ -958,6 +958,98 @@ a symlink, and removes every tired buffer it opened."
     (tired-select-all)
     (should (= 8 (length (tired--selection-targets))))))
 
+(defun tired-tests--mark-row-range (first last)
+  "Activate a region that covers the rows FIRST through LAST.
+The region ends at the beginning of the row after LAST, so LAST
+joins the range."
+  (transient-mark-mode 1)
+  (tired-tests--goto first)
+  (beginning-of-line)
+  (push-mark (point) t t)
+  (tired-tests--goto last)
+  (forward-line 1)
+  (beginning-of-line))
+
+(defun tired-tests--target-names ()
+  "Return the names of the current targets."
+  (mapcar #'tired-entry-name (tired--selection-targets)))
+
+(ert-deftest tired-region-drives-targets ()
+  "The active region sets the targets when the selection is empty."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (should (equal (tired-tests--target-names) '("alpha.txt" "beta.txt")))
+    (should-not tired--selection)))
+
+(ert-deftest tired-region-excludes-the-row-at-its-end ()
+  "A region that ends at a line start leaves that row out."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (transient-mark-mode 1)
+    (tired-tests--goto "alpha.txt")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (tired-tests--goto "link")
+    (beginning-of-line)
+    (should (equal (tired-tests--target-names) '("alpha.txt" "beta.txt")))))
+
+(ert-deftest tired-region-loses-to-the-selection ()
+  "An explicit selection wins over the active region."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--goto "link")
+    (tired-select-toggle)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (should (equal (tired-tests--target-names) '("link")))))
+
+(ert-deftest tired-region-copy-path-copies-every-row ()
+  "Copy acts on the region and then deactivates it."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-copy-path)
+    (should (equal (current-kill 0)
+                   (concat (expand-file-name "alpha.txt" root)
+                           "\n"
+                           (expand-file-name "beta.txt" root))))
+    (should-not (use-region-p))))
+
+(ert-deftest tired-region-delete-acts-on-every-row ()
+  "Delete removes every row of the region."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+      (tired-delete)
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should-not (file-exists-p (expand-file-name "beta.txt" root)))
+      (should-not (use-region-p)))))
+
+(ert-deftest tired-redraw-restores-the-mark-by-path ()
+  "Refresh and sort keep the mark on the same entry."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (transient-mark-mode 1)
+    (tired-tests--goto "beta.txt")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (tired-refresh)
+    (should (equal (tired-entry-name (tired--entry-at (mark t)))
+                   "beta.txt"))
+    (tired-sort 'size)
+    (should (equal (tired-entry-name (tired--entry-at (mark t)))
+                   "beta.txt"))))
+
+(ert-deftest tired-mode-line-counts-the-region ()
+  "The mode line reports the region when the selection is empty."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (should (string-match-p "2 in region" (tired--mode-line)))
+    (tired-select-toggle)
+    (should-not (string-match-p "in region" (tired--mode-line)))))
+
 (ert-deftest tired-select-invert-flips-visible-entries ()
   "Inverting selects every visible entry that was not selected."
   (tired-tests--with-fixture

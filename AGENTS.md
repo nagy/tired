@@ -93,7 +93,9 @@ Data flow:
    `tired--selection`.  The selection is buffer-local and transient.
    `tired--selection-set` mirrors it as a hash set for O(1) membership.
    `tired--selection-size` sums the sizes of selected non-directory
-   entries for the mode line.
+   entries for the mode line.  `tired--selection-targets` reads the
+   selection first, then `tired--region-entries`, then the entry at
+   point; a command that acts on the region deactivates it.
 7. `tired--entry-visible-p` applies the narrow snapshot, then the
    dotfile setting, then the name filter.  `tired--narrow-ancestors`
    adds the directories that contain a narrowed path, so inserted
@@ -205,6 +207,22 @@ column and redraws.
 
 - Flake sources are git-tracked files only.  `git add` a new file before
   `nix flake check`, or the build cannot see it.
+- `tabulated-list-print` erases the buffer, so it strands the mark on
+  line one.  `tired--redraw` records `(tired--entry-at (mark t))`
+  before the print and `tired--restore-mark` sets the mark marker back
+  on that entry's row.  Set the mark marker with `set-marker`, not
+  `push-mark`, or every redraw grows the mark ring.  A deleted row
+  leaves the mark where the reprint put it.
+- `tired--region-entries` keeps the row on which the region ends out,
+  because the region ends at that line's start.  Without the test the
+  shift-down gesture would cover one row too many.  The region needs
+  `transient-mark-mode`; batch Emacs starts with the mode off, so the
+  region tests enable it first.
+- Two highlights coexist: `region` for the active region and
+  `tired-selected-face` for the selection.  Keep the selection
+  precedence in `tired--selection-targets`; do not merge the region
+  into `tired--selection`, because `tired--redraw` and
+  `tired--prune-selection` would then prune rows the region covers.
 - `tired-trash-directory` lives on `temporary-file-directory`, which is
   usually another file system than the listed directory.  `rename-file`
   then copies the bytes and deletes the source, so a delete of a large
