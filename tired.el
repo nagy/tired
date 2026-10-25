@@ -59,6 +59,12 @@
 ;;   w       copy the full path of the targets
 ;;   W       copy paths relative to the shown directory
 ;;   P       copy paths relative to the project root
+;;   c       copy the targets into a directory
+;;   m       move the targets
+;;   D       delete the targets, without a confirmation
+;;   +       create a directory
+;;   M-t     create an empty file
+;;   U       undo the last file operation
 ;;   q       bury the buffer
 ;;
 ;; Related commands:
@@ -71,6 +77,13 @@
 ;; The selection is transient.  It lives only in the buffer, it is
 ;; pruned when entries disappear, and commands that act on it clear
 ;; it afterwards.
+;;
+;; File operations act at once, without a confirmation question.
+;; Delete moves each path into `tired-trash-directory', and a copy or
+;; a move that replaces a path puts the old path there first.  Each
+;; command hands an undo function to `tired-undo-push-functions', so a
+;; global undo system can own the action.  While that hook is empty,
+;; `tired-undo' pops the action from `tired--undo-actions'.
 
 ;;; Code:
 
@@ -1225,6 +1238,328 @@ Signal a user error when no project contains it."
      (lambda (path) (file-relative-name path root))
      "project path")))
 
+(defvar tired--trash-counter 0
+  "Counter that makes names inside the session trash unique.")
+
+(defvar tired-trash-directory
+  (expand-file-name (format "tired-trash-%d-%d/" (user-uid) (emacs-pid))
+                    temporary-file-directory)
+  "Directory that holds paths removed during this session.
+`tired-delete' moves its targets here.  A copy or a move that
+replaces a path puts the old path here first.  `tired-undo' moves
+the path back.  The directory lives under the variable
+`temporary-file-directory', so the system clears it when the
+machine reboots.  Emacs copies the path and then deletes it when
+the trash sits on another file system.")
+
+(defvar tired-undo-push-functions nil
+  "Abnormal hook that takes every undoable tired action.
+Each function receives DESCRIPTION and FUNCTION.  DESCRIPTION is a
+string that names the action.  FUNCTION reverts the action and
+takes no argument.  While the hook is empty, tired keeps the
+action on `tired--undo-actions' for `tired-undo'.")
+
+(defvar tired--undo-actions nil
+  "Stack of undo actions as (DESCRIPTION . FUNCTION) conses.
+The most recent action comes first.")
+
+(defun tired--path-exists-p (path)
+  "Return non-nil when PATH exists, including a dangling symbolic link."
+  (or (file-exists-p path) (file-symlink-p path)))
+
+(defun tired--trash-name (path)
+  "Return an unused name for PATH inside `tired-trash-directory'."
+  (let* ((name (file-name-nondirectory (directory-file-name path)))
+         (base (expand-file-name name tired-trash-directory))
+         (stamp (format-time-string "%Y%m%dT%H%M%S"))
+         candidate)
+    (while (progn
+             (setq tired--trash-counter (1+ tired--trash-counter))
+             (setq candidate (format "%s.%s-%d" base stamp tired--trash-counter))
+             (tired--path-exists-p candidate)))
+    candidate))
+
+(defun tired--trash-move (path)
+  "Move PATH into `tired-trash-directory' and return the new path."
+  (make-directory tired-trash-directory t)
+  (let ((target (tired--trash-name path)))
+    (rename-file path target)
+    target))
+
+(defun tired--restore-path (trash-path original)
+  "Move TRASH-PATH back to ORIGINAL.
+Do nothing when TRASH-PATH is gone, or when ORIGINAL exists again.
+Return non-nil when the move happened."
+  (when (and (tired--path-exists-p trash-path)
+             (not (tired--path-exists-p original)))
+    (make-directory (file-name-directory original) t)
+    (rename-file trash-path original)
+    t))
+
+(defun tired--refresh-buffers ()
+  "Refresh every live tired buffer."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (and (derived-mode-p 'tired-mode) tired--directory)
+        (ignore-errors (tired-refresh))))))
+
+(defun tired--push-undo (description function)
+  "Hand FUNCTION to the undo stack as the undo of DESCRIPTION.
+When `tired-undo-push-functions' is non-nil, those functions take
+the action.  Otherwise the action joins `tired--undo-actions'."
+  (if tired-undo-push-functions
+      (run-hook-with-args 'tired-undo-push-functions description function)
+    (push (cons description function) tired--undo-actions))
+  description)
+
+(defun tired-undo ()
+  "Undo the last file operation of this session.
+`tired-undo-push-functions' owns the action when the hook is
+non-nil, so the command signals a user error then."
+  (interactive)
+  (let ((action (pop tired--undo-actions)))
+    (unless action
+      (user-error "Nothing for tired to undo"))
+    (funcall (cdr action))
+    (message "Undid %s" (car action))))
+
+(defun tired--report-operation (description done failures)
+  "Announce DONE successes and FAILURES for DESCRIPTION."
+  (if (null failures)
+      (message "%s %d %s" description done (if (= done 1) "entry" "entries"))
+    (display-warning
+     'tired
+     (concat (format "%s: %d done, %d failed."
+                     description done (length failures))
+             (mapconcat (lambda (failure)
+                          (format "\n  %s: %s" (car failure) (cdr failure)))
+                        failures ""))
+     :warning)
+    (message "%s: %d done, %d failed.  See *Warnings*"
+             description done (length failures))))
+
+(defun tired--apply-to-targets (description function)
+  "Call FUNCTION with each target path and then clear the selection.
+DESCRIPTION names the action.  Deepest paths run first, so a
+selection that holds a directory and its children reaches the
+children first.  A failure does not stop the remaining targets.
+Report the failures and refresh the listing."
+  (let ((targets (tired--selection-targets)))
+    (unless targets
+      (user-error "No entry at point"))
+    (setq targets
+          (sort (copy-sequence targets)
+                (lambda (a b)
+                  (> (length (tired-entry-path a))
+                     (length (tired-entry-path b))))))
+    (let ((done 0)
+          (failures nil))
+      (dolist (entry targets)
+        (let ((path (tired-entry-path entry)))
+          (condition-case err
+              (progn (funcall function path)
+                     (setq done (1+ done)))
+            (error (push (cons path (error-message-string err)) failures)))))
+      (tired-select-none)
+      (tired-refresh)
+      (tired--report-operation description done (nreverse failures)))))
+
+(defun tired--undo-copy (created trashed)
+  "Remove CREATED paths and put TRASHED paths back."
+  (dolist (path created)
+    (when (tired--path-exists-p path)
+      (ignore-errors (tired--trash-move path))))
+  (dolist (pair trashed)
+    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
+  (tired--refresh-buffers))
+
+(defun tired--undo-move (moved trashed)
+  "Move every MOVED pair back and put TRASHED paths back."
+  (dolist (pair moved)
+    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
+  (dolist (pair trashed)
+    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
+  (tired--refresh-buffers))
+
+(defun tired--undo-delete (trashed)
+  "Put every TRASHED pair back, parents first."
+  (dolist (pair trashed)
+    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
+  (tired--refresh-buffers))
+
+(defun tired--replace-with-trash (path)
+  "Move PATH into the session trash and return the new name.
+Return nil when PATH is absent."
+  (when (tired--path-exists-p path)
+    (tired--trash-move path)))
+
+(defun tired-copy (directory)
+  "Copy the targets into DIRECTORY.
+An existing destination goes to `tired-trash-directory' first, so
+`tired-undo' puts it back.  The copy never calls a shell."
+  (interactive (list (read-directory-name "Copy targets to: " tired--directory)))
+  (let ((destination (file-name-as-directory (expand-file-name directory)))
+        (created nil)
+        (trashed nil))
+    (tired--apply-to-targets
+     "Copied"
+     (lambda (path)
+       (let* ((name (file-name-nondirectory (directory-file-name path)))
+              (target (expand-file-name name destination))
+              (previous (tired--replace-with-trash target)))
+         (when previous
+           (push (cons previous target) trashed))
+         (condition-case err
+             (if (file-directory-p path)
+                 (copy-directory path target)
+               (copy-file path target))
+           (error
+            (when previous
+              (setq trashed (delete (assoc previous trashed) trashed))
+              (ignore-errors (tired--restore-path previous target)))
+            (signal (car err) (cdr err))))
+         (push target created))))
+    (when created
+      (tired--push-undo
+       (format "copy into %s" (abbreviate-file-name destination))
+       (lambda () (tired--undo-copy created trashed))))))
+
+(defun tired-move (destination)
+  "Move the targets to DESTINATION.
+With one target, DESTINATION is the new full path, unless it names
+an existing directory.  With several targets, DESTINATION is a
+directory.  An existing destination goes to
+`tired-trash-directory' first, so `tired-undo' puts it back.  The
+move never calls a shell."
+  (interactive
+   (let ((targets (tired--selection-targets)))
+     (unless targets
+       (user-error "No entry at point"))
+     (if (null (cdr targets))
+         (list (read-file-name
+                "Move to: " tired--directory nil nil
+                (file-name-nondirectory
+                 (directory-file-name (tired-entry-path (car targets))))))
+       (list (read-directory-name "Move targets to: " tired--directory)))))
+  (let* ((targets (tired--selection-targets))
+         (single (null (cdr targets)))
+         (destination (expand-file-name destination))
+         (full-path (and single
+                         (not (file-directory-p destination))
+                         (not (directory-name-p destination))
+                         destination))
+         (directory (file-name-as-directory
+                     (or (and full-path (file-name-directory full-path))
+                         destination)))
+         (moved nil)
+         (trashed nil))
+    (tired--apply-to-targets
+     "Moved"
+     (lambda (path)
+       (let* ((target (or full-path
+                          (expand-file-name
+                           (file-name-nondirectory (directory-file-name path))
+                           directory)))
+              (previous (unless (equal (directory-file-name path)
+                                       (directory-file-name target))
+                          (tired--replace-with-trash target))))
+         (when previous
+           (push (cons previous target) trashed))
+         (condition-case err
+             (unless (equal (directory-file-name path)
+                            (directory-file-name target))
+               (rename-file path target))
+           (error
+            (when previous
+              (setq trashed (delete (assoc previous trashed) trashed))
+              (ignore-errors (tired--restore-path previous target)))
+            (signal (car err) (cdr err))))
+         (push (cons target path) moved))))
+    (when moved
+      (tired--push-undo
+       (format "move to %s" (abbreviate-file-name directory))
+       (lambda () (tired--undo-move moved trashed))))))
+
+(defun tired-delete ()
+  "Move the targets into `tired-trash-directory'.
+The command asks no question and never calls a shell.  A later
+`tired-undo' moves the paths back."
+  (interactive)
+  (let ((trashed nil))
+    (tired--apply-to-targets
+     "Deleted"
+     (lambda (path)
+       (push (cons (tired--trash-move path) path) trashed)))
+    (when trashed
+      (tired--push-undo
+       (format "delete of %d %s" (length trashed)
+               (if (= (length trashed) 1) "entry" "entries"))
+       (lambda () (tired--undo-delete trashed))))))
+
+(defun tired--creation-directory ()
+  "Return the directory that creation commands start from.
+The entry at point decides: a directory row starts inside that
+directory, every other row starts at the shown directory."
+  (let ((entry (tired--entry-at-point)))
+    (if (and entry (file-directory-p (tired-entry-path entry)))
+        (file-name-as-directory (tired-entry-path entry))
+      tired--directory)))
+
+(defun tired-mkdir (directory)
+  "Create DIRECTORY and its parents.
+The command asks no confirmation.  A later `tired-undo' removes the
+new directory and the parents that it created."
+  (interactive
+   (list (read-file-name "Create directory: " (tired--creation-directory)
+                         nil nil)))
+  (let* ((path (directory-file-name (expand-file-name directory)))
+         (parent (file-name-directory path))
+         (missing nil))
+    (when (tired--path-exists-p path)
+      (user-error "%s already exists" path))
+    (while (and parent (not (file-directory-p parent)))
+      (push (directory-file-name parent) missing)
+      (setq parent (file-name-directory (directory-file-name parent))))
+    (make-directory path t)
+    (tired--push-undo
+     (format "mkdir %s" (abbreviate-file-name path))
+     (lambda ()
+       (when (file-directory-p path)
+         (tired--trash-move path))
+       (dolist (dir (reverse missing))
+         (when (and (file-directory-p dir)
+                    (null (directory-files dir nil "\\`[^.]")))
+           (delete-directory dir)))))
+    (tired-refresh)
+    (message "Created %s" (abbreviate-file-name path))))
+
+(defun tired-touch (file)
+  "Create FILE, or update its modification time when it exists.
+The command asks no confirmation.  A later `tired-undo' removes a
+created file, or puts the earlier modification time back."
+  (interactive
+   (list (read-file-name "Create empty file: " (tired--creation-directory)
+                         nil nil)))
+  (let* ((path (expand-file-name file))
+         (exists (tired--path-exists-p path))
+         (mtime (and exists
+                     (file-regular-p path)
+                     (file-attribute-modification-time (file-attributes path)))))
+    (when (file-directory-p path)
+      (user-error "%s is a directory" path))
+    (write-region "" nil path nil 'silent)
+    (tired--push-undo
+     (format "touch %s" (abbreviate-file-name path))
+     (lambda ()
+       (cond ((not exists)
+              (when (tired--path-exists-p path)
+                (tired--trash-move path)))
+             (mtime
+              (set-file-times path mtime)))))
+    (tired-refresh)
+    (message "%s %s" (if exists "Touched" "Created")
+             (abbreviate-file-name path))))
+
 (defun tired--open-entry (entry &optional other-window)
   "Visit ENTRY, in another window when OTHER-WINDOW is non-nil.
 Directories, including symlinks to directories, open in a tired
@@ -1285,6 +1620,12 @@ cleared afterwards."
   "w" #'tired-copy-path
   "W" #'tired-copy-relative-path
   "P" #'tired-copy-project-path
+  "c" #'tired-copy
+  "m" #'tired-move
+  "D" #'tired-delete
+  "+" #'tired-mkdir
+  "M-t" #'tired-touch
+  "U" #'tired-undo
   "q" #'quit-window)
 
 ;;;###autoload

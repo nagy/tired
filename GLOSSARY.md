@@ -51,3 +51,15 @@ _Avoid_: Monitor, poll
 One row that represents a directory chain whose subtree holds exactly
 one file.
 _Avoid_: Flatten, fold, compress
+
+**Trash**:
+The session directory `tired-trash-directory' under
+`temporary-file-directory' that holds every path a tired command
+removed.  Undo moves a path back from the trash.
+_Avoid_: Wastebasket, deleted items
+
+**Undo action**:
+A description and a function that reverts one file operation.  Tired
+hands the pair to `tired-undo-push-functions' or keeps it on
+`tired--undo-actions' for `tired-undo'.
+_Avoid_: Rollback, revert, history entry

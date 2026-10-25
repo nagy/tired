@@ -12,8 +12,10 @@ Minimum Emacs version is 31.1.  Emacs 31 changed
 in `tabulated-list-entries`; a list row is a type error.  The code uses
 that vector form, so earlier Emacs versions cannot run it.
 
-The package is read-only by design.  File operations, inline rename
-editing and asynchronous loading live in git-bug issues, not in code.
+The file commands act at once, without a confirmation question.  A
+removed path goes into a session trash, so `tired-undo` reverses the
+last operation.  Inline rename editing and asynchronous loading live
+in git-bug issues, not in code.
 
 ## Build & test
 
@@ -137,6 +139,32 @@ Copy commands:
   raises `user-error` outside a project.  All three share
   `tired--copy-targets`, so selection handling stays in one place.
 
+File operations:
+
+- `tired--apply-to-targets` runs one function over the targets, deepest
+  path first, then clears the selection, refreshes and reports.  A
+  failing target does not stop the rest, and
+  `tired--report-operation` lists every failure in the *Warnings*
+  buffer.
+- `tired-delete` moves each target to `tired-trash-directory`.
+  `tired-copy` and `tired-move` move a replaced destination there
+  first, and roll the destination back when the copy or the move
+  fails.  `tired--trash-name` appends a timestamp and a counter, so a
+  repeated name stays unique.  `tired--restore-path` moves a path back
+  and does nothing when the original exists again.
+- `tired-copy` prompts for a directory.  `tired-move` prompts for a
+  full path when it has one target and the typed name is no directory,
+  otherwise for a directory.  `tired-mkdir` and `tired-touch` start
+  from `tired--creation-directory`: the directory at point when point
+  names one, else `tired--directory`.
+- Every command calls `tired--push-undo` with a description and one
+  function that reverts the whole operation.  The function moves
+  paths back from the trash, so no byte is destroyed.  With
+  `tired-undo-push-functions` set, that hook takes the pair and
+  `tired--undo-actions` stays empty.  Otherwise `tired-undo` pops and
+  runs the pair, and `tired--refresh-buffers` redraws every tired
+  buffer.
+
 Sorting is implemented in `tired--lessp`, not in `tabulated-list`,
 because tabulated-list cannot keep directories first while sorting other
 columns.  `tabulated-list-format` therefore marks every column as
@@ -169,11 +197,32 @@ column and redraws.
   recolour a half-typed name.  Recolour one name cell region instead if
   that feature wants it.
 - AGPL3+ header in every Elisp file.
+- File commands never ask a confirmation question and never call a
+  shell.  Removal goes through `tired--trash-move`, never through
+  `delete-file` or `delete-directory`, so undo can restore the path.
 
 ## Gotchas
 
 - Flake sources are git-tracked files only.  `git add` a new file before
   `nix flake check`, or the build cannot see it.
+- `tired-trash-directory` lives on `temporary-file-directory`, which is
+  usually another file system than the listed directory.  `rename-file`
+  then copies the bytes and deletes the source, so a delete of a large
+  tree costs a copy.  A path deleted before a reboot does not come back.
+- Undo of an overwriting copy leaves the replaced copy in the trash.
+  Undo of a delete leaves nothing behind.  Do not try to empty the
+  trash inside an undo function: the trash holds the previous bytes of
+  the very path the undo restores.
+- `tired--apply-to-targets` sorts targets deepest first, so a selection
+  that holds a directory and its child deletes the child first.  The
+  undo function walks the trash list in push order, parents first,
+  because a child cannot move back before its parent exists.
+- `tired--restore-path` stays silent when the original path exists
+  again, so a user file at that path never loses its bytes.
+- `tired-tests--with-trash` binds a private trash directory, an empty
+  undo stack and an empty `tired-undo-push-functions'.  Use it for any
+  test that removes or replaces a path, or the test writes into the
+  real session trash.
 - `tired--selection` stores absolute paths.  Pruning looks the path up
   in the table of its own directory, so a renamed or recreated file
   drops out of the selection.  `tired--selection-set` mirrors the list,

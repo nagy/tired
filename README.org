@@ -13,6 +13,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Directories first, then sort by name, size, modification time or mode
 - Insert subdirectories as nested, indented sections
 - Transient selection that file commands act on
+- Copy, move, delete, mkdir and touch without a confirmation question
+- Delete and replaced targets go to a session trash, so undo restores them
 - Live name filter and hidden file toggle
 - Automatic refresh on directory changes, debounced
 - Single-child directory chains collapse into their one file
@@ -68,6 +70,12 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =w=     | =tired-copy-path=          | Copy full paths of the targets           |
 | =W=     | =tired-copy-relative-path= | Copy paths relative to the shown dir     |
 | =P=     | =tired-copy-project-path=  | Copy paths relative to the project root  |
+| =c=     | =tired-copy=               | Copy the targets into a directory        |
+| =m=     | =tired-move=               | Move the targets                         |
+| =D=     | =tired-delete=             | Delete the targets, no confirmation      |
+| =+=     | =tired-mkdir=              | Create a directory                       |
+| =M-t=   | =tired-touch=              | Create an empty file                     |
+| =U=     | =tired-undo=               | Undo the last file operation             |
 | =q=     | =quit-window=              | Bury the buffer                          |
 
 The selection is transient.  It belongs to the buffer and it is pruned
@@ -85,6 +93,35 @@ signals an error when the shown directory belongs to no project.
 directories that contain the selected entries.  =N= again widens it.
 The mode line shows the total size of the selected non-directory
 entries next to the selection count.
+
+* File operations
+
+=c= copies the targets into a directory.  =m= moves them.  With one
+target, =m= reads the destination as a new full path, so a rename
+works.  With several targets, =m= reads a destination directory.
+=D= deletes the targets.  =+= creates a directory, =M-t= creates an
+empty file.  None of the commands asks for a confirmation.  None of
+them calls a shell.
+
+Every command reports the paths that failed and continues with the
+rest of the targets.  The *Warnings* buffer holds the full list.
+
+The commands move a removed path into =tired-trash-directory=, a
+directory under =temporary-file-directory= that the current Emacs
+session owns.  The system removes it on reboot.  A copy or a move
+that replaces a path moves the old path there first, so no bytes get
+lost.  =U= undoes the last operation.  A reversed delete, copy, move,
+mkdir or touch puts the paths back where they were:
+
+#+begin_src elisp
+  (setq tired-trash-directory
+        (expand-file-name "my-trash/" temporary-file-directory))
+#+end_src
+
+A global undo system can take these actions.  Add a function to
+=tired-undo-push-functions=.  It receives a description and a
+function that reverts the action.  While the hook is empty, tired
+keeps the action on a stack for =tired-undo=.
 
 * Directory sizes
 

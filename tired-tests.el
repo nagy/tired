@@ -301,6 +301,313 @@ a symlink, and removes every tired buffer it opened."
                (lambda (&rest _) nil)))
       (should-error (tired-copy-project-path) :type 'user-error))))
 
+(defmacro tired-tests--with-trash (&rest body)
+  "Run BODY with a private trash directory and an empty undo stack."
+  (declare (indent 0) (debug t))
+  `(let ((tired-trash-directory
+          (file-name-as-directory (make-temp-file "tired-tests-trash-" t)))
+         (tired-undo-push-functions nil)
+         (tired--undo-actions nil)
+         (tired--trash-counter 0))
+     (unwind-protect
+         (progn ,@body)
+       (delete-directory tired-trash-directory t))))
+
+(defun tired-tests--trash-entries ()
+  "Return the names inside `tired-trash-directory'."
+  (directory-files tired-trash-directory nil "\\`[^.]"))
+
+(defun tired-tests--contents (path)
+  "Return the text inside PATH."
+  (with-temp-buffer
+    (insert-file-contents path)
+    (buffer-string)))
+
+(ert-deftest tired-copy-file-into-a-directory ()
+  "Copy puts a copy of the target file into the destination."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (tired-copy destination)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "abc"))
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" root))
+                       "abc"))
+        (should-not tired--selection)))))
+
+(ert-deftest tired-copy-directory-recursively ()
+  "Copy of a directory keeps its subtree."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "sub")
+        (tired-copy destination)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "sub/inner.txt" destination))
+                       "inner"))
+        (should (equal (tired-tests--contents
+                        (expand-file-name "sub/deep/leaf.txt" destination))
+                       "leaf"))))))
+
+(ert-deftest tired-copy-mixed-selection ()
+  "Copy handles a selection that mixes files and directories."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "sub")
+        (tired-select-toggle)
+        (tired-copy destination)
+        (should (file-regular-p (expand-file-name "alpha.txt" destination)))
+        (should (file-directory-p (expand-file-name "sub" destination)))
+        (should-not tired--selection)))))
+
+(ert-deftest tired-copy-overwrite-moves-old-file-to-trash ()
+  "Copy puts a replaced destination into the trash and undo restores it."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (with-temp-file (expand-file-name "alpha.txt" destination)
+          (insert "old"))
+        (tired-tests--goto "alpha.txt")
+        (tired-copy destination)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "abc"))
+        (should (= 1 (length (tired-tests--trash-entries))))
+        (tired-undo)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "old"))
+        (should (= 1 (length (tired-tests--trash-entries))))
+        (should (equal (tired-tests--contents
+                        (expand-file-name
+                         (car (tired-tests--trash-entries))
+                         tired-trash-directory))
+                       "abc"))))))
+
+(ert-deftest tired-move-single-target-renames ()
+  "Move with one target reads the destination as the new full path."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "renamed.txt" root)))
+        (tired-tests--goto "alpha.txt")
+        (tired-move destination)
+        (should (file-regular-p destination))
+        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+        (tired-undo)
+        (should (file-regular-p (expand-file-name "alpha.txt" root)))
+        (should-not (file-exists-p destination))))))
+
+(ert-deftest tired-move-many-targets-into-a-directory ()
+  "Move with several targets reads the destination as a directory."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (tired-move destination)
+        (should (file-regular-p (expand-file-name "alpha.txt" destination)))
+        (should (file-regular-p (expand-file-name "beta.txt" destination)))
+        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+        (tired-undo)
+        (should (file-regular-p (expand-file-name "alpha.txt" root)))
+        (should (file-regular-p (expand-file-name "beta.txt" root)))
+        (should-not (file-exists-p (expand-file-name "alpha.txt" destination)))))))
+
+(ert-deftest tired-move-overwrite-moves-old-file-to-trash ()
+  "Move puts a replaced destination into the trash and undo restores it."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (with-temp-file (expand-file-name "alpha.txt" destination)
+          (insert "old"))
+        (tired-tests--goto "alpha.txt")
+        (tired-move (expand-file-name "alpha.txt" destination))
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "abc"))
+        (tired-undo)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "old"))
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" root))
+                       "abc"))))))
+
+(ert-deftest tired-delete-moves-target-to-trash ()
+  "Delete removes the target from the listing and keeps it in the trash."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should (= 1 (length (tired-tests--trash-entries))))
+      (should-not (member "alpha.txt" (tired-tests--names)))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-delete-handles-nested-selection ()
+  "Delete removes a directory and its selected child, and undo restores both."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (tired-tests--goto "sub")
+      (tired-select-toggle)
+      (tired-insert-subdir)
+      (tired-tests--goto "inner.txt")
+      (tired-select-toggle)
+      (tired-delete)
+      (should-not (file-exists-p (expand-file-name "sub" root)))
+      (should (= 2 (length (tired-tests--trash-entries))))
+      (tired-undo)
+      (should (equal (tired-tests--contents
+                      (expand-file-name "sub/inner.txt" root))
+                     "inner"))
+      (should (equal (tired-tests--contents
+                      (expand-file-name "sub/deep/leaf.txt" root))
+                     "leaf")))))
+
+(ert-deftest tired-delete-clears-selection-and-refreshes ()
+  "Delete clears the selection and drops the rows of the removed entries."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (tired-tests--goto "alpha.txt")
+      (tired-select-toggle)
+      (tired-tests--goto "beta.txt")
+      (tired-select-toggle)
+      (tired-delete)
+      (should-not tired--selection)
+      (should-not (member "alpha.txt" (tired-tests--names)))
+      (should-not (member "beta.txt" (tired-tests--names))))))
+
+(ert-deftest tired-delete-reports-partial-failure ()
+  "A vanished target does not stop the remaining targets."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (tired-tests--goto "alpha.txt")
+      (tired-select-toggle)
+      (tired-tests--goto "beta.txt")
+      (tired-select-toggle)
+      (delete-file (expand-file-name "beta.txt" root))
+      (let ((reported nil))
+        (cl-letf (((symbol-function 'display-warning)
+                   (lambda (_type message &rest _)
+                     (setq reported message))))
+          (tired-delete))
+        (should (string-match-p "beta\\.txt" reported))
+        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+        (tired-undo)
+        (should (file-regular-p (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-mkdir-creates-a-directory ()
+  "mkdir creates the directory and undo removes it again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((path (expand-file-name "fresh/nested" root)))
+        (tired-mkdir path)
+        (should (file-directory-p path))
+        (should (member "fresh" (tired-tests--names)))
+        (tired-undo)
+        (should-not (file-exists-p (expand-file-name "fresh" root)))))))
+
+(ert-deftest tired-mkdir-rejects-an-existing-path ()
+  "mkdir refuses a path that already exists."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (should-error (tired-mkdir (expand-file-name "alpha.txt" root))
+                    :type 'user-error))))
+
+(ert-deftest tired-touch-creates-an-empty-file ()
+  "touch creates a file and undo removes it again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((path (expand-file-name "fresh.txt" root)))
+        (tired-touch path)
+        (should (file-regular-p path))
+        (should (equal (tired-tests--contents path) ""))
+        (should (member "fresh.txt" (tired-tests--names)))
+        (tired-undo)
+        (should-not (file-exists-p path))))))
+
+(ert-deftest tired-touch-restores-modification-time-on-undo ()
+  "touch undoes the timestamp change of an existing file."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let* ((path (expand-file-name "alpha.txt" root))
+             (past (encode-time 0 0 12 1 1 2020)))
+        (set-file-times path past)
+        (tired-touch path)
+        (should (time-less-p past (file-attribute-modification-time
+                                   (file-attributes path))))
+        (tired-undo)
+        (should (time-equal-p
+                 (file-attribute-modification-time (file-attributes path))
+                 past))))))
+
+(ert-deftest tired-delete-hands-undo-to-the-hook ()
+  "A non-nil `tired-undo-push-functions' takes the action."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (let ((captured nil))
+        (let ((tired-undo-push-functions
+               (list (lambda (description function)
+                       (push (cons description function) captured)))))
+          (tired-tests--goto "alpha.txt")
+          (tired-delete))
+        (should-not tired--undo-actions)
+        (should (string-match-p "delete" (caar captured)))
+        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+        (funcall (cdar captured))
+        (should (file-regular-p (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-undo-without-actions-errors ()
+  "Undo signals a user error when the stack is empty."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (should-error (tired-undo) :type 'user-error))))
+
+(ert-deftest tired-delete-keeps-no-shell-dependency ()
+  "Delete moves the target into the trash without a shell command."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-find-directory root)
+      (tired-tests--goto "beta.txt")
+      (cl-letf (((symbol-function 'shell-command) #'ignore)
+                ((symbol-function 'call-process) #'ignore))
+        (tired-delete))
+      (should-not (file-exists-p (expand-file-name "beta.txt" root)))
+      (should (string-prefix-p "beta.txt" (car (tired-tests--trash-entries)))))))
+
+
 (ert-deftest tired-open-file-visits-the-file ()
   "Opening a file entry visits that file."
   (tired-tests--with-fixture
