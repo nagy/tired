@@ -146,6 +146,49 @@ a symlink, and removes every tired buffer it opened."
     (tired-sort 'name)
     (should (equal (car (tired-tests--names)) "sub"))))
 
+(ert-deftest tired-name-column-grows-to-longest-name ()
+  "The name column width follows the longest visible entry."
+  (tired-tests--with-fixture
+    (let ((name (make-string 30 ?n)))
+      (with-temp-file (expand-file-name name) (insert "x")))
+    (tired-find-directory root)
+    (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 100)))
+      (tired-refresh))
+    (should (= 30 (nth 1 (aref tabulated-list-format 0))))))
+
+(ert-deftest tired-name-column-keeps-minimum-width ()
+  "Short names do not shrink the name column below the minimum."
+  (tired-tests--with-fixture
+    (tired-find-directory root)
+    (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 100)))
+      (tired-refresh))
+    (should (= tired-name-column-min-width
+               (nth 1 (aref tabulated-list-format 0))))))
+
+(ert-deftest tired-name-column-clamps-to-window ()
+  "A long name does not push the other columns off screen."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name (make-string 80 ?x)) (insert "x"))
+    (tired-find-directory root)
+    (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 80)))
+      (tired-refresh))
+    (should (= (- 80 tired--fixed-column-width)
+               (nth 1 (aref tabulated-list-format 0))))))
+
+(ert-deftest tired-window-size-change-resizes-name-column ()
+  "A window size change updates the name column width."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
+    (tired-find-directory root)
+    (let ((width 120))
+      (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width)))
+        (tired-refresh)
+        (should (= 60 (nth 1 (aref tabulated-list-format 0))))
+        (setq width 80)
+        (tired--window-size-changed (selected-frame))
+        (should (= (- 80 tired--fixed-column-width)
+                   (nth 1 (aref tabulated-list-format 0))))))))
+
 (ert-deftest tired-filter-matches-case-insensitively ()
   "A filter keeps only matching names."
   (tired-tests--with-fixture

@@ -93,17 +93,22 @@ Data flow:
    directory, and drops inserted directories that vanished.
    `tired-refresh` calls it, prunes dead selection and narrow paths and
    then calls `tired--redraw`.
-9. `tired--redraw` rebuilds the header line, prints the rows, restores
-   point by entry path and reapplies the selection overlays.  Commands
-   that only change the view (filter, sort, dotfiles, insert) call
-   `tired--redraw`, not `tired-refresh`.
-10. `tired--sync-watches` keeps one file notification watch per shown
+9. `tired--redraw` sizes the name column from the longest visible row,
+   clamped between `tired-name-column-min-width' and the window width
+   minus the fixed columns.  It rebuilds the header line, prints the
+   rows, restores point by entry path and reapplies the selection
+   overlays.  Commands that only change the view (filter, sort,
+   dotfiles, insert) call `tired--redraw`, not `tired-refresh`.
+10. `tired--window-size-changed` runs from `window-size-change-functions`
+    and redraws every visited tired buffer with the width of its own
+    window, so a resize refits the name column.
+11. `tired--sync-watches` keeps one file notification watch per shown
     directory: the root plus every inserted directory.  It runs at the
     end of `tired--redraw`, so inserting or removing a section updates
     the watch set.  A notification schedules `tired--auto-revert-now`
     through a debounce timer.  The callback captures its buffer, and
     `kill-buffer-hook` calls `tired--stop-watching`.
-11. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
+12. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
    value, C-g restores the previous filter.
 

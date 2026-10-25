@@ -117,6 +117,12 @@ uses the file attributes, and keeps the directory's position in the
 listing.  The row acts as the file for open, selection and copy."
   :type 'boolean)
 
+(defcustom tired-name-column-min-width 20
+  "Minimum width of the name column.
+The column grows to the longest visible name, up to the window width
+minus the other columns."
+  :type 'integer)
+
 (defface tired-directory-face
   '((t :inherit font-lock-function-name-face))
   "Face for directory names.")
@@ -402,10 +408,36 @@ Emacs 31 requires a vector of column descriptors here; a list makes
       (concat label (if tired--sort-flip " v" " ^"))
     label))
 
-(defun tired--format ()
-  "Return `tabulated-list-format' for the current sort state."
+(defconst tired--fixed-column-width 38
+  "Width of the columns that keep their size.
+This sum covers the size, modification time and mode columns, the
+left padding and the space after the name column.")
+
+(defun tired--name-column-width (&optional window)
+  "Return the width of the name column for WINDOW.
+Grow the column to the longest visible name.  Clamp it to at least
+`tired-name-column-min-width' and to the window width minus the
+other columns."
+  (let ((longest (string-width (tired--column-label "Name" 'name)))
+        (available (- (window-width (or window (selected-window)))
+                      tired--fixed-column-width)))
+    (when tired--directory
+      (dolist (row (tired--display-rows t))
+        (setq longest
+              (max longest
+                   (+ (* 2 (cdr row))
+                      (string-width (tired--name-cell (car row))))))))
+    (max tired-name-column-min-width
+         (min longest available))))
+
+(defun tired--format (&optional name-width)
+  "Return `tabulated-list-format' for the current sort state.
+NAME-WIDTH is the width of the name column, or nil to size the
+column from the current listing."
   (vector
-   (list (tired--column-label "Name" 'name) 40 nil)
+   (list (tired--column-label "Name" 'name)
+         (or name-width (tired--name-column-width))
+         nil)
    (list (tired--column-label "Size" 'size) 9 nil :right-align t)
    (list (tired--column-label "Modified" 'modified) 17 nil)
    (list (tired--column-label "Mode" 'mode) 10 nil)))
@@ -600,10 +632,13 @@ listing refreshes once."
   (force-mode-line-update)
   (message "Auto-revert %s" (if tired-auto-revert "on" "off")))
 
-(defun tired--redraw ()
-  "Redraw the listing from the cached entries."
+(defun tired--redraw (&optional window)
+  "Redraw the listing from the cached entries.
+WINDOW is the window that shows the buffer, or nil for the selected
+window.  Its width limits the name column."
   (let ((point-entry (tired--entry-at-point)))
-    (setq tabulated-list-format (tired--format))
+    (setq tabulated-list-format
+          (tired--format (tired--name-column-width window)))
     (tabulated-list-init-header)
     (setq tired--header-base header-line-format)
     (setq header-line-format
@@ -615,6 +650,17 @@ listing refreshes once."
     (tired--apply-selection-overlays)
     (tired--sync-watches)
     (force-mode-line-update)))
+
+(defun tired--window-size-changed (frame)
+  "Redraw tired listings in the windows of FRAME.
+A resize changes the space available to the name column."
+  (dolist (window (window-list frame 'nomini))
+    (with-current-buffer (window-buffer window)
+      (when (and (derived-mode-p 'tired-mode)
+                 tired--directory)
+        (tired--redraw window)))))
+
+(add-hook 'window-size-change-functions #'tired--window-size-changed)
 
 (defun tired--forget-inserted (directory)
   "Remove DIRECTORY and its inserted descendants from the listing."

@@ -9,6 +9,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 * Features
 
 - Column listing with name, size, modification time and permission mode
+- Name column fits the longest entry, clamped to the window width
 - Directories first, then sort by name, size, modification time or mode
 - Insert subdirectories as nested, indented sections
 - Transient selection that file commands act on
