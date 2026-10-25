@@ -46,3 +46,8 @@ _Avoid_: Filter, focus
 A file notification registration for one shown directory, used by
 automatic refresh.
 _Avoid_: Monitor, poll
+
+**Collapse**:
+One row that represents a directory chain whose subtree holds exactly
+one file.
+_Avoid_: Flatten, fold, compress

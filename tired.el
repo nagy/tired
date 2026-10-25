@@ -50,6 +50,7 @@
 ;;   ~       invert the selection over the visible entries
 ;;   N       narrow to the selection, or widen again
 ;;   A       toggle automatic refresh on directory changes
+;;   C       toggle single-child directory collapse
 ;;   f       narrow the listing while typing a filter
 ;;   F       remove the filter
 ;;   .       toggle hidden entries
@@ -108,6 +109,13 @@ See `format-time-string' for the available conversions."
 A delay coalesces bursts of events, such as a build writing many
 files, into one refresh."
   :type 'number)
+
+(defcustom tired-collapse-single-child t
+  "When non-nil, collapse a directory that leads to exactly one file.
+The collapsed row shows the path relative to the listed directory,
+uses the file attributes, and keeps the directory's position in the
+listing.  The row acts as the file for open, selection and copy."
+  :type 'boolean)
 
 (defface tired-directory-face
   '((t :inherit font-lock-function-name-face))
@@ -175,6 +183,11 @@ One of `name', `size', `modified' or `mode'.")
 (defvar-local tired--revert-timer nil
   "Pending `tired-auto-revert-delay' timer, or nil.")
 
+(defvar-local tired--collapse-cache nil
+  "Hash table mapping a directory to its single-entry chain result.
+The value is the final file entry, or nil when the chain does not
+collapse.  Refresh clears the cache.")
+
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
 The table maps file names to `tired-entry' structs."
@@ -209,7 +222,9 @@ The table maps file names to `tired-entry' structs."
     (and (or (not tired--narrowed)
              (member (tired-entry-path entry) tired--narrowed))
          (or (not tired--hide-dotfiles)
-             (not (string-prefix-p "." (tired-entry-name entry))))
+             (not (string-prefix-p "."
+                                   (file-name-nondirectory
+                                    (tired-entry-name entry)))))
          (or (null tired--filter)
              (string-match-p (regexp-quote tired--filter)
                              (tired-entry-name entry))))))
@@ -263,23 +278,86 @@ the dotfile setting."
                table))
     (sort entries #'tired--lessp)))
 
+(defun tired--directory-names (directory)
+  "Return the entry names of DIRECTORY, or nil when unreadable."
+  (ignore-errors
+    (seq-remove (lambda (name) (member name '("." "..")))
+                (directory-files directory nil nil t))))
+
+(defun tired--single-entry-file (directory)
+  "Return the file entry at the end of a single-entry chain under DIRECTORY.
+Return nil when a level holds zero or several entries.  The chain
+stops at the first branch.  A visited-truename set stops cycles."
+  (let ((current (directory-file-name (expand-file-name directory)))
+        (seen (make-hash-table :test #'equal))
+        (result nil)
+        (searching t))
+    (while searching
+      (let ((key (file-truename current)))
+        (if (gethash key seen)
+            (setq searching nil)
+          (puthash key t seen)
+          (let ((names (tired--directory-names current)))
+            (if (/= 1 (length names))
+                (setq searching nil)
+              (let ((entry (tired--make-entry current (car names))))
+                (if (tired-entry-dirp entry)
+                    (setq current (tired-entry-path entry))
+                  (setq result entry
+                        searching nil))))))))
+    result))
+
+(defun tired--collapsed-file (directory)
+  "Return the cached chain result for DIRECTORY, or nil."
+  (let* ((key (directory-file-name (expand-file-name directory)))
+         (cached (and (hash-table-p tired--collapse-cache)
+                      (gethash key tired--collapse-cache 'missing))))
+    (if (not (eq cached 'missing))
+        cached
+      (let ((file (tired--single-entry-file key)))
+        (when (hash-table-p tired--collapse-cache)
+          (puthash key file tired--collapse-cache))
+        file))))
+
+(defun tired--collapsed-display-entry (directory entry)
+  "Return a display clone for ENTRY when it collapses to one file.
+DIRECTORY is the listed parent and provides the relative name.  The
+result is nil when ENTRY is not a directory or does not collapse."
+  (when (and tired-collapse-single-child
+             (tired-entry-dirp entry))
+    (let ((file (tired--collapsed-file (tired-entry-path entry))))
+      (when file
+        (let ((clone (copy-tired-entry file)))
+          (setf (tired-entry-name clone)
+                (file-relative-name (tired-entry-path file) directory))
+          clone)))))
+
 (defun tired--display-rows (&optional visible-only)
   "Return (ENTRY . DEPTH) conses for the whole listing.
 Children of inserted directories follow the row of their parent and
-indent by DEPTH.  With VISIBLE-ONLY, skip hidden and filtered
-entries.  A directory seen twice through symlinks appears once."
+indent by DEPTH.  With VISIBLE-ONLY, skip hidden, filtered and
+narrowed-out entries.  A directory seen twice through symlinks
+appears once.  A directory that leads to exactly one file collapses
+into one row for that file, keeping the directory's sort position."
   (let ((rows nil)
         (seen (make-hash-table :test #'equal)))
-    (cl-labels ((walk (directory depth)
-                  (let ((key (file-truename directory)))
-                    (unless (gethash key seen)
-                      (puthash key t seen)
-                      (dolist (entry (tired--sorted-directory-entries
-                                      directory visible-only))
-                        (push (cons entry depth) rows)
-                        (when (and (tired-entry-dirp entry)
-                                   (tired--inserted-p (tired-entry-path entry)))
-                          (walk (tired-entry-path entry) (1+ depth))))))))
+    (cl-labels
+        ((walk (directory depth)
+           (let ((key (file-truename directory)))
+             (unless (gethash key seen)
+               (puthash key t seen)
+               (dolist (entry (tired--sorted-directory-entries directory nil))
+                 (let* ((collapsed
+                         (tired--collapsed-display-entry directory entry))
+                        (display (or collapsed entry)))
+                   (when (or (not visible-only)
+                             (tired--entry-visible-p display))
+                     (push (cons display depth) rows))
+                   (when (and (not collapsed)
+                              (tired-entry-dirp entry)
+                              (tired--inserted-p
+                               (tired-entry-path entry)))
+                     (walk (tired-entry-path entry) (1+ depth)))))))))
       (walk tired--directory 0))
     (nreverse rows)))
 
@@ -357,6 +435,8 @@ Emacs 31 requires a vector of column descriptors here; a list makes
             (format ", %d inserted" (hash-table-count tired--inserted)))
           (when tired--filter
             (format ", filter: %s" tired--filter))
+          (unless tired-collapse-single-child
+            ", no collapse")
           (unless tired-auto-revert
             ", auto-revert off")
           "]"))
@@ -555,6 +635,7 @@ listing refreshes once."
   "Read the root directory and every inserted directory.
 Drop inserted directories that no longer exist."
   (setq tired--tables (make-hash-table :test #'equal))
+  (setq tired--collapse-cache (make-hash-table :test #'equal))
   (puthash (directory-file-name tired--directory)
            (tired--read-entries tired--directory)
            tired--tables)
@@ -828,6 +909,16 @@ empty filter removes it."
   (setq tired--hide-dotfiles (not tired--hide-dotfiles))
   (tired--redraw))
 
+(defun tired-toggle-collapse ()
+  "Toggle collapsing of single-entry directory chains in this buffer."
+  (interactive)
+  (setq-local tired-collapse-single-child
+              (not tired-collapse-single-child))
+  (setq tired--collapse-cache (make-hash-table :test #'equal))
+  (tired--redraw)
+  (message "Single-child collapse %s"
+           (if tired-collapse-single-child "on" "off")))
+
 (defun tired-copy-name ()
   "Copy the names of the targets to the kill ring."
   (interactive)
@@ -936,6 +1027,7 @@ cleared afterwards."
   "~" #'tired-select-invert
   "N" #'tired-toggle-narrow
   "A" #'tired-toggle-auto-revert
+  "C" #'tired-toggle-collapse
   "f" #'tired-filter
   "F" #'tired-clear-filter
   "." #'tired-toggle-dotfiles
@@ -963,6 +1055,7 @@ The directory contents come from `directory-files' and
   (setq-local tired--inserted (make-hash-table :test #'equal))
   (setq-local tired--watches nil)
   (setq-local tired--revert-timer nil)
+  (setq-local tired--collapse-cache (make-hash-table :test #'equal))
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)

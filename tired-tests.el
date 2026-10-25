@@ -365,8 +365,9 @@ a symlink, and removes every tired buffer it opened."
     (tired-find-directory root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
+    ;; `deep` holds one file, so it collapses into one row.
     (should (equal (tired-tests--names)
-                   '("sub" "deep" "inner.txt" "loop"
+                   '("sub" "deep/leaf.txt" "inner.txt" "loop"
                      ".hidden" "alpha.txt" "beta.txt" "link")))
     (should (equal (mapcar #'cdr (tired--display-rows t))
                    '(0 1 1 1 0 0 0 0)))
@@ -381,16 +382,17 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-insert-subdir-nests ()
   "Inserting a child section keeps the tree order."
   (tired-tests--with-fixture
-    (tired-find-directory root)
-    (tired-tests--goto "sub")
-    (tired-insert-subdir)
-    (tired-tests--goto "deep")
-    (tired-insert-subdir)
-    (should (equal (tired-tests--names)
-                   '("sub" "deep" "leaf.txt" "inner.txt" "loop"
-                     ".hidden" "alpha.txt" "beta.txt" "link")))
-    (should (equal (mapcar #'cdr (tired--display-rows t))
-                   '(0 1 2 1 1 0 0 0 0)))))
+    (let ((tired-collapse-single-child nil))
+      (tired-find-directory root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-tests--goto "deep")
+      (tired-insert-subdir)
+      (should (equal (tired-tests--names)
+                     '("sub" "deep" "leaf.txt" "inner.txt" "loop"
+                       ".hidden" "alpha.txt" "beta.txt" "link")))
+      (should (equal (mapcar #'cdr (tired--display-rows t))
+                     '(0 1 2 1 1 0 0 0 0))))))
 
 (ert-deftest tired-toggle-subdir-removes-children ()
   "TAB inserts and removes one section."
@@ -406,16 +408,17 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-remove-subdir-drops-descendants ()
   "Removing a section drops nested inserted sections as well."
   (tired-tests--with-fixture
-    (tired-find-directory root)
-    (tired-tests--goto "sub")
-    (tired-insert-subdir)
-    (tired-tests--goto "deep")
-    (tired-insert-subdir)
-    (tired-tests--goto "sub")
-    (tired-remove-subdir)
-    (should (= 0 (hash-table-count tired--inserted)))
-    (should (equal (tired-tests--names)
-                   '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))))
+    (let ((tired-collapse-single-child nil))
+      (tired-find-directory root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-tests--goto "deep")
+      (tired-insert-subdir)
+      (tired-tests--goto "sub")
+      (tired-remove-subdir)
+      (should (= 0 (hash-table-count tired--inserted)))
+      (should (equal (tired-tests--names)
+                     '("sub" ".hidden" "alpha.txt" "beta.txt" "link"))))))
 
 (ert-deftest tired-insert-subdir-rejects-files ()
   "Inserting a file signals a user error."
@@ -602,6 +605,79 @@ a symlink, and removes every tired buffer it opened."
       (tired-find-directory root)
       (tired--file-changed '(descriptor created "/tmp/.#alpha.txt"))
       (should-not tired--revert-timer))))
+
+(ert-deftest tired-collapse-single-entry-chain ()
+  "A chain of single-entry directories becomes one file row."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/file.txt")
+      (insert "abc"))
+    (tired-find-directory root)
+    (should (equal (car (tired-tests--names)) "chain/a/b/file.txt"))
+    (should-not (member "chain" (tired-tests--names)))
+    (let* ((row (seq-find
+                 (lambda (row)
+                   (equal (tired-entry-name (car row))
+                          "chain/a/b/file.txt"))
+                 (tired--display-rows t)))
+           (entry (car row)))
+      (should (= 3 (tired-entry-size entry)))
+      (should-not (tired-entry-dirp entry))
+      (should (equal (tired-entry-path entry)
+                     (expand-file-name "chain/a/b/file.txt" root))))
+    (tired-tests--goto "chain/a/b/file.txt")
+    (tired-open)
+    (should (equal (buffer-file-name)
+                   (expand-file-name "chain/a/b/file.txt" root)))
+    (kill-buffer (current-buffer))))
+
+(ert-deftest tired-collapse-requires-exactly-one-entry ()
+  "A branch or an empty directory does not collapse."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "branch/x" root) t)
+    (with-temp-file (expand-file-name "branch/x/one.txt") (insert "1"))
+    (with-temp-file (expand-file-name "branch/x/two.txt") (insert "2"))
+    (make-directory (expand-file-name "empty" root))
+    (tired-find-directory root)
+    (should (member "branch" (tired-tests--names)))
+    (should (member "empty" (tired-tests--names)))
+    (should-not (member "branch/x/one.txt" (tired-tests--names)))))
+
+(ert-deftest tired-collapse-hidden-final-file ()
+  "A collapsed chain whose file is hidden follows the dotfile toggle."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "secret/a" root) t)
+    (with-temp-file (expand-file-name "secret/a/.hiddenfile") (insert "h"))
+    (tired-find-directory root)
+    (should (member "secret/a/.hiddenfile" (tired-tests--names)))
+    (tired-toggle-dotfiles)
+    (should-not (member "secret/a/.hiddenfile" (tired-tests--names)))))
+
+(ert-deftest tired-toggle-collapse-shows-real-rows ()
+  "C switches between the collapsed row and the directory row."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/file.txt") (insert "abc"))
+    (tired-find-directory root)
+    (should (member "chain/a/b/file.txt" (tired-tests--names)))
+    (tired-toggle-collapse)
+    (should (member "chain" (tired-tests--names)))
+    (should-not (member "chain/a/b/file.txt" (tired-tests--names)))
+    (should (string-match-p "no collapse" (tired--mode-line)))
+    (tired-toggle-collapse)
+    (should (member "chain/a/b/file.txt" (tired-tests--names)))))
+
+(ert-deftest tired-collapse-cache-clears-on-refresh ()
+  "Refresh notices when a former chain gains a second entry."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/file.txt") (insert "abc"))
+    (tired-find-directory root)
+    (should (member "chain/a/b/file.txt" (tired-tests--names)))
+    (with-temp-file (expand-file-name "chain/a/b/other.txt") (insert "x"))
+    (tired-refresh)
+    (should (member "chain" (tired-tests--names)))
+    (should-not (member "chain/a/b/file.txt" (tired-tests--names)))))
 
 (provide 'tired-tests)
 

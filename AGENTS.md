@@ -73,6 +73,11 @@ Data flow:
 4. `tired--display-rows` walks the tree depth-first and returns
    `(ENTRY . DEPTH)` conses.  Children of inserted directories follow
    their parent row.  A `file-truename` set stops symlink cycles.
+   `tired--collapsed-display-entry` replaces a directory entry with a
+   clone of the file at the end of a single-entry chain.  Collapse runs
+   after sorting, so the row keeps the directory's position.  Results
+   cache in `tired--collapse-cache`, keyed by the chain's top directory.
+   A collapsed row suppresses its inserted children.
 5. `tired--tabulated-entries` renders each row as a vector, indented by
    its depth.  Emacs 31 requires the vector form.
    `tabulated-list-print` draws the buffer.
@@ -153,6 +158,17 @@ column and redraws.
   Do not add nil-ID header rows for dired parity.
 - `tired--display-rows` guards recursion with `file-truename`.  Without
   it, a symlink back to an ancestor loops forever.
+- Single-child collapse inspects every listed directory on refresh, so a
+  root with many subdirectories costs one `directory-files` call each.
+  The cache lives only until the next refresh.  Chain inspection stops at
+  the first branch, and hidden files count as entries.
+- A collapsed row stores the real file path with a relative display name.
+  Selection, narrow and copy use the path.  Do not derive the file from
+  the display name.
+- Collapse runs after `tired--sorted-directory-entries`, so a collapsed
+  row keeps the top directory's sort position.  Sorting by size or time
+  therefore orders it by the directory's values while the columns show
+  the file's values.  This trade-off keeps the tree stable.
 - Auto-revert watches cover the root directory and inserted directories
   only.  Collapsed sections stay unwatched on purpose.  Emacs lock files
   (`.#name`) are filtered out of the notification callback.
