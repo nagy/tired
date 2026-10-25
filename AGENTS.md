@@ -32,8 +32,9 @@ Nix outputs:
   Its `checkPhase` byte-compiles with warnings as errors and runs the
   ERT suite.
 - `checks.lint` is `nix/lint.nix`: `package-lint` and `checkdoc`.
-- `devShells.default` provides Emacs and git.
-- `formatter` is `nixfmt`.
+- `devShells.default` provides Emacs, git and the treefmt wrapper.
+- `nix fmt` formats the repo through `treefmt-nix` (nixfmt only).
+  `treefmt-nix.flakeModule` also adds the `checks.treefmt` check.
 
 Version string is `0.1.0-unstable-<commit date>`, derived from the flake
 source info.  A commit changes the version.

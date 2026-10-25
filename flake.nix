@@ -4,11 +4,16 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    # Single formatter entry point for the repo: `nix fmt` formats every
+    # tracked file with the configured programs.
+    treefmt-nix.url = "github:numtide/treefmt-nix";
+    treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
     inputs@{
       flake-parts,
+      treefmt-nix,
       ...
     }:
     let
@@ -24,6 +29,7 @@
       version = "0.1.0-unstable-${commitDate}";
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [ treefmt-nix.flakeModule ];
       # Elisp is architecture-independent, so evaluate on every Linux
       # architecture at no extra cost.
       systems = [
@@ -60,10 +66,16 @@
             packages = [
               pkgs.emacs
               pkgs.git
+              config.treefmt.build.wrapper
             ];
           };
 
-          formatter = pkgs.nixfmt;
+          # nixfmt only.  Elisp has no formatter in this stack, so the
+          # sources stay untouched and checkdoc/package-lint guard style.
+          treefmt = {
+            projectRootFile = "flake.nix";
+            programs.nixfmt.enable = true;
+          };
         };
     };
 }
