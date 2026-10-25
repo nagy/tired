@@ -5,7 +5,8 @@
 Single-file Emacs package (`tired.el`) that shows a directory as a
 `tabulated-list-mode` buffer.  Entries come from `directory-files` and
 `file-attributes`.  The package never parses `ls -l` output.  Entry
-points are `M-x tired` and `M-x tired-find-directory`.  A file row can
+points are `M-x tired`, `M-x tired-other-window` and
+`tired-noselect`.  A file row can
 also expand into the sections that a handler extracts from that file,
 so the listing holds two row types: `tired-entry` and `tired-section`.
 
@@ -164,6 +165,13 @@ Data flow:
 12. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
    value, C-g restores the previous filter.
+13. `tired-noselect` returns the buffer for a directory and never shows
+   it.  It sets `tired--directory` and `default-directory`, then
+   refreshes.  Loading the library adds it to
+   `find-directory-functions`, so `find-file` and the commands built on
+   it visit a directory in tired.  dired stays in the list as the
+   fallback.  `tired` and `tired-other-window` call it and show the
+   buffer.  `tired-find-directory` no longer exists.
 
 Jumping and bookmarks:
 
@@ -227,7 +235,8 @@ column and redraws.
 
 - Package prefix is `tired-`.  Private helpers use `tired--`.
 - Public commands carry an `;;;###autoload` cookie only when they are
-  entry points (`tired`, `tired-mode`, `tired-find-directory`).
+  entry points (`tired`, `tired-other-window`, `tired-mode`,
+  `tired-noselect`).
 - Every function has a docstring.  `checkdoc` must pass.
 - Byte-compilation with warnings as errors must pass.
 - Faces inherit from Dired faces (`dired-directory`, `dired-symlink`,
@@ -284,6 +293,14 @@ column and redraws.
   because visiting the raw file at line 1 is meaningless.
 
 ## Gotchas
+
+- `tired-noselect` owns `default-directory`.  Do not set it in
+  `tired-mode`, because the mode runs before the directory is known.
+  Without it a relative `find-file`, `compile` or `project-current`
+  resolves against the buffer that created the listing.
+- The buffer name keys the directory, so `tired-noselect` reuses the
+  buffer through `tired--buffer-name`.  A renamed buffer would make a
+  second buffer for the same directory.
 
 - A listing row is either a `tired-entry` or a `tired-section`.  Use
   `tired--row-at-point` and `tired--row-key`, not `tired-entry-p`

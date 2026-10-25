@@ -128,21 +128,44 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-mode-is-derived-from-tabulated-list-mode ()
   "The major mode must inherit from `tabulated-list-mode'."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (should (derived-mode-p 'tired-mode 'tabulated-list-mode))
     (should (equal (tired--buffer-name root) (buffer-name)))))
+
+(ert-deftest tired-noselect-returns-buffer-without-display ()
+  "`tired-noselect' returns a buffer and keeps the window layout."
+  (tired-tests--with-fixture
+    (let ((buffer (tired-noselect root)))
+      (should (buffer-live-p buffer))
+      (should (equal (tired--buffer-name root) (buffer-name buffer)))
+      (should (eq 'tired-mode (buffer-local-value 'major-mode buffer)))
+      (should (equal root (buffer-local-value 'default-directory buffer)))
+      (should-not (get-buffer-window buffer)))))
+
+(ert-deftest tired-noselect-reuses-its-buffer ()
+  "Two calls for one directory return the same buffer."
+  (tired-tests--with-fixture
+    (should (eq (tired-noselect root) (tired-noselect root)))))
+
+(ert-deftest find-file-opens-a-directory-in-tired-mode ()
+  "Loading tired makes `find-file' visit a directory with tired."
+  (tired-tests--with-fixture
+    (should (memq #'tired-noselect find-directory-functions))
+    (with-current-buffer (find-file-noselect root)
+      (should (derived-mode-p 'tired-mode))
+      (should (equal root default-directory)))))
 
 (ert-deftest tired-listing-puts-directories-first ()
   "Directories sort before files, and files sort by name."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (should (equal (tired-tests--names)
                    '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))))
 
 (ert-deftest tired-entries-carry-file-attributes ()
   "Each entry records its type, size and mode."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let ((sub (tired-tests--entry "sub"))
           (alpha (tired-tests--entry "alpha.txt"))
           (link (tired-tests--entry "link")))
@@ -158,7 +181,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-toggle-dotfiles-hides-hidden-entries ()
   "Toggling dotfiles removes and restores hidden entries."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-toggle-dotfiles)
     (should (equal (tired-tests--names)
                    '("sub" "alpha.txt" "beta.txt" "link")))
@@ -168,7 +191,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-sort-by-size-toggles-direction ()
   "Sorting by size orders files by size and flips on repetition."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-sort 'size)
     (should (equal (tired-tests--names)
                    '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
@@ -179,7 +202,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-sort-by-name-keeps-directories-first ()
   "The name sort keeps directories first in both directions."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-sort 'name)
     (should (equal (car (tired-tests--names)) "sub"))
     (tired-sort 'name)
@@ -190,7 +213,7 @@ a symlink, and removes every tired buffer it opened."
   (tired-tests--with-fixture
     (let ((name (make-string 30 ?n)))
       (with-temp-file (expand-file-name name) (insert "x")))
-    (tired-find-directory root)
+    (tired root)
     (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 100)))
       (tired-refresh))
     (should (= 30 (nth 1 (aref tabulated-list-format 0))))))
@@ -198,7 +221,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-name-column-keeps-minimum-width ()
   "Short names do not shrink the name column below the minimum."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 100)))
       (tired-refresh))
     (should (= tired-name-column-min-width
@@ -208,7 +231,7 @@ a symlink, and removes every tired buffer it opened."
   "A long name does not push the other columns off screen."
   (tired-tests--with-fixture
     (with-temp-file (expand-file-name (make-string 80 ?x)) (insert "x"))
-    (tired-find-directory root)
+    (tired root)
     (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 80)))
       (tired-refresh))
     (should (= (- 80 tired--fixed-column-width)
@@ -218,7 +241,7 @@ a symlink, and removes every tired buffer it opened."
   "A window size change updates the name column width."
   (tired-tests--with-fixture
     (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
-    (tired-find-directory root)
+    (tired root)
     (let ((width 120))
       (cl-letf (((symbol-function 'window-width) (lambda (&rest _) width)))
         (tired-refresh)
@@ -231,7 +254,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-filter-matches-case-insensitively ()
   "A filter keeps only matching names."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired--apply-filter "BETA")
     (should (equal (tired-tests--names) '("beta.txt")))
     (tired-clear-filter)
@@ -240,7 +263,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-filter-command-commits-with-ret ()
   "RET in the live filter keeps the typed value."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (cl-letf (((symbol-function 'read-string)
                (lambda (&rest _) "BETA")))
       (tired-filter))
@@ -250,7 +273,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-filter-command-restores-on-quit ()
   "C-g in the live filter restores the previous filter."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired--apply-filter "beta")
     (cl-letf (((symbol-function 'read-string)
                (lambda (&rest _) (signal 'quit nil))))
@@ -261,7 +284,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-selection-drives-targets ()
   "Selecting an entry makes it the target of file commands."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "beta.txt")
     (tired-select-toggle)
     (should (equal (mapcar #'tired-entry-name (tired--selection-targets))
@@ -278,7 +301,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-select-all-selects-visible-entries ()
   "Selecting all covers exactly the visible entries."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-select-all)
     (should (= 5 (length tired--selection)))
     (should (equal (sort (mapcar #'tired-entry-name (tired--selection-targets))
@@ -288,7 +311,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-copy-path-joins-targets ()
   "Copying paths puts one path per line on the kill ring."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-select-toggle)
     (tired-tests--goto "beta.txt")
@@ -302,7 +325,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-copy-relative-path-uses-buffer-directory ()
   "Relative copies drop the shown directory prefix."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-select-toggle)
     (tired-tests--goto "beta.txt")
@@ -313,7 +336,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-copy-relative-path-handles-inserted-entries ()
   "Relative copies work inside inserted sections."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
     (tired-tests--goto "inner.txt")
@@ -324,7 +347,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-copy-project-path-uses-project-root ()
   "Project copies are relative to the project root."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (cl-letf (((symbol-function 'tired--project-root)
                (lambda () root)))
@@ -334,7 +357,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-copy-project-path-without-project-errors ()
   "Project copies signal an error outside a project."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (require 'project)
     (cl-letf (((symbol-function 'project-current)
                (lambda (&rest _) nil)))
@@ -366,7 +389,7 @@ a symlink, and removes every tired buffer it opened."
   "Copy puts a copy of the target file into the destination."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "out" root)))
         (make-directory destination)
         (tired-tests--goto "alpha.txt")
@@ -383,7 +406,7 @@ a symlink, and removes every tired buffer it opened."
   "Copy of a directory keeps its subtree."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "out" root)))
         (make-directory destination)
         (tired-tests--goto "sub")
@@ -399,7 +422,7 @@ a symlink, and removes every tired buffer it opened."
   "Copy handles a selection that mixes files and directories."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "out" root)))
         (make-directory destination)
         (tired-tests--goto "alpha.txt")
@@ -415,7 +438,7 @@ a symlink, and removes every tired buffer it opened."
   "Copy puts a replaced destination into the trash and undo restores it."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "out" root)))
         (make-directory destination)
         (with-temp-file (expand-file-name "alpha.txt" destination)
@@ -441,7 +464,7 @@ a symlink, and removes every tired buffer it opened."
   "Move with one target reads the destination as the new full path."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "renamed.txt" root)))
         (tired-tests--goto "alpha.txt")
         (tired-move destination)
@@ -455,7 +478,7 @@ a symlink, and removes every tired buffer it opened."
   "Move with several targets reads the destination as a directory."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "out" root)))
         (make-directory destination)
         (tired-tests--goto "alpha.txt")
@@ -475,7 +498,7 @@ a symlink, and removes every tired buffer it opened."
   "Move puts a replaced destination into the trash and undo restores it."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((destination (expand-file-name "out" root)))
         (make-directory destination)
         (with-temp-file (expand-file-name "alpha.txt" destination)
@@ -497,7 +520,7 @@ a symlink, and removes every tired buffer it opened."
   "Delete removes the target from the listing and keeps it in the trash."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "alpha.txt")
       (tired-delete)
       (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
@@ -510,7 +533,7 @@ a symlink, and removes every tired buffer it opened."
   "Delete removes a directory and its selected child, and undo restores both."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "sub")
       (tired-select-toggle)
       (tired-insert-subdir)
@@ -531,7 +554,7 @@ a symlink, and removes every tired buffer it opened."
   "Delete clears the selection and drops the rows of the removed entries."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "alpha.txt")
       (tired-select-toggle)
       (tired-tests--goto "beta.txt")
@@ -545,7 +568,7 @@ a symlink, and removes every tired buffer it opened."
   "A vanished target does not stop the remaining targets."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "alpha.txt")
       (tired-select-toggle)
       (tired-tests--goto "beta.txt")
@@ -565,7 +588,7 @@ a symlink, and removes every tired buffer it opened."
   "mkdir creates the directory and undo removes it again."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((path (expand-file-name "fresh/nested" root)))
         (tired-mkdir path)
         (should (file-directory-p path))
@@ -577,7 +600,7 @@ a symlink, and removes every tired buffer it opened."
   "mkdir refuses a path that already exists."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (should-error (tired-mkdir (expand-file-name "alpha.txt" root))
                     :type 'user-error))))
 
@@ -585,7 +608,7 @@ a symlink, and removes every tired buffer it opened."
   "touch creates a file and undo removes it again."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((path (expand-file-name "fresh.txt" root)))
         (tired-touch path)
         (should (file-regular-p path))
@@ -598,7 +621,7 @@ a symlink, and removes every tired buffer it opened."
   "touch undoes the timestamp change of an existing file."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let* ((path (expand-file-name "alpha.txt" root))
              (past (encode-time 0 0 12 1 1 2020)))
         (set-file-times path past)
@@ -614,7 +637,7 @@ a symlink, and removes every tired buffer it opened."
   "A non-nil `tired-undo-push-functions' takes the action."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (let ((captured nil))
         (let ((tired-undo-push-functions
                (list (lambda (description function)
@@ -631,14 +654,14 @@ a symlink, and removes every tired buffer it opened."
   "Undo signals a user error when the stack is empty."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (should-error (tired-undo) :type 'user-error))))
 
 (ert-deftest tired-delete-keeps-no-shell-dependency ()
   "Delete moves the target into the trash without a shell command."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "beta.txt")
       (cl-letf (((symbol-function 'shell-command) #'ignore)
                 ((symbol-function 'call-process) #'ignore))
@@ -650,7 +673,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-open-file-visits-the-file ()
   "Opening a file entry visits that file."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-open)
     (should (equal (buffer-file-name) (expand-file-name "alpha.txt" root)))
@@ -659,7 +682,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-open-directory-replaces-the-listing ()
   "Opening a directory entry shows it in a tired buffer."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let ((origin (current-buffer)))
       (tired-tests--goto "sub")
       (tired-open)
@@ -672,7 +695,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-refresh-prunes-deleted-selection ()
   "Refresh drops selected entries that no longer exist."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "beta.txt")
     (tired-select-toggle)
     (delete-file (expand-file-name "beta.txt" root))
@@ -683,7 +706,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-refresh-keeps-sort-and-point ()
   "Refresh keeps the sort order and the entry at point."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-sort 'size 'reverse)
     (tired-tests--goto "link")
     (tired-refresh)
@@ -694,7 +717,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-name-cell-shows-symlink-target ()
   "The name column of a symlink shows its target."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let ((cell (tired--name-cell (tired-tests--entry "link"))))
       (should (string-match-p " -> alpha\\.txt\\'" cell)))
     (should (string-suffix-p "/"
@@ -727,7 +750,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-name-cell-fontifies-names-like-dired ()
   "Directory, symlink and special names get the Dired face mapping."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (should (eq 'tired-directory-face
                 (tired-tests--cell-face (tired-tests--entry "sub"))))
     (should (eq 'tired-symlink-face
@@ -740,7 +763,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-size-cell-stays-empty-by-default ()
   "A directory shows no size unless `tired-directory-size' is on."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (should-not (default-value 'tired-directory-size))
     (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))
     (should (equal (file-size-human-readable 3)
@@ -750,7 +773,7 @@ a symlink, and removes every tired buffer it opened."
   "With `tired-directory-size' on, a directory sums its files."
   (tired-tests--with-fixture
     (let ((tired-directory-size t))
-      (tired-find-directory root)
+      (tired root)
       (should (equal (file-size-human-readable 9)
                      (tired--size-cell (tired-tests--entry "sub"))))
       (should (equal 9 (tired--directory-total
@@ -777,7 +800,7 @@ a symlink, and removes every tired buffer it opened."
   "A link that does not resolve gets the broken symlink face."
   (tired-tests--with-fixture
     (make-symbolic-link "missing.txt" (expand-file-name "dead"))
-    (tired-find-directory root)
+    (tired root)
     (let ((entry (tired-tests--entry "dead"))
           (cell nil))
       (should (tired-entry-broken entry))
@@ -791,7 +814,7 @@ a symlink, and removes every tired buffer it opened."
   "A name that matches `completion-ignored-extensions' gets the ignored face."
   (tired-tests--with-fixture
     (with-temp-file (expand-file-name "alpha.elc") (insert "x"))
-    (tired-find-directory root)
+    (tired root)
     (should (eq 'tired-ignored-face
                 (tired-tests--cell-face (tired-tests--entry "alpha.elc"))))
     (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
@@ -802,7 +825,7 @@ a symlink, and removes every tired buffer it opened."
   (tired-tests--with-fixture
     (let ((tired-name-faces '(("\\.txt\\'" . bold)
                               ("." . italic))))
-      (tired-find-directory root)
+      (tired root)
       (should (eq 'bold (tired-tests--cell-face
                          (tired-tests--entry "alpha.txt"))))
       (should (eq 'tired-directory-face
@@ -813,14 +836,14 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-name-face-defaults-to-nil ()
   "With no rule and no Dired face, a plain file keeps no face."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (should-not (default-value 'tired-name-faces))
     (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))))
 
 (ert-deftest tired-name-cell-sets-both-face-properties ()
   "A name cell carries `face' and `font-lock-face', so refontification keeps it."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let ((cell (tired--name-cell (tired-tests--entry "sub"))))
       (should (eq 'tired-directory-face (get-text-property 0 'face cell)))
       (should (eq 'tired-directory-face
@@ -829,7 +852,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-name-face-survives-font-lock ()
   "Font-lock refontification does not strip the directory face."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (setq-local font-lock-defaults
                 '((("alpha\\.txt\\>" (0 'bold)))))
     (let ((noninteractive nil))
@@ -850,7 +873,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-jump-from-file-buffer ()
   "Jumping from a file buffer opens its directory and marks the file."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-open)
     (let ((file-buffer (current-buffer)))
@@ -866,7 +889,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-jump-from-tired-buffer-goes-up ()
   "Jumping from a tired buffer opens the parent and marks the directory."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let ((origin (current-buffer)))
       (tired-tests--goto "sub")
       (tired-open)
@@ -886,7 +909,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-bookmark-round-trip ()
   "A tired bookmark records the directory and restores the buffer."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let ((record (tired-bookmark-make-record)))
       (should (equal (car record) (abbreviate-file-name root)))
       (should (eq (cdr (assq 'handler record)) #'tired-bookmark-jump))
@@ -898,7 +921,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-insert-subdir-adds-indented-children ()
   "Inserting a directory shows its children below it, indented by depth."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
     ;; `deep` holds one file, so it collapses into one row.
@@ -919,7 +942,7 @@ a symlink, and removes every tired buffer it opened."
   "Inserting a child section keeps the tree order."
   (tired-tests--with-fixture
     (let ((tired-collapse-single-child nil))
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "sub")
       (tired-insert-subdir)
       (tired-tests--goto "deep")
@@ -933,7 +956,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-toggle-subdir-removes-children ()
   "TAB inserts and removes one section."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-toggle-subdir)
     (should (member "inner.txt" (tired-tests--names)))
@@ -945,7 +968,7 @@ a symlink, and removes every tired buffer it opened."
   "Removing a section drops nested inserted sections as well."
   (tired-tests--with-fixture
     (let ((tired-collapse-single-child nil))
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "sub")
       (tired-insert-subdir)
       (tired-tests--goto "deep")
@@ -959,14 +982,14 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-insert-subdir-rejects-files ()
   "Inserting a file signals a user error."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (should-error (tired-insert-subdir) :type 'user-error)))
 
 (ert-deftest tired-refresh-keeps-inserted-sections ()
   "Refresh reloads inserted directories and keeps the sections."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
     (with-temp-file (expand-file-name "sub/new.txt") (insert "new"))
@@ -977,7 +1000,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-insert-subdir-guards-symlink-cycles ()
   "A symlink back to an ancestor does not recurse."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
     (tired-tests--goto "loop")
@@ -987,7 +1010,7 @@ a symlink, and removes every tired buffer it opened."
 (ert-deftest tired-selection-targets-cover-inserted-entries ()
   "Selection and targets work inside inserted sections."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
     (tired-tests--goto "inner.txt")
@@ -1016,7 +1039,7 @@ joins the range."
 (ert-deftest tired-region-drives-targets ()
   "The active region sets the targets when the selection is empty."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--mark-row-range "alpha.txt" "beta.txt")
     (should (equal (tired-tests--target-names) '("alpha.txt" "beta.txt")))
     (should-not tired--selection)))
@@ -1024,7 +1047,7 @@ joins the range."
 (ert-deftest tired-region-excludes-the-row-at-its-end ()
   "A region that ends at a line start leaves that row out."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (transient-mark-mode 1)
     (tired-tests--goto "alpha.txt")
     (beginning-of-line)
@@ -1036,7 +1059,7 @@ joins the range."
 (ert-deftest tired-region-loses-to-the-selection ()
   "An explicit selection wins over the active region."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "link")
     (tired-select-toggle)
     (tired-tests--mark-row-range "alpha.txt" "beta.txt")
@@ -1045,7 +1068,7 @@ joins the range."
 (ert-deftest tired-region-copy-path-copies-every-row ()
   "Copy acts on the region and then deactivates it."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--mark-row-range "alpha.txt" "beta.txt")
     (tired-copy-path)
     (should (equal (current-kill 0)
@@ -1058,7 +1081,7 @@ joins the range."
   "Delete removes every row of the region."
   (tired-tests--with-fixture
     (tired-tests--with-trash
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--mark-row-range "alpha.txt" "beta.txt")
       (tired-delete)
       (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
@@ -1068,7 +1091,7 @@ joins the range."
 (ert-deftest tired-redraw-restores-the-mark-by-path ()
   "Refresh and sort keep the mark on the same entry."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (transient-mark-mode 1)
     (tired-tests--goto "beta.txt")
     (beginning-of-line)
@@ -1083,7 +1106,7 @@ joins the range."
 (ert-deftest tired-mode-line-counts-the-region ()
   "The mode line reports the region when the selection is empty."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--mark-row-range "alpha.txt" "beta.txt")
     (should (string-match-p "2 in region" (tired--mode-line)))
     (tired-select-toggle)
@@ -1092,7 +1115,7 @@ joins the range."
 (ert-deftest tired-select-invert-flips-visible-entries ()
   "Inverting selects every visible entry that was not selected."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-select-toggle)
     (tired-select-invert)
@@ -1104,7 +1127,7 @@ joins the range."
 (ert-deftest tired-selection-size-sums-non-directories ()
   "The selection size adds file sizes and skips directories."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-select-toggle)
     (tired-tests--goto "beta.txt")
@@ -1117,7 +1140,7 @@ joins the range."
 (ert-deftest tired-narrow-shows-selection-and-widens ()
   "Narrowing hides unselected entries and widening restores them."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (tired-select-toggle)
     (tired-tests--goto "beta.txt")
@@ -1131,7 +1154,7 @@ joins the range."
 (ert-deftest tired-narrow-keeps-ancestor-directories ()
   "A narrowed entry inside a section keeps its parent row visible."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "sub")
     (tired-insert-subdir)
     (tired-tests--goto "inner.txt")
@@ -1142,7 +1165,7 @@ joins the range."
 (ert-deftest tired-narrow-prunes-deleted-paths ()
   "Refresh drops narrowed paths that vanished and widens when empty."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "beta.txt")
     (tired-select-toggle)
     (tired-narrow-to-selection)
@@ -1155,7 +1178,7 @@ joins the range."
   "The watch list holds the root and every inserted directory."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t))
-      (tired-find-directory root)
+      (tired root)
       (should (equal (tired--watch-paths)
                      (list (directory-file-name root))))
       (tired-tests--goto "sub")
@@ -1175,7 +1198,7 @@ joins the range."
                    (list 'fake (cl-incf counter))))
                 ((symbol-function 'file-notify-rm-watch)
                  (lambda (descriptor) (push descriptor removed))))
-        (tired-find-directory root)
+        (tired root)
         (tired-tests--goto "sub")
         (tired-insert-subdir)
         (should (member (expand-file-name "sub" root) added))
@@ -1192,7 +1215,7 @@ joins the range."
                  (lambda (&rest _) (list 'fake (cl-incf counter))))
                 ((symbol-function 'file-notify-rm-watch)
                  (lambda (descriptor) (push descriptor removed))))
-        (let ((buffer (tired-find-directory root)))
+        (let ((buffer (tired root)))
           (should (= 1 (length tired--watches)))
           (kill-buffer buffer)
           (should (= 1 (length removed))))))))
@@ -1201,7 +1224,7 @@ joins the range."
   "A second event keeps the pending timer instead of adding another."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t))
-      (tired-find-directory root)
+      (tired root)
       (tired--file-changed nil)
       (let ((timer tired--revert-timer))
         (should (timerp timer))
@@ -1214,7 +1237,7 @@ joins the range."
   "The timer callback refreshes, except while a minibuffer is active."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t) (calls 0))
-      (tired-find-directory root)
+      (tired root)
       (let ((buffer (current-buffer)))
         (cl-letf (((symbol-function 'tired-refresh)
                    (lambda () (cl-incf calls))))
@@ -1230,7 +1253,7 @@ joins the range."
   "Emacs lock file events do not schedule a refresh."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t))
-      (tired-find-directory root)
+      (tired root)
       (tired--file-changed '(descriptor created "/tmp/.#alpha.txt"))
       (should-not tired--revert-timer))))
 
@@ -1240,7 +1263,7 @@ joins the range."
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/file.txt")
       (insert "abc"))
-    (tired-find-directory root)
+    (tired root)
     (should (equal (car (tired-tests--names)) "chain/a/b/file.txt"))
     (should-not (member "chain" (tired-tests--names)))
     (let* ((row (seq-find
@@ -1266,7 +1289,7 @@ joins the range."
     (with-temp-file (expand-file-name "branch/x/one.txt") (insert "1"))
     (with-temp-file (expand-file-name "branch/x/two.txt") (insert "2"))
     (make-directory (expand-file-name "empty" root))
-    (tired-find-directory root)
+    (tired root)
     (should (member "branch" (tired-tests--names)))
     (should (member "empty" (tired-tests--names)))
     (should-not (member "branch/x/one.txt" (tired-tests--names)))))
@@ -1276,7 +1299,7 @@ joins the range."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "secret/a" root) t)
     (with-temp-file (expand-file-name "secret/a/.hiddenfile") (insert "h"))
-    (tired-find-directory root)
+    (tired root)
     (should (member "secret/a/.hiddenfile" (tired-tests--names)))
     (tired-toggle-dotfiles)
     (should-not (member "secret/a/.hiddenfile" (tired-tests--names)))))
@@ -1286,7 +1309,7 @@ joins the range."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/file.txt") (insert "abc"))
-    (tired-find-directory root)
+    (tired root)
     (should (member "chain/a/b/file.txt" (tired-tests--names)))
     (tired-toggle-collapse)
     (should (member "chain" (tired-tests--names)))
@@ -1300,7 +1323,7 @@ joins the range."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/file.txt") (insert "abc"))
-    (tired-find-directory root)
+    (tired root)
     (should (member "chain/a/b/file.txt" (tired-tests--names)))
     (with-temp-file (expand-file-name "chain/a/b/other.txt") (insert "x"))
     (tired-refresh)
@@ -1324,7 +1347,7 @@ joins the range."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org"
                         "#+title: Notes\n\n* Intro\nBody.\n\n** Detail\nMore.\n\n* Plans\n- item\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
@@ -1337,7 +1360,7 @@ joins the range."
   (tired-tests--with-fixture
     (tired-tests--write "code.el"
                         ";;; code\n(defvar code-x 1)\n\n(defun code-foo (a) a)\n(provide 'code)\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "code.el")
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
@@ -1368,7 +1391,7 @@ joins the range."
   (tired-tests--with-fixture
     (tired-tests--write "lib.rs"
                         "struct Config { n: u8 }\n\nimpl Config {\n    fn new() -> Self { Config { n: 0 } }\n}\n\nfn main() {}\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "lib.rs")
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
@@ -1385,7 +1408,7 @@ joins the range."
   (tired-tests--with-fixture
     (tired-tests--write "notes.md"
                         "# Intro\n\n## Detail\n\n```sh\n# not a heading\n```\n\nClosing\n=======\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.md")
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
@@ -1400,7 +1423,7 @@ joins the range."
         (sqlite-execute db "CREATE TABLE logs (msg TEXT)")
         (sqlite-execute db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
         (sqlite-close db))
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "data.sqlite")
       (tired-toggle-subdir)
       (should (equal (tired-tests--sections)
@@ -1421,7 +1444,7 @@ joins the range."
       (let ((db (sqlite-open path nil)))
         (sqlite-execute db "CREATE TABLE users (id INTEGER)")
         (sqlite-close db))
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "data.sqlite")
       (tired-toggle-subdir)
       (tired-tests--goto-section "users")
@@ -1443,7 +1466,7 @@ joins the range."
 (ert-deftest tired-find-file-completes-over-the-subtree ()
   "The finder offers files and directories below the shown directory."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (let (offered)
       (cl-letf (((symbol-function 'completing-read)
                  (lambda (_prompt collection &rest _)
@@ -1459,7 +1482,7 @@ joins the range."
   "A hidden path stays out of the finder list."
   (tired-tests--with-fixture
     (tired-tests--write "sub/.secret" "s")
-    (tired-find-directory root)
+    (tired root)
     (let ((tired--hide-dotfiles t)
           offered)
       (cl-letf (((symbol-function 'completing-read)
@@ -1475,7 +1498,7 @@ joins the range."
 (ert-deftest tired-find-file-other-window-visits-the-choice ()
   "The other-window finder visits the chosen file."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (cl-letf (((symbol-function 'completing-read)
                (lambda (&rest _) "sub/inner.txt")))
       (tired-find-file-other-window))
@@ -1485,7 +1508,7 @@ joins the range."
 (ert-deftest tired-find-file-opens-a-chosen-directory ()
   "A directory candidate opens as a tired buffer."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (cl-letf (((symbol-function 'completing-read)
                (lambda (&rest _) "sub/")))
       (tired-find-file))
@@ -1497,7 +1520,7 @@ joins the range."
   "RET on a section row visits the file at the section line."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Detail")
@@ -1510,7 +1533,7 @@ joins the range."
   "A selection command refuses a section row."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Intro")
@@ -1521,7 +1544,7 @@ joins the range."
   "A section stands for its file, so the path commands reach that file."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Intro")
@@ -1536,7 +1559,7 @@ joins the range."
   "TAB on a section row hides its children and TAB again shows them."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Intro")
@@ -1551,7 +1574,7 @@ joins the range."
   "E collapses the sections that TAB expanded."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (should (tired-tests--sections))
@@ -1562,7 +1585,7 @@ joins the range."
 (ert-deftest tired-expand-file-rejects-a-file-without-handler ()
   "A file that no rule claims reports the missing handler."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (should-error (tired-expand-file) :type 'user-error)
     (should-not (tired--expanded-p (expand-file-name "alpha.txt" root)))))
@@ -1578,7 +1601,7 @@ joins the range."
                          (lambda (_path)
                            (cl-incf calls)
                            '((:label "alpha" :line 1)))))))
-        (tired-find-directory root)
+        (tired root)
         (tired-file-sections path)
         (tired-file-sections path)
         (should (= 1 calls))
@@ -1594,7 +1617,7 @@ joins the range."
     (tired-tests--write "alpha.txt" "abc")
     (let ((tired-file-handlers
            (list (cons "\\.txt\\'" (lambda (_path) (error "boom"))))))
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "alpha.txt")
       (should-error (tired-expand-file) :type 'user-error)
       (should (member "alpha.txt" (tired-tests--names))))))
@@ -1603,7 +1626,7 @@ joins the range."
   "Refresh forgets an expanded file that a command removed."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (let ((path (expand-file-name "notes.org" root)))
@@ -1617,7 +1640,7 @@ joins the range."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t))
       (tired-tests--write "notes.org" "* Intro\n")
-      (tired-find-directory root)
+      (tired root)
       (tired-tests--goto "notes.org")
       (tired-toggle-subdir)
       (should (member (expand-file-name "notes.org" root)
@@ -1627,7 +1650,7 @@ joins the range."
   "A redraw returns point to the same section, not to the file row."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Detail")
@@ -1639,7 +1662,7 @@ joins the range."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
     (tired-tests--write "other.org" "* Other\n")
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto "other.org")
@@ -1652,7 +1675,7 @@ joins the range."
 (ert-deftest tired-toggle-subdir-rejects-a-file-without-subtree ()
   "TAB on a plain file reports that no subtree exists."
   (tired-tests--with-fixture
-    (tired-find-directory root)
+    (tired root)
     (tired-tests--goto "alpha.txt")
     (should-error (tired-toggle-subdir) :type 'user-error)))
 

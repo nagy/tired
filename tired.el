@@ -28,10 +28,13 @@
 ;; reads directory contents with Emacs primitives and never parses
 ;; the output of `ls -l'.
 ;;
-;; Entry point:
+;; Entry points:
 ;;
 ;;   M-x tired
-;;   M-x tired-find-directory
+;;   M-x tired-other-window
+;;
+;; `find-file' visits a directory in a tired buffer, because loading
+;; this library puts `tired-noselect' into `find-directory-functions'.
 ;;
 ;; Key bindings in `tired-mode':
 ;;
@@ -1260,29 +1263,31 @@ IGNORE-AUTO and NOCONFIRM are accepted for `revert-buffer-function'."
   (format "tired: %s" (abbreviate-file-name directory)))
 
 ;;;###autoload
-(defun tired-find-directory (directory &optional other-window)
-  "Open DIRECTORY in a tired buffer.
-When OTHER-WINDOW is non-nil, show the buffer in another window."
-  (interactive (list (read-directory-name "Directory: " nil nil t)))
-  (let* ((directory (file-name-as-directory (expand-file-name directory)))
-         (buffer (get-buffer-create (tired--buffer-name directory))))
+(defun tired-noselect (directory)
+  "Return a tired buffer for DIRECTORY, without selecting it.
+The buffer name depends on DIRECTORY, so a second call reuses the
+same buffer.  The buffer gets DIRECTORY as `default-directory'."
+  (let ((directory (file-name-as-directory (expand-file-name directory))))
     (unless (file-directory-p directory)
       (user-error "Not a directory: %s" directory))
-    (with-current-buffer buffer
-      (unless (derived-mode-p 'tired-mode)
-        (tired-mode))
-      (unless (equal tired--directory directory)
-        (setq tired--inserted (make-hash-table :test #'equal))
-        (setq tired--expanded (make-hash-table :test #'equal))
-        (setq tired--sections (make-hash-table :test #'equal))
-        (setq tired--folded (make-hash-table :test #'equal))
-        (tired--set-selection nil))
-      (setq tired--directory directory)
-      (tired-refresh))
-    (if other-window
-        (pop-to-buffer buffer '(display-buffer-pop-up-window))
-      (pop-to-buffer buffer))
-    buffer))
+    (let ((buffer (get-buffer-create (tired--buffer-name directory))))
+      (with-current-buffer buffer
+        (unless (derived-mode-p 'tired-mode)
+          (tired-mode))
+        (unless (equal tired--directory directory)
+          (setq tired--inserted (make-hash-table :test #'equal))
+          (setq tired--expanded (make-hash-table :test #'equal))
+          (setq tired--sections (make-hash-table :test #'equal))
+          (setq tired--folded (make-hash-table :test #'equal))
+          (tired--set-selection nil))
+        (setq tired--directory directory)
+        (setq default-directory directory)
+        (tired-refresh))
+      buffer)))
+
+;; Loading this library turns `find-file' on a directory into a tired
+;; visit.  dired stays in the list as the fallback.
+(add-to-list 'find-directory-functions #'tired-noselect)
 
 ;;;###autoload
 (defun tired (directory)
@@ -1292,15 +1297,21 @@ command is the short way to open a listing, in the manner of
 `dired'."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
-  (tired-find-directory directory))
+  (pop-to-buffer-same-window (tired-noselect directory)))
+
+;;;###autoload
+(defun tired-other-window (directory)
+  "Show DIRECTORY in a tired buffer in another window."
+  (interactive
+   (list (read-directory-name "Directory: " nil default-directory t)))
+  (switch-to-buffer-other-window (tired-noselect directory)))
 
 (defun tired-up-directory ()
   "Open the parent of the current directory."
   (interactive)
   (unless tired--directory
     (user-error "Not in a tired buffer"))
-  (tired-find-directory
-   (file-name-directory (directory-file-name tired--directory))))
+  (tired (file-name-directory (directory-file-name tired--directory))))
 
 (defun tired-insert-subdir (&optional directory)
   "Insert the children of DIRECTORY into the listing.
@@ -1435,7 +1446,7 @@ tired buffer.  With OTHER-WINDOW, use another window."
                  tired--directory)))
       (cond
        ((file-directory-p path)
-        (tired-find-directory path other-window))
+        (if other-window (tired-other-window path) (tired path)))
        (other-window (find-file-other-window path))
        (t (find-file path))))))
 
@@ -1467,7 +1478,7 @@ another window."
                         (directory-file-name here))
                        (directory-p nil)
                        (t (directory-file-name here)))))
-    (tired-find-directory directory other-window)
+    (if other-window (tired-other-window directory) (tired directory))
     (tired--goto-path anchor)))
 
 (defun tired-bookmark-make-record ()
@@ -1478,7 +1489,7 @@ another window."
 
 (defun tired-bookmark-jump (bookmark)
   "Jump to the tired buffer described by BOOKMARK."
-  (tired-find-directory (bookmark-prop-get bookmark 'directory)))
+  (tired (bookmark-prop-get bookmark 'directory)))
 
 (defun tired-select-toggle ()
   "Add the entry at point to the selection, or remove it.
@@ -2050,7 +2061,7 @@ with `find-file'."
       (tired--open-section entry other-window)
     (let ((path (tired-entry-path entry)))
       (if (file-directory-p path)
-          (tired-find-directory path other-window)
+          (if other-window (tired-other-window path) (tired path))
         (if other-window
             (find-file-other-window path)
           (find-file path))))))

@@ -34,8 +34,14 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 #+end_src
 
 Interactive entry point: =M-x tired=.  It reads a directory and opens
-the listing, in the manner of =M-x dired=.  =tired-find-directory= does
-the same and also takes an =other-window= argument.
+the listing, in the manner of =M-x dired=.  =M-x tired-other-window=
+does the same in another window.  =tired-noselect= returns the buffer
+without showing it, the way =dired-noselect= does.
+
+Loading =tired= adds =tired-noselect= to =find-directory-functions=,
+so =find-file=, =find-file-other-window=, =find-alternate-file= and a
+directory bookmark open a tired buffer instead of Dired.  Dired stays
+in the list as the fallback.
 
 * Jumping and bookmarks
 
