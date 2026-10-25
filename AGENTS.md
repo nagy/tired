@@ -32,13 +32,16 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 
 Nix outputs:
 
-- `packages.tired` (= `default`) is `nix/default.nix` (`melpaBuild`).
+- `packages.tired` (= `default`) is the `mkTired` expression in
+  `flake.nix` (`melpaBuild`).  It takes its arguments through
+  `callPackage`, so `nix-build -E` with `callPackage` still works.
   Its `checkPhase` byte-compiles with warnings as errors and runs the
   ERT suite.  `checkInputs` holds the tree-sitter Rust grammar and the
   phase exports `TREESIT_EXTRA_LOAD_PATH` for it, so the Rust section
   test runs instead of skipping.  The suite reads that variable itself;
   a developer machine without a grammar skips the test.
-- `checks.lint` is `nix/lint.nix`: `package-lint` and `checkdoc`.
+- `checks.lint` is `mkLint` in `flake.nix`: `package-lint` and
+  `checkdoc`.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix` because
   the package is pure Elisp.
@@ -57,9 +60,8 @@ Files:
 
 - `tired.el` — the whole package
 - `tired-tests.el` — ERT suite
-- `nix/default.nix` — `melpaBuild` expression
-- `nix/lint.nix` — checkdoc + package-lint check
-- `flake.nix` — flake outputs
+- `flake.nix` — flake outputs, the `melpaBuild` expression (`mkTired`)
+  and the checkdoc + package-lint check (`mkLint`)
 - `README.org` — user documentation
 - `GLOSSARY.md` — domain terms
 - `docs/adr/` — architectural decision records
