@@ -45,6 +45,11 @@
             p.tree-sitter-markdown
             p.tree-sitter-markdown-inline
           ]),
+          # Evil is optional at run time.  The evil bindings live in
+          # tired-evil.el, which needs the library to byte-compile.  A
+          # null value keeps the build free of evil, and the ERT test
+          # skips itself.
+          evil ? null,
           # The flake passes the version derived from the commit date.
           # Keep a plain default so the expression also evaluates outside
           # the flake.
@@ -60,7 +65,16 @@
           src = lib.cleanSource ./.;
 
           # No external Elisp packages; everything used ships with Emacs.
+          # The package never requires evil: tired-evil.el only loads
+          # when the user asks for the evil bindings.
           packageRequires = [ ];
+
+          # The install phase compiles every file, so tired-evil.el
+          # needs evil on the load path there.  The wrapped build Emacs
+          # merges EMACSLOADPATH from the environment.
+          preInstall = lib.optionalString (evil != null) ''
+            export EMACSLOADPATH="${evil}/share/emacs/site-lisp/elpa/evil-${evil.version}:''${EMACSLOADPATH-}"
+          '';
 
           # The installed directory name comes from `pname' + `version',
           # while package.el reads `;; Version:' from the header.  Keep
@@ -84,8 +98,11 @@
             ${lib.optionalString (treesitGrammars != null) ''
               export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
             ''}
+            ${lib.optionalString (evil != null) ''
+              export EMACSLOADPATH="${evil}/share/emacs/site-lisp/elpa/evil-${evil.version}:''${EMACSLOADPATH-}"
+            ''}
             emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-              -f batch-byte-compile tired.el tired-tests.el
+              -f batch-byte-compile tired.el tired-evil.el tired-tests.el
             emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
             runHook postCheck
           '';
@@ -128,20 +145,26 @@
           }
           ''
             export HOME=$TMPDIR
-            cp "$src"/tired.el .
+            for file in tired.el tired-evil.el; do
+              cp "$src/$file" .
+            done
 
             # package-lint exits non-zero on any finding.  The package has
             # no external dependencies, so it needs no package-alist
-            # stubs.
+            # stubs.  It only accepts the main file, so tired-evil.el
+            # goes through checkdoc alone.
             emacs --batch -l package-lint -f package-lint-batch-and-exit tired.el
 
             # checkdoc exits 0 even when it reports problems; gate on
             # output.
-            doc=$(emacs --batch -l checkdoc --eval '(checkdoc-file "tired.el")' 2>&1)
-            if [ -n "$doc" ]; then
-              printf '%s\n' "$doc"
-              exit 1
-            fi
+            for file in tired.el tired-evil.el; do
+              doc=$(emacs --batch -l checkdoc \
+                --eval "(checkdoc-file \"$file\")" 2>&1)
+              if [ -n "$doc" ]; then
+                printf '%s\n' "$doc"
+                exit 1
+              fi
+            done
 
             touch $out
           '';
@@ -164,7 +187,10 @@
           ...
         }:
         let
-          tired = pkgs.callPackage mkTired { inherit version; };
+          tired = pkgs.callPackage mkTired {
+            inherit version;
+            inherit (pkgs.emacsPackages) evil;
+          };
         in
         {
           packages = {
@@ -182,7 +208,9 @@
 
           devShells.default = pkgs.mkShell {
             packages = [
-              pkgs.emacs
+              # The evil package lets the ERT tests for tired-evil.el run
+              # outside Nix too.
+              (pkgs.emacsPackages.emacsWithPackages (epkgs: [ epkgs.evil ]))
               pkgs.git
               config.treefmt.build.wrapper
             ];

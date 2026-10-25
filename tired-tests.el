@@ -29,6 +29,12 @@
 (require 'tired)
 
 (declare-function treesit-ready-p "treesit" (language &optional quiet))
+;; `tired-evil-mode' binds keys through the evil library, which stays
+;; optional.  The tests below skip themselves when evil is absent.
+(declare-function evil-local-mode "evil" (&optional arg))
+(declare-function evil-normal-state "evil" nil)
+(declare-function evil-visual-line "evil" (&optional count))
+(declare-function tired-evil-mode "tired-evil" (&optional arg))
 ;; Keep unrelated tests free of real file notification watches and
 ;; pending timers.  The auto-revert tests bind this to t themselves.
 (setq tired-auto-revert nil)
@@ -1700,6 +1706,67 @@ joins the range."
     (tired root)
     (tired-tests--goto "alpha.txt")
     (should-error (tired-toggle-subdir) :type 'user-error)))
+
+(ert-deftest tired-evil-mode-binds-the-tired-commands ()
+  "The global evil mode gives a tired buffer dired-style keys."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode 1)
+          (should (bound-and-true-p tired-evil-local-mode))
+          (should (eq (key-binding (key-parse "D")) #'tired-delete))
+          (should (eq (key-binding (key-parse "TAB"))
+                      #'tired-toggle-subdir))
+          (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
+          (should (eq (key-binding (key-parse "SPC"))
+                      #'tired-select-toggle-next))
+          ;; Motion stays evil, so a tired buffer is still navigable.
+          (should (eq (key-binding (key-parse "j")) #'evil-next-line))
+          (should (eq (key-binding (key-parse "gg"))
+                      #'evil-goto-first-line)))
+      (tired-evil-mode -1)
+      (evil-local-mode -1))
+    (should-not (bound-and-true-p tired-evil-local-mode))))
+
+(ert-deftest tired-evil-visual-state-binds-the-file-commands ()
+  "A visual range reaches delete, and the text objects stay."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode 1)
+          (evil-visual-line)
+          (should (eq evil-state 'visual))
+          (should (eq (key-binding (key-parse "D")) #'tired-delete))
+          (should (eq (key-binding (key-parse "c")) #'tired-copy))
+          ;; Visual state keeps its inner text objects.
+          (should (keymapp (key-binding (key-parse "i")))))
+      (evil-normal-state)
+      (tired-evil-mode -1)
+      (evil-local-mode -1))))
+
+(ert-deftest tired-evil-mode-covers-a-buffer-made-later ()
+  "A tired buffer that appears after the mode is on takes the keys."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode 1)
+          (tired (expand-file-name "sub" root))
+          (should (bound-and-true-p tired-evil-local-mode))
+          (should (eq (key-binding (key-parse "D")) #'tired-delete)))
+      (tired-evil-mode -1)
+      (evil-local-mode -1))))
 
 (provide 'tired-tests)
 

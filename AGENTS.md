@@ -25,9 +25,9 @@ in git-bug issues, not in code.
 ```sh
 nix build                       # package
 nix flake check                 # package + ERT suite + lint check
-nix develop                     # Emacs and git
+nix develop                     # Emacs with evil, git and treefmt
 emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-  -f batch-byte-compile tired.el tired-tests.el
+  -f batch-byte-compile tired.el tired-evil.el tired-tests.el
 emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 ```
 
@@ -41,13 +41,18 @@ Nix outputs:
   grammars and the phase exports `TREESIT_EXTRA_LOAD_PATH` for them, so
   the section tests run instead of skipping.  The suite reads that
   variable itself; a developer machine without a grammar skips the
-  matching test.
+  matching test.  `mkTired` also takes `evil`.  A non-null value makes
+  `preInstall` and `checkPhase` export `EMACSLOADPATH` with the evil
+  directory, because `tired-evil.el` needs the library to
+  byte-compile and the evil tests skip without it.  The package
+  metadata still names no evil: `packageRequires` stays empty.
 - `checks.lint` is `mkLint` in `flake.nix`: `package-lint` and
   `checkdoc`.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix` because
   the package is pure Elisp.
-- `devShells.default` provides Emacs, git and the treefmt wrapper.
+- `devShells.default` provides an Emacs with evil, git and the
+  treefmt wrapper, so the evil tests run outside Nix too.
 - `nix fmt` formats the repo through `treefmt-nix` (nixfmt only).
   `treefmt-nix.flakeModule` also adds the `checks.treefmt` check.
 
@@ -61,6 +66,7 @@ ELPA package version from the build argument.
 Files:
 
 - `tired.el` — the whole package
+- `tired-evil.el` — optional evil bindings, a separate library
 - `tired-tests.el` — ERT suite
 - `flake.nix` — flake outputs, the `melpaBuild` expression (`mkTired`)
   and the checkdoc + package-lint check (`mkLint`)
@@ -231,9 +237,33 @@ columns.  `tabulated-list-format` therefore marks every column as
 unsortable and the header line stays plain.  `tired-sort` prompts for a
 column and redraws.
 
+Evil integration:
+
+- `tired-evil.el` is a second library, so `tired` never requires evil.
+  It requires evil and tired, and it binds keys in normal and visual
+  state only.
+- `tired-evil-keys` and `tired-evil-visual-keys` hold the key tables.
+  `tired-evil--bind` feeds them to `evil-define-minor-mode-key` for the
+  private minor mode `tired-evil-local-mode`.
+- `tired-evil-mode` is the global switch.  It adds
+  `tired-evil--enable-buffer` to `tired-mode-hook` and turns the local
+  mode on in every existing tired buffer.  Turning it off removes the
+  hook and the local mode, so the buffer falls back to
+  `tired-mode-map`.
+- The visual table is short on purpose: visual state needs its text
+  objects, and the region already targets files for every command.
+  The normal table leaves `j`, `k`, `gg`, `G`, `C-d`, `C-u`, `/`, `n`
+  and `N` to evil, the way `evil-collection-dired` does.
+
 ## Conventions
 
 - Package prefix is `tired-`.  Private helpers use `tired--`.
+- `tired-evil.el` follows the same prefix.  Its key tables map a key
+  description string to a command symbol, and `tired-evil--bind` calls
+  `key-parse` before `evil-define-minor-mode-key`, because `define-key`
+  reads a plain string as literal characters, so `"RET"` would bind
+  three keys.  A new tired command belongs in `tired-evil-keys`, and in
+  `tired-evil-visual-keys` when it reads the region.
 - Public commands carry an `;;;###autoload` cookie only when they are
   entry points (`tired`, `tired-other-window`, `tired-mode`,
   `tired-noselect`).
@@ -306,6 +336,23 @@ column and redraws.
   the tests compare plain strings.
 
 ## Gotchas
+
+- `evil-define-key` is a macro, so a file that must compile without
+  evil cannot call it.  `tired-evil.el` uses the function
+  `evil-define-minor-mode-key` instead, and `key-parse` converts a key
+  string, because `define-key` treats `"RET"` as three characters.
+- `define-minor-mode` defines a defcustom, so a mode without
+  `:group 'tired` fails byte-compilation with "fails to specify
+  containing group".
+- The evil minor-mode maps are kept in `evil-minor-mode-keymaps-alist`
+  against the mode symbol, and Emacs activates a map only while that
+  symbol holds a value.  Turning `tired-evil-local-mode` on or off in a
+  buffer therefore needs no `evil-normalize-keymaps` call.
+- The evil tests call `evil-local-mode` and then read `key-binding`, so
+  they test what the keyboard sees, not the keymap directly.  They
+  `skip-unless` on `(require 'evil nil t)`, and `tired-tests.el`
+  declares every evil function it calls, so a checkout without evil
+  still byte-compiles.
 
 - `tired-noselect` owns `default-directory`.  Do not set it in
   `tired-mode`, because the mode runs before the directory is known.

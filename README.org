@@ -24,6 +24,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Automatic refresh on directory changes, debounced
 - Single-child directory chains collapse into their one file
 - Optional recursive size of a directory
+- Optional evil bindings in =tired-evil.el=, with the evil motions kept
 - Native Elisp listing, no external process
 
 * Usage
@@ -125,6 +126,49 @@ signals an error when the shown directory belongs to no project.
 directories that contain the selected entries.  =N= again widens it.
 The mode line shows the total size of the selected non-directory
 entries next to the selection count.
+
+* Evil
+
+The package ships evil bindings in a separate file, so the main
+package needs no evil.  Load the file and turn on the global mode:
+
+#+begin_src elisp
+  (require 'tired-evil)
+  (tired-evil-mode 1)
+#+end_src
+
+The bindings leave the evil motions alone.  =j=, =k=, =gg=, =G=,
+=C-d=, =C-u=, =/=, =n= and =N= keep their meaning, and every tired
+command gets a direct key:
+
+| Key          | Command                          |
+|--------------+----------------------------------|
+| =RET=        | =tired-open=                     |
+| =o=          | =tired-open-other-window=        |
+| =-=, =^=     | =tired-up-directory=             |
+| =TAB=        | =tired-toggle-subdir=            |
+| =gf=, =gF=   | =tired-find-file=, other window  |
+| =i=, =M-i=   | insert, remove a subdirectory    |
+| =e=, =E=     | expand, collapse file sections   |
+| =C=          | =tired-toggle-collapse=          |
+| =gr=         | =tired-refresh=                  |
+| =s=          | =tired-sort=                     |
+| =f=, =F=     | filter, clear the filter         |
+| =.=          | =tired-toggle-dotfiles=          |
+| =N=          | =tired-toggle-narrow=            |
+| =A=          | =tired-toggle-auto-revert=       |
+| =SPC=, =M-SPC= | toggle the selection next, here |
+| =t=, =u=, =~= | select all, none, invert        |
+| =D=, =c=, =m= | delete, copy, move               |
+| =+=, =M-t=   | create a directory, a file       |
+| =U=          | =tired-undo=                     |
+| =y=, =w=     | copy names, copy paths           |
+| =q=          | bury the buffer                  |
+
+Visual state keeps its text objects.  The keys that act on files stay
+bound there, so =V= followed by a motion and =D= deletes the range,
+because the region already feeds every file command.  =tired-evil-mode=
+adds and removes the keys for every tired buffer, existing or new.
 
 * File operations
 
@@ -318,9 +362,14 @@ Without Nix:
 
 #+begin_src sh
   emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-    -f batch-byte-compile tired.el
+    -f batch-byte-compile tired.el tired-evil.el
   emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 #+end_src
+
+=tired-evil.el= needs the evil library to compile, and the evil tests
+skip themselves without it.  The devShell provides an Emacs with evil
+installed, and the Nix check puts evil on the load path of its build
+Emacs.
 
 The Rust section test skips itself when no grammar is present.  Point
 =TREESIT_EXTRA_LOAD_PATH= at the directory that holds
