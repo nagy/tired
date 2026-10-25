@@ -22,10 +22,12 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 
 #+begin_src elisp
   (require 'tired)
-  (tired-find-directory "~/")
+  (tired "~/")
 #+end_src
 
-Interactive entry point: =M-x tired-find-directory=.
+Interactive entry point: =M-x tired=.  It reads a directory and opens
+the listing, in the manner of =M-x dired=.  =tired-find-directory= does
+the same and also takes an =other-window= argument.
 
 * Jumping and bookmarks
 

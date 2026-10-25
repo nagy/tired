@@ -358,6 +358,15 @@ a symlink, and removes every tired buffer it opened."
   "Return the face of the name column of ENTRY."
   (get-text-property 0 'face (tired--name-cell entry)))
 
+(ert-deftest tired-command-opens-a-listing ()
+  "The `tired' command opens the listing of the directory it gets."
+  (tired-tests--with-fixture
+    (should (commandp 'tired))
+    (let ((buffer (tired (directory-file-name root))))
+      (should (eq buffer (current-buffer)))
+      (should (derived-mode-p 'tired-mode))
+      (should (equal tired--directory root)))))
+
 (ert-deftest tired-faces-inherit-dired-faces ()
   "Each name face takes its look from the matching Dired face."
   (dolist (pair '((tired-directory-face . dired-directory)

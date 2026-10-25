@@ -30,6 +30,7 @@
 ;;
 ;; Entry point:
 ;;
+;;   M-x tired
 ;;   M-x tired-find-directory
 ;;
 ;; Key bindings in `tired-mode':
@@ -837,6 +838,16 @@ When OTHER-WINDOW is non-nil, show the buffer in another window."
         (pop-to-buffer buffer '(display-buffer-pop-up-window))
       (pop-to-buffer buffer))
     buffer))
+
+;;;###autoload
+(defun tired (directory)
+  "Show DIRECTORY in a tired buffer.
+Interactively, offer `default-directory' as the default.  This
+command is the short way to open a listing, in the manner of
+`dired'."
+  (interactive
+   (list (read-directory-name "Directory: " nil default-directory t)))
+  (tired-find-directory directory))
 
 (defun tired-up-directory ()
   "Open the parent of the current directory."

@@ -5,7 +5,7 @@
 Single-file Emacs package (`tired.el`) that shows a directory as a
 `tabulated-list-mode` buffer.  Entries come from `directory-files` and
 `file-attributes`.  The package never parses `ls -l` output.  Entry
-point is `M-x tired-find-directory`.
+points are `M-x tired` and `M-x tired-find-directory`.
 
 Minimum Emacs version is 31.1.  Emacs 31 changed
 `tabulated-list-print-entry` to require a vector of column descriptors
@@ -142,7 +142,7 @@ column and redraws.
 
 - Package prefix is `tired-`.  Private helpers use `tired--`.
 - Public commands carry an `;;;###autoload` cookie only when they are
-  entry points (`tired-mode`, `tired-find-directory`).
+  entry points (`tired`, `tired-mode`, `tired-find-directory`).
 - Every function has a docstring.  `checkdoc` must pass.
 - Byte-compilation with warnings as errors must pass.
 - Faces inherit from Dired faces (`dired-directory`, `dired-symlink`,
