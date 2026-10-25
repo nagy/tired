@@ -301,6 +301,11 @@ Five handlers ship with the package:
 row fills the name column only.  A SQLite section opens the table in
 =sqlite-mode= instead, because a database has no lines.
 
+=RET= on an org heading also narrows the visited buffer to that
+subtree, so only the heading and its children show.  Use =C-x n w=
+to widen it again.  Set =tired-org-narrow-on-open= to =nil= to keep
+the whole file visible.
+
 The Rust and Markdown handlers share one tree-sitter walker.  A
 language contributes a spec of node types and fields, so a new grammar
 costs one entry.
@@ -329,7 +334,8 @@ plists:
 
 The optional keys =:column= and =:action= also work.  An =:action= is
 a function, or a cons of a function and extra arguments, and it
-replaces the default visit.
+replaces the default visit.  The org handler uses that hook, so its
+headings narrow the visited buffer.
 
 A =:label= may carry text properties.  A handler that fontifies its
 buffer can return a propertized label, and tired keeps the faces

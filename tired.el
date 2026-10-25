@@ -195,6 +195,15 @@ and `:kind', plus the optional keys `:column' and `:action'.  An
 empty list means the file has no sections."
   :type '(alist :key-type regexp :value-type function))
 
+(defcustom tired-org-narrow-on-open t
+  "When non-nil, narrow an org buffer to the subtree that was opened.
+RET on an org heading visits the file and then narrows to that
+heading, so the visited buffer shows one subtree.  The narrow runs
+only in Org mode and only when point sits on a heading.  A section
+action keeps this option out of the parsed section, so a change
+takes effect on the next open without a re-parse."
+  :type 'boolean)
+
 (defface tired-directory-face
   '((t :inherit dired-directory))
   "Face for directory names.")
@@ -2050,6 +2059,22 @@ created file, or puts the earlier modification time back."
     (message "%s %s" (if exists "Touched" "Created")
              (abbreviate-file-name path))))
 
+(defun tired--visit-section (section &optional other-window)
+  "Visit the file of SECTION at its line and column.
+Show it in another window when OTHER-WINDOW is non-nil.  Return the
+visited buffer."
+  (let* ((path (tired-section-path section))
+         (buffer (if other-window
+                     (find-file-other-window path)
+                   (find-file path))))
+    (with-current-buffer buffer
+      (goto-char (point-min))
+      (forward-line (max 0 (1- (tired-section-line section))))
+      (when (tired-section-column section)
+        (move-to-column (tired-section-column section)))
+      (recenter))
+    buffer))
+
 (defun tired--open-section (section &optional other-window)
   "Visit the target of SECTION, in another window when requested.
 A section without an action opens its file at the section line and
@@ -2059,16 +2084,7 @@ extra arguments."
   (let ((action (tired-section-action section)))
     (cond
      ((null action)
-      (let* ((path (tired-section-path section))
-             (buffer (if other-window
-                         (find-file-other-window path)
-                       (find-file path))))
-        (with-current-buffer buffer
-          (goto-char (point-min))
-          (forward-line (max 0 (1- (tired-section-line section))))
-          (when (tired-section-column section)
-            (move-to-column (tired-section-column section)))
-          (recenter))))
+      (tired--visit-section section other-window))
      ((consp action)
       (apply (car action) section
              (append (cdr action) (list other-window))))
@@ -2200,6 +2216,7 @@ The directory contents come from `directory-files' and
 (declare-function org-element-parse-buffer "org-element"
                   (&optional granularity visible-only))
 (declare-function org-element-property "org-element" (property element))
+(declare-function org-narrow-to-subtree "org" (&optional arg))
 (declare-function treesit-available-p "treesit" nil)
 (declare-function treesit-buffer-root-node "treesit" (&optional language))
 (declare-function treesit-node-child-by-field-name "treesit"
@@ -2216,12 +2233,27 @@ The directory contents come from `directory-files' and
 (declare-function sqlite-select "sqlite.c"
                   (db query &optional values return-type))
 
+(defun tired--org-open-heading (section &optional other-window)
+  "Visit the org heading of SECTION and narrow to its subtree.
+Show the buffer in another window when OTHER-WINDOW is non-nil.
+Narrow only when `tired-org-narrow-on-open' is non-nil, the visited
+buffer uses Org mode and point sits on a heading.  A narrow that
+fails leaves the buffer wide."
+  (let ((buffer (tired--visit-section section other-window)))
+    (when (and tired-org-narrow-on-open
+               (buffer-live-p buffer))
+      (with-current-buffer buffer
+        (when (derived-mode-p 'org-mode)
+          (require 'org)
+          (ignore-errors (org-narrow-to-subtree)))))))
+
 (defun tired-file-sections-org (_path)
   "Return the headings of the current org buffer as section plists.
 The buffer already holds the file, so the handler ignores PATH.
 Parse with `org-element', so a heading inside a source block or an
 example block stays out of the listing.  The line of a heading is
-the line of its stars."
+the line of its stars.  Every section carries
+`tired--org-open-heading' as its action."
   (require 'org)
   (require 'org-element)
   (delay-mode-hooks (org-mode))
@@ -2230,7 +2262,8 @@ the line of its stars."
       (list :label (or (org-element-property :raw-value headline) "")
             :line (line-number-at-pos (org-element-property :begin headline))
             :level (org-element-property :level headline)
-            :kind 'heading))))
+            :kind 'heading
+            :action #'tired--org-open-heading))))
 
 (defconst tired--elisp-read-error (make-symbol "tired--read-error")
   "Sentinel that marks a form which `read' rejected.")

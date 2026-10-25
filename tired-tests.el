@@ -1555,7 +1555,52 @@ joins the range."
     (tired-open)
     (should (equal (buffer-file-name)
                    (expand-file-name "notes.org" root)))
+    ;; An org heading narrows the buffer, so widen before the line check.
+    (widen)
     (should (= 3 (line-number-at-pos)))))
+
+(ert-deftest tired-open-org-heading-narrows-to-its-subtree ()
+  "RET on an org heading narrows the visited buffer to that subtree."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org"
+                        "* Intro\nintro body\n** Detail\ndetail body\n* Plans\n")
+    (tired root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Detail")
+    (tired-open)
+    (should (buffer-narrowed-p))
+    (let ((text (buffer-substring-no-properties
+                 (point-min) (point-max))))
+      (should (string-match-p "Detail" text))
+      (should (string-match-p "detail body" text))
+      (should-not (string-match-p "Intro" text)))))
+
+(ert-deftest tired-open-org-heading-stays-wide-when-option-off ()
+  "An org heading opens wide when `tired-org-narrow-on-open' is nil."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\nintro body\n* Plans\n")
+    (let ((tired-org-narrow-on-open nil))
+      (tired root)
+      (tired-tests--goto "notes.org")
+      (tired-toggle-subdir)
+      (tired-tests--goto-section "Plans")
+      (tired-open)
+      (should-not (buffer-narrowed-p))
+      (should (string-match-p
+               "Intro" (buffer-substring-no-properties
+                        (point-min) (point-max)))))))
+
+(ert-deftest tired-open-non-org-section-stays-wide ()
+  "A section of a non-org file opens without narrowing."
+  (tired-tests--with-fixture
+    (tired-tests--write "code.el" "(defun alpha ())\n(defun beta ())\n")
+    (tired root)
+    (tired-tests--goto "code.el")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "defun beta")
+    (tired-open)
+    (should-not (buffer-narrowed-p))))
 
 (ert-deftest tired-section-rows-are-not-selectable ()
   "A selection command refuses a section row."

@@ -118,7 +118,9 @@ Data flow:
    `:containers`, `:fields`, and an optional `:label`, `:level` and
    `:require`.  The SQLite handler opens the file read-only through the
    built-in `sqlite' support and gives its sections synthetic line
-   ordinals.
+   ordinals.  The org handler gives every heading the action
+   `tired--org-open-heading`, which calls `tired--visit-section` and
+   then narrows to the subtree when `tired-org-narrow-on-open` holds.
 6. `tired--tabulated-entries` renders each row as a vector, indented by
    its depth.  Emacs 31 requires the vector form.  A section row fills
    the name column only.
@@ -388,6 +390,17 @@ Evil integration:
   label: a narrowed-out file hides all of its sections.
 - `tired--call-handler` catches every error and reports through
   `display-warning`.  One broken handler must not break the listing.
+- A section without an action visits its file through
+  `tired--visit-section`, which returns the visited buffer.  An action
+  that must post-process the buffer, such as the org narrow, calls that
+  helper instead of repeating the `find-file` and `forward-line` code.
+- The org narrow option stays out of the parsed section.  The handler
+  always installs `tired--org-open-heading`, and that function reads
+  `tired-org-narrow-on-open` when it runs, so a changed option needs no
+  re-parse and no cache invalidation.  The narrow runs only in Org mode
+  and only when `org-narrow-to-subtree` succeeds, so a file that opens
+  in another mode stays wide.  A narrowed org buffer renumbers its
+  lines, so a test that checks a line number widens first.
 - The Emacs Lisp handler skips whitespace and comments with
   `forward-comment` before it records the start of a form.  A
   `skip-chars-forward` would leave point on a leading `;' line, so the
