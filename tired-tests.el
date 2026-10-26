@@ -153,13 +153,29 @@ a symlink, and removes every Tired buffer it opened."
   (tired-tests--with-fixture
     (should (eq (tired-noselect root) (tired-noselect root)))))
 
+(ert-deftest tired-find-file-mode-toggles-find-directory-functions ()
+  "`tired-find-file-mode' adds and removes the finder."
+  (should-not tired-find-file-mode)
+  (unwind-protect
+      (progn
+        (should-not (memq #'tired-noselect find-directory-functions))
+        (tired-find-file-mode 1)
+        (should (memq #'tired-noselect find-directory-functions))
+        (tired-find-file-mode -1)
+        (should-not (memq #'tired-noselect find-directory-functions)))
+    (tired-find-file-mode -1)))
+
 (ert-deftest find-file-opens-a-directory-in-tired-mode ()
-  "Loading Tired makes `find-file' visit a directory with Tired."
+  "With the mode on, `find-file' visits a directory with Tired."
   (tired-tests--with-fixture
-    (should (memq #'tired-noselect find-directory-functions))
-    (with-current-buffer (find-file-noselect root)
-      (should (derived-mode-p 'tired-mode))
-      (should (equal root default-directory)))))
+    (unwind-protect
+        (progn
+          (tired-find-file-mode 1)
+          (should (memq #'tired-noselect find-directory-functions))
+          (with-current-buffer (find-file-noselect root)
+            (should (derived-mode-p 'tired-mode))
+            (should (equal root default-directory))))
+      (tired-find-file-mode -1))))
 
 (ert-deftest tired-listing-puts-directories-first ()
   "Directories sort before files, and files sort by name."

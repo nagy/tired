@@ -33,8 +33,8 @@
 ;;   M-x tired
 ;;   M-x tired-other-window
 ;;
-;; `find-file' visits a directory in a Tired buffer, because loading
-;; this library puts `tired-noselect' into `find-directory-functions'.
+;; `M-x tired-find-file-mode' makes `find-file' visit a directory in a
+;; Tired buffer.  The mode starts off, so the user opts in.
 ;;
 ;; Key bindings in `tired-mode':
 ;;
@@ -1316,9 +1316,19 @@ same buffer.  The buffer gets DIRECTORY as `default-directory'."
         (tired-refresh))
       buffer)))
 
-;; Loading this library turns `find-file' on a directory into a Tired
-;; visit.  dired stays in the list as the fallback.
-(add-to-list 'find-directory-functions #'tired-noselect)
+;;;###autoload
+(define-minor-mode tired-find-file-mode
+  "Let `find-file' visit a directory in a Tired buffer.
+Turning the mode on puts `tired-noselect' into
+`find-directory-functions'.  Turning it off takes that function out
+again, so `find-file' falls back to Dired.  The mode starts off, so
+no command changes without the user's consent."
+  :global t
+  :group 'tired
+  (if tired-find-file-mode
+      (add-to-list 'find-directory-functions #'tired-noselect)
+    (setq find-directory-functions
+          (delq #'tired-noselect find-directory-functions))))
 
 ;;;###autoload
 (defun tired (directory)

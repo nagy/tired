@@ -39,10 +39,19 @@ the listing, in the manner of =M-x dired=.  =M-x tired-other-window=
 does the same in another window.  =tired-noselect= returns the buffer
 without showing it, the way =dired-noselect= does.
 
-Loading =tired= adds =tired-noselect= to =find-directory-functions=,
-so =find-file=, =find-file-other-window=, =find-alternate-file= and a
-directory bookmark open a Tired buffer instead of Dired.  Dired stays
-in the list as the fallback.
+Loading =tired= changes nothing global.  =M-x tired-find-file-mode=
+turns the =find-file= integration on: =find-file=,
+=find-file-other-window=, =find-alternate-file= and a directory
+bookmark open a Tired buffer instead of Dired.  The mode is global
+and starts off, so the user opts in.  Run =M-x tired-find-file-mode=
+again, or =M-x tired-find-file-mode= with a negative prefix argument,
+to turn it off.  Dired stays in =find-directory-functions= as the
+fallback.
+
+#+begin_src elisp
+  (require 'tired)
+  (tired-find-file-mode 1)  ; find-file opens directories in Tired
+#+end_src
 
 * Jumping and bookmarks
 

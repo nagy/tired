@@ -175,11 +175,13 @@ Data flow:
    value, C-g restores the previous filter.
 13. `tired-noselect` returns the buffer for a directory and never shows
    it.  It sets `tired--directory` and `default-directory`, then
-   refreshes.  Loading the library adds it to
+   refreshes.  Loading the library changes nothing global.  The
+   global minor mode `tired-find-file-mode` puts `tired-noselect` into
    `find-directory-functions`, so `find-file` and the commands built on
-   it visit a directory in tired.  dired stays in the list as the
-   fallback.  `tired` and `tired-other-window` call it and show the
-   buffer.  `tired-find-directory` no longer exists.
+   it visit a directory in tired.  Turning the mode off removes the
+   function again, and dired stays in the list as the fallback.  `tired`
+   and `tired-other-window` call `tired-noselect` and show the buffer.
+   `tired-find-directory` no longer exists.
 
 Jumping and bookmarks:
 
