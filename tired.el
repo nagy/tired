@@ -2208,7 +2208,7 @@ The directory contents come from `directory-files' and
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
-  (setq-local tabulated-list-padding 1)
+  (setq-local tabulated-list-padding 0)
   (setq-local tabulated-list-sort-key nil)
   (setq-local revert-buffer-function #'tired--revert)
   (setq-local bookmark-make-record-function #'tired-bookmark-make-record)

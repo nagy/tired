@@ -526,5 +526,8 @@ Evil integration:
   title can be prepended without losing the column labels.
 - Rows must be vectors, not lists.  Emacs 31 `tabulated-list-print-entry`
   calls `aref` on them.  Do not "simplify" `tired--row` back to `list`.
+- `tired-mode` sets `tabulated-list-padding` to 0, so no blank column
+  starts a row.  Emacs draws the sort arrow in that padding, and every
+  tired column stays unsortable, so the padding carries nothing.
 - In batch Emacs, `pop-to-buffer` works but no window layout exists.
   Tests therefore assert buffer state, not window state.
