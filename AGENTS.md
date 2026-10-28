@@ -33,19 +33,31 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 
 Nix outputs:
 
-- `packages.tired` (= `default`) is the `mkTired` expression in
-  `flake.nix` (`melpaBuild`).  It takes its arguments through
-  `callPackage`, so `nix-build -E` with `callPackage` still works.
-  Its `checkPhase` byte-compiles with warnings as errors and runs the
-  ERT suite.  `checkInputs` holds the tree-sitter Rust and Markdown
-  grammars and the phase exports `TREESIT_EXTRA_LOAD_PATH` for them, so
-  the section tests run instead of skipping.  The suite reads that
+- `packages.tired` (= `default`) is a `melpaBuild` call that
+  `perSystem` writes inline and wraps in `pkgs.lib.makeOverridable`.
+  A consumer therefore swaps one argument:
+  `tired.override { emacs = pkgs.emacs-nox; }` or
+  `tired.override { treesitGrammars = null; }`.  The `emacs` argument
+  (default `pkgs.emacs`) supplies the grammar set and evil from
+  `emacs.pkgs`, so one override moves every dependency.  The flake
+  passes the commit-derived `version`, because the inline expression
+  has no default for it.  `melpaBuild` closes over the Emacs of its
+  package set, so an `emacs` argument on the build itself does
+  nothing.  The `emacsPackages` argument therefore defaults to
+  `pkgs.emacsPackagesFor (emacs.pkgs.withPackages (_: [ evil ]))`, so
+  the set's own `emacs`, and the `melpaBuild` that closes over it,
+  carry evil.  That wrapper puts evil on the load path of the install
+  and check Emacs, so `tired-evil.el` byte-compiles and the evil ERT
+  tests run without an `EMACSLOADPATH` export.  Evil is always
+  present, because `melpaBuild` compiles every installed file.  Its
+  `checkPhase` byte-compiles with warnings as errors and runs the ERT
+  suite.  `checkInputs` holds the tree-sitter Rust and Markdown
+  grammars and the phase exports `TREESIT_EXTRA_LOAD_PATH` for them,
+  so the section tests run instead of skipping.  The suite reads that
   variable itself; a developer machine without a grammar skips the
-  matching test.  `mkTired` also takes `evil`.  A non-null value makes
-  `preInstall` and `checkPhase` export `EMACSLOADPATH` with the evil
-  directory, because `tired-evil.el` needs the library to
-  byte-compile and the evil tests skip without it.  The package
-  metadata still names no evil: `packageRequires` stays empty.
+  matching test.  Evil stays out of `packageRequires`, which
+  `melpaBuild` leaves at its empty default, so the package metadata
+  names no elisp dependency at all.
 - `checks.lint` is `mkLint` in `flake.nix`: `package-lint` and
   `checkdoc`.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
@@ -68,8 +80,8 @@ Files:
 - `tired.el` — the whole package
 - `tired-evil.el` — optional evil bindings, a separate library
 - `tired-tests.el` — ERT suite
-- `flake.nix` — flake outputs, the `melpaBuild` expression (`mkTired`)
-  and the checkdoc + package-lint check (`mkLint`)
+- `flake.nix` — flake outputs, the inline overridable `melpaBuild`
+  expression and the checkdoc + package-lint check (`mkLint`)
 - `README.org` — user documentation
 - `GLOSSARY.md` — domain terms
 - `docs/adr/` — architectural decision records

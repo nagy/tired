@@ -28,105 +28,6 @@
       }-${builtins.substring 6 2 lastModifiedDate}";
       version = "0.1.0-unstable-${commitDate}";
 
-      # The package expression takes its dependencies as arguments, so
-      # the flake can pass the commit-derived version and the grammar
-      # set, and a plain `callPackage' elsewhere still evaluates.
-      mkTired =
-        {
-          lib,
-          emacsPackages,
-          melpaBuild ? emacsPackages.melpaBuild,
-          # Tree-sitter grammars for the check phase only.  A handler
-          # whose grammar is absent returns no sections, so the file
-          # row stays plain and the ERT test skips itself.  A null value
-          # keeps the build small and still passes.
-          treesitGrammars ? emacsPackages.treesit-grammars.with-grammars (p: [
-            p.tree-sitter-rust
-            p.tree-sitter-markdown
-            p.tree-sitter-markdown-inline
-          ]),
-          # Evil is optional at run time.  The evil bindings live in
-          # tired-evil.el, which needs the library to byte-compile.  A
-          # null value keeps the build free of evil, and the ERT test
-          # skips itself.
-          evil ? null,
-          # The flake passes the version derived from the commit date.
-          # Keep a plain default so the expression also evaluates outside
-          # the flake.
-          version ? "0.1.0",
-        }:
-
-        melpaBuild {
-          pname = "tired";
-          inherit version;
-          # `./.' is the repository root.  cleanSource drops VCS metadata
-          # and editor backup files, so only real package sources enter
-          # the store.
-          src = lib.cleanSource ./.;
-
-          # No external Elisp packages; everything used ships with Emacs.
-          # The package never requires evil: tired-evil.el only loads
-          # when the user asks for the evil bindings.
-          packageRequires = [ ];
-
-          # The install phase compiles every file, so tired-evil.el
-          # needs evil on the load path there.  The wrapped build Emacs
-          # merges EMACSLOADPATH from the environment.
-          preInstall = lib.optionalString (evil != null) ''
-            export EMACSLOADPATH="${evil}/share/emacs/site-lisp/elpa/evil-${evil.version}:''${EMACSLOADPATH-}"
-          '';
-
-          # The installed directory name comes from `pname' + `version',
-          # while package.el reads `;; Version:' from the header.  Keep
-          # both equal so package-lint, package.el and the store path
-          # agree.
-          postPatch = ''
-            substituteInPlace tired.el \
-              --replace-fail ';; Version: 0.1.0' ';; Version: ${version}'
-          '';
-
-          # A byte-compile warning fails the build.  This is the cheapest
-          # lint the package gets, and it keeps the source warning-free.
-          turnCompilationWarningToError = true;
-
-          # The ERT suite reads this variable, so the Rust handler test
-          # finds libtree-sitter-rust and does not skip.
-          checkInputs = lib.optional (treesitGrammars != null) treesitGrammars;
-
-          checkPhase = ''
-            runHook preCheck
-            ${lib.optionalString (treesitGrammars != null) ''
-              export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
-            ''}
-            ${lib.optionalString (evil != null) ''
-              export EMACSLOADPATH="${evil}/share/emacs/site-lisp/elpa/evil-${evil.version}:''${EMACSLOADPATH-}"
-            ''}
-            emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-              -f batch-byte-compile tired.el tired-evil.el tired-tests.el
-            emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
-            runHook postCheck
-          '';
-
-          doCheck = true;
-
-          meta = {
-            description = "Tabulated list directory editor";
-            longDescription = ''
-              Shows a directory as a `tabulated-list-mode' buffer.  Entries
-              come from `directory-files' and `file-attributes', so the
-              listing never parses `ls -l' output.  Provides column
-              sorting, name filtering, hidden file toggling, and a
-              transient selection that file commands act on.
-            '';
-            license = lib.licenses.agpl3Plus;
-            homepage = "https://github.com/nagy/tired";
-            maintainers = with lib.maintainers; [ nagy ];
-            # Pure Elisp and no native dependency, so Linux and Darwin
-            # both work.
-            platforms = lib.platforms.unix;
-          };
-        };
-
       # checkdoc and package-lint catch style and packaging problems that
       # byte-compilation does not.  Keep this in `checks', not in the
       # package: lint findings must not block an otherwise buildable
@@ -187,10 +88,97 @@
           ...
         }:
         let
-          tired = pkgs.callPackage mkTired {
-            inherit version;
-            inherit (pkgs.emacsPackages) evil;
-          };
+          # The package stays overridable, so a consumer can swap the
+          # Emacs, the evil package or the grammar set:
+          #   inputs.tired.packages.${system}.tired.override {
+          #     emacs = pkgs.emacs-nox;
+          #   }
+          # The flake passes the commit-derived version, because a plain
+          # import of the expression cannot know it.
+          tired = pkgs.lib.makeOverridable (
+            {
+              # One Emacs package set supplies every dependency, so
+              # an override of this argument moves all of them.
+              emacs ? pkgs.emacs,
+              # `melpaBuild' closes over the Emacs of its package set, so
+              # an `emacs' argument on the build does nothing.  Build the
+              # set against a wrapper instead, one that carries evil on
+              # its load path, so the install byte-compile and the ERT
+              # suite find the library without an EMACSLOADPATH export.
+              emacsPackages ? pkgs.emacsPackagesFor (emacs.pkgs.withPackages (_: [ evil ])),
+              melpaBuild ? emacsPackages.melpaBuild,
+              version ? "0.1.0",
+              # Tree-sitter grammars for the check phase only.  A handler
+              # whose grammar is absent returns no sections, so the file
+              # row stays plain and the ERT test skips itself.  A null value
+              # keeps the build small and still passes.
+              treesitGrammars ? emacs.pkgs.treesit-grammars.with-grammars (p: [
+                p.tree-sitter-rust
+                p.tree-sitter-markdown
+                p.tree-sitter-markdown-inline
+              ]),
+              # Evil reaches the build Emacs only.  tired-evil.el needs the
+              # library to byte-compile, and the ERT suite tests its key
+              # bindings, so the build cannot drop it.  The package metadata
+              # still names no dependency.
+              evil ? emacs.pkgs.evil,
+            }:
+            melpaBuild {
+              pname = "tired";
+              inherit version;
+              # `./.' is the repository root.  cleanSource drops VCS metadata
+              # and editor backup files, so only real package sources enter
+              # the store.
+              src = pkgs.lib.cleanSource ./.;
+
+              # The installed directory name comes from `pname' + `version',
+              # while package.el reads `;; Version:' from the header.  Keep
+              # both equal so package-lint, package.el and the store path
+              # agree.
+              postPatch = ''
+                substituteInPlace tired.el \
+                  --replace-fail ';; Version: 0.1.0' ';; Version: ${version}'
+              '';
+
+              # A byte-compile warning fails the build.  This is the cheapest
+              # lint the package gets, and it keeps the source warning-free.
+              turnCompilationWarningToError = true;
+
+              # The ERT suite reads this variable, so the Rust handler test
+              # finds libtree-sitter-rust and does not skip.
+              checkInputs = pkgs.lib.optional (treesitGrammars != null) treesitGrammars;
+
+              checkPhase = ''
+                runHook preCheck
+                ${pkgs.lib.optionalString (treesitGrammars != null) ''
+                  export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
+                ''}
+                emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
+                  -f batch-byte-compile tired.el tired-evil.el tired-tests.el
+                emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
+                runHook postCheck
+              '';
+
+              doCheck = true;
+
+              meta = {
+                description = "Tabulated list directory editor";
+                longDescription = ''
+                  Shows a directory as a `tabulated-list-mode' buffer.  Entries
+                  come from `directory-files' and `file-attributes', so the
+                  listing never parses `ls -l' output.  Provides column
+                  sorting, name filtering, hidden file toggling, and a
+                  transient selection that file commands act on.
+                '';
+                license = pkgs.lib.licenses.agpl3Plus;
+                homepage = "https://github.com/nagy/tired";
+                maintainers = with pkgs.lib.maintainers; [ nagy ];
+                # Pure Elisp and no native dependency, so Linux and Darwin
+                # both work.
+                platforms = pkgs.lib.platforms.unix;
+              };
+            }
+          ) { inherit version; };
         in
         {
           packages = {
