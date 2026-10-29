@@ -2569,6 +2569,31 @@ readable database."
           (nreverse sections))
       (error nil))))
 
+;;; Evil integration
+
+;; The definitions below follow `provide', so `(require 'tired)' inside
+;; `tired-evil' returns at once instead of loading this file again.
+
+(declare-function tired-evil-mode "tired-evil" (&optional arg))
+
+(defun tired--enable-evil-bindings (&rest _)
+  "Turn on `tired-evil-mode' when the evil library is present.
+The arguments are ignored, so the function fits
+`after-load-functions'.  Evil keeps its state maps in
+`emulation-mode-map-alists', and Emacs checks those maps before
+`tired-mode-map'.  Evil therefore hides `tired-open' on RET and
+every other Tired key.  `tired-evil' binds the same commands
+through the evil map machinery, which puts them back."
+  (when (and (featurep 'evil)
+             (require 'tired-evil nil t))
+    (remove-hook 'after-load-functions #'tired--enable-evil-bindings)
+    (tired-evil-mode 1)))
+
+;; The hook below runs at the end of this very load too, so a user
+;; with evil already loaded takes the bindings at once, and a user who
+;; loads Tired first waits for the evil library to arrive.
+(add-hook 'after-load-functions #'tired--enable-evil-bindings)
+
 (provide 'tired)
 
 ;;; tired.el ends here

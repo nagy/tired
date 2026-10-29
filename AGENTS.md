@@ -258,6 +258,22 @@ Evil integration:
 - `tired-evil.el` is a second library, so `tired` never requires evil.
   It requires evil and Tired, and it binds keys in normal and visual
   state only.
+- `tired.el` turns the evil bindings on by itself.  The last form
+  adds `tired--enable-evil-bindings` to `after-load-functions`, right
+  after `provide 'tired`, and that hook runs at the end of the Tired
+  load too, so both load orders work.  The position after `provide`
+  matters, because `tired-evil' requires `tired', and Emacs signals
+  "Recursive require" when a file requires its own feature while that
+  file still loads.  Do not replace the hook with
+  `with-eval-after-load`: package-lint fails the check on that macro.
+  The hook checks `(featurep 'evil)` before the require, so a plain
+  Emacs never loads evil, and the hook removes itself once done.
+- The automatic call exists because evil shadows the whole major mode
+  map.  Evil keeps its state maps in `emulation-mode-map-alists', and
+  Emacs checks that list before the major mode map, so `evil-ret' on
+  RET wins over `tired-mode-map' and moves down one line.
+  `evil-define-minor-mode-key` installs the maps ahead of the state
+  maps, which restores `tired-open' and every other Tired key.
 - `tired-evil-keys` and `tired-evil-visual-keys` hold the key tables.
   `tired-evil--bind` feeds them to `evil-define-minor-mode-key` for the
   private minor mode `tired-evil-local-mode`.

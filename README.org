@@ -139,12 +139,23 @@ entries next to the selection count.
 * Evil
 
 The package ships evil bindings in a separate file, so the main
-package needs no evil.  Load the file and turn on the global mode:
+package needs no evil.  The bindings turn on by themselves: loading
+`tired' first or loading evil first both work, so a plain evil user
+needs no extra call.
 
 #+begin_src elisp
   (require 'tired-evil)
   (tired-evil-mode 1)
 #+end_src
+
+The two lines above repeat the automatic setup.  Run them when the
+automatic call was turned off or the mode stopped.
+
+Evil needs them.  Evil keeps its state maps in
+`emulation-mode-map-alists', and Emacs checks that list before the
+major mode map.  Without the evil bindings, `evil-ret' takes =RET=
+and moves down one line, and the same shadowing hits every Tired
+key.
 
 The bindings leave the evil motions alone.  =j=, =k=, =gg=, =G=,
 =C-d=, =C-u=, =/=, =n= and =N= keep their meaning, and every Tired

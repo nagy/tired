@@ -1829,6 +1829,21 @@ joins the range."
       (tired-evil-mode -1)
       (evil-local-mode -1))))
 
+(ert-deftest tired-evil-bindings-arrive-with-the-evil-library ()
+  "Loading Tired and then evil gives RET back to the Tired command."
+  (skip-unless (require 'evil nil t))
+  (tired-tests--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode -1)
+          (tired--enable-evil-bindings)
+          (should (bound-and-true-p tired-evil-local-mode))
+          (should (eq (key-binding (key-parse "RET")) #'tired-open)))
+      (tired-evil-mode -1)
+      (evil-local-mode -1))))
+
 (provide 'tired-tests)
 
 ;;; tired-tests.el ends here
