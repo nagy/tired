@@ -272,8 +272,11 @@ final file themselves.
 
 The collapsed row keeps the directory's sort position, shows the file
 attributes, and acts as the file.  =RET= opens it and =w= copies its
-real path.  =C= toggles collapse for the current buffer.  Inserted
-sections collapse as well; =C= off shows the real rows.
+real path.  The directory components of the row name take the
+directory face, and the last component takes the face that the file
+takes on its own row, so `tools/file.el' shows a colored `tools/' and
+a plain `file.el'.  =C= toggles collapse for the current buffer.
+Inserted sections collapse as well; =C= off shows the real rows.
 
 * Automatic refresh
 

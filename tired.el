@@ -248,7 +248,8 @@ file name.  TYPE is one of `directory', `file', `symlink' or
 size in bytes.  MTIME is a float time value.  MODE is the permission
 string as returned by `file-attribute-modes'.  LINK is the link
 target for symbolic links.  BROKEN is non-nil when a symbolic link
-does not resolve."
+does not resolve.  COLLAPSED is non-nil on a display clone of a
+single-entry chain, whose NAME holds the relative path."
   name
   path
   type
@@ -257,7 +258,8 @@ does not resolve."
   mtime
   mode
   link
-  broken)
+  broken
+  collapsed)
 
 (cl-defstruct (tired-section (:constructor tired--section-create))
   "One row that a file handler extracted from a file.
@@ -496,7 +498,8 @@ result is nil when ENTRY is not a directory or does not collapse."
       (when file
         (let ((clone (copy-tired-entry file)))
           (setf (tired-entry-name clone)
-                (file-relative-name (tired-entry-path file) directory))
+                (file-relative-name (tired-entry-path file) directory)
+                (tired-entry-collapsed clone) t)
           clone)))))
 
 ;;; File sections
@@ -759,12 +762,12 @@ and a lock file name.  The cache follows the variable."
               (and (string-match-p (car rule) name) (cdr rule)))
             tired-name-faces))
 
-(defun tired--name-face (entry)
+(defun tired--name-face (entry &optional name)
   "Return the face for the name of ENTRY, or nil for a plain name.
-The fixed order runs directory, broken link, user rule, ignored
-suffix, symbolic link, special file.  The order otherwise follows
-`dired-font-lock-keywords'."
-  (let ((name (tired-entry-name entry)))
+NAME defaults to the name of ENTRY.  The fixed order runs directory,
+broken link, user rule, ignored suffix, symbolic link, special file.
+The order otherwise follows `dired-font-lock-keywords'."
+  (let ((name (or name (tired-entry-name entry))))
     (cond
      ((tired-entry-dirp entry) 'tired-directory-face)
      ((and (eq (tired-entry-type entry) 'symlink)
@@ -789,23 +792,43 @@ carries both, as `package-menu--print-info-simple' does."
       (apply #'propertize name (tired--face-properties face))
     name))
 
+(defun tired--symlink-suffix (entry)
+  "Return the arrow and the target text for the symbolic link ENTRY."
+  (concat " -> "
+          (apply #'propertize
+                 (or (tired-entry-link entry) "?")
+                 (tired--face-properties
+                  (if (tired-entry-broken entry)
+                      'tired-broken-symlink-face
+                    'tired-symlink-target-face)))))
+
+(defun tired--collapsed-name-cell (entry)
+  "Return the name cell for the collapsed ENTRY.
+Paint every directory component with the directory face, because the
+row stands for a chain of directories.  Paint the last component
+with the face the file takes on its own row.  A symbolic link keeps
+its target arrow."
+  (let* ((name (tired-entry-name entry))
+         (file (file-name-nondirectory name))
+         (head (string-remove-suffix file name)))
+    (concat (tired--propertize-name head 'tired-directory-face)
+            (tired--propertize-name file (tired--name-face entry file))
+            (when (eq (tired-entry-type entry) 'symlink)
+              (tired--symlink-suffix entry)))))
+
 (defun tired--name-cell (entry)
   "Return the name column string for ENTRY."
   (let ((name (tired-entry-name entry))
         (face (tired--name-face entry)))
-    (pcase (tired-entry-type entry)
-      ('directory
-       (concat (tired--propertize-name name face) "/"))
-      ('symlink
-       (concat (tired--propertize-name name face)
-               " -> "
-               (apply #'propertize
-                      (or (tired-entry-link entry) "?")
-                      (tired--face-properties
-                       (if (tired-entry-broken entry)
-                           'tired-broken-symlink-face
-                         'tired-symlink-target-face)))))
-      (_ (tired--propertize-name name face)))))
+    (cond
+     ((tired-entry-collapsed entry) (tired--collapsed-name-cell entry))
+     (t (pcase (tired-entry-type entry)
+          ('directory
+           (concat (tired--propertize-name name face) "/"))
+          ('symlink
+           (concat (tired--propertize-name name face)
+                   (tired--symlink-suffix entry)))
+          (_ (tired--propertize-name name face)))))))
 
 (defvar tired--size-cache nil
   "Hash table that maps a truename to the size of a directory subtree.

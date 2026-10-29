@@ -1317,14 +1317,35 @@ joins the range."
     (should-not (member "branch/x/one.txt" (tired-tests--names)))))
 
 (ert-deftest tired-collapse-hidden-final-file ()
-  "A collapsed chain whose file is hidden follows the dotfile toggle."
-  (tired-tests--with-fixture
+  "A collapsed chain whose file is hidden follows the dotfile toggle."  (tired-tests--with-fixture
     (make-directory (expand-file-name "secret/a" root) t)
     (with-temp-file (expand-file-name "secret/a/.hiddenfile") (insert "h"))
     (tired root)
     (should (member "secret/a/.hiddenfile" (tired-tests--names)))
     (tired-toggle-dotfiles)
     (should-not (member "secret/a/.hiddenfile" (tired-tests--names)))))
+
+(ert-deftest tired-collapse-paints-the-path-and-the-file-apart ()
+  "A collapsed row paints its directory part and its file part apart."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a" root) t)
+    (with-temp-file (expand-file-name "chain/a/file.elc") (insert "abc"))
+    (tired root)
+    (let* ((row (seq-find
+                 (lambda (row)
+                   (equal (tired-entry-name (car row))
+                          "chain/a/file.elc"))
+                 (tired--display-rows t)))
+           (cell (tired--name-cell (car row)))
+           (file-start (length "chain/a/")))
+      (should (equal (substring-no-properties cell) "chain/a/file.elc"))
+      (should (eq (get-text-property 0 'face cell) 'tired-directory-face))
+      (should (eq (get-text-property (1- file-start) 'face cell)
+                  'tired-directory-face))
+      (should (eq (get-text-property file-start 'face cell)
+                  'tired-ignored-face))
+      (should (eq (get-text-property file-start 'font-lock-face cell)
+                  'tired-ignored-face)))))
 
 (ert-deftest tired-toggle-collapse-shows-real-rows ()
   "C switches between the collapsed row and the directory row."

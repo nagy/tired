@@ -504,6 +504,14 @@ Evil integration:
 - A collapsed row stores the real file path with a relative display name.
   Selection, narrow and copy use the path.  Do not derive the file from
   the display name.
+- `tired--name-cell` paints a collapsed row in two parts.  Every
+  directory component takes `tired-directory-face`, and the last
+  component takes the face that the file takes on its own row, so the
+  row looks like a directory chain that ends in a file.  The
+  `COLLAPSED` slot marks the clone, because a plain file name never
+  holds a slash.  `tired--name-face` takes an optional NAME for this
+  case: the user rule and the ignored suffix must see the base name,
+  not the relative path.
 - Collapse runs after `tired--sorted-directory-entries`, so a collapsed
   row keeps the top directory's sort position.  Sorting by size or time
   therefore orders it by the directory's values while the columns show
