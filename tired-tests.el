@@ -855,6 +855,19 @@ a symlink, and removes every Tired buffer it opened."
       ;; The first matching rule wins.
       (should (eq 'bold (tired--name-face (tired-tests--entry "beta.txt")))))))
 
+(ert-deftest tired-name-faces-accepts-a-face-list ()
+  "A rule value may add attributes to a color with an anonymous face."
+  (tired-tests--with-fixture
+    (let ((tired-name-faces '(("\\.txt\\'" bold (:underline t)))))
+      (tired root)
+      (should (equal '(bold (:underline t))
+                     (tired-tests--cell-face
+                      (tired-tests--entry "alpha.txt"))))
+      (should (equal '(bold (:underline t))
+                     (get-text-property
+                      0 'font-lock-face
+                      (tired--name-cell (tired-tests--entry "alpha.txt"))))))))
+
 (ert-deftest tired-name-face-defaults-to-nil ()
   "With no rule and no Dired face, a plain file keeps no face."
   (tired-tests--with-fixture

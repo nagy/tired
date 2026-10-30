@@ -534,7 +534,11 @@ Evil integration:
   applies a fixed order: directory, broken link, user rule, ignored
   suffix, symlink, special file.  The first rule that matches wins.
   A directory never takes a user rule, because the directory face marks
-  the tree structure.
+  the tree structure.  A rule value goes straight into the `face'
+  property, so it may also hold a list of faces and anonymous faces.
+  Such a rule adds an attribute to a color, and an earlier element has
+  higher priority, so an underline rule names the color first and
+  `(:underline t)' second.
 - Recursive directory sizes stay off by default, because the option
   makes every refresh read every directory below the shown one.
   `tired--subtree-size` never follows a symbolic link, so a link cycle

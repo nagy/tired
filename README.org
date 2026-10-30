@@ -254,6 +254,17 @@ directory keeps its own face:
           ("\\.rs\\'"  . font-lock-function-name-face)))
 #+end_src
 
+A rule value can also be a list of faces.  Such a rule adds attributes
+to a color, so a name can carry an underline.  The list order matters,
+because an earlier face has higher priority:
+
+#+begin_src elisp
+  (setq tired-name-faces
+        '(("\\.nix\\'" . font-lock-keyword-face)
+          ("\\(?:default\\|flake\\)\\.nix\\'"
+           font-lock-keyword-face (:underline t))))
+#+end_src
+
 A name cell carries both the =face= and the =font-lock-face= property.
 The first one shows when Font Lock mode is off.  The second one stays
 when a Font Lock pass refontifies the buffer, which removes =face=.

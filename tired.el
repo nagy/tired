@@ -176,8 +176,10 @@ nil by default."
   "Alist of (REGEXP . FACE) that colorizes entry names.
 The first rule whose REGEXP matches the entry name wins.  A rule
 reaches files, symbolic links and special files.  A directory keeps
-its own face.  The default is nil, so only the Dired faces colorize
-a name."
+its own face.  FACE holds a face name, or a list of face names and
+anonymous faces, so a rule can add an attribute to a color.  An
+earlier list element has higher priority.  The default is nil, so
+only the Dired faces colorize a name."
   :type '(alist :key-type regexp :value-type face))
 
 (defcustom tired-file-handlers
