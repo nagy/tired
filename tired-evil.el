@@ -78,7 +78,9 @@
     ("M-t" . tired-touch)
     ("U" . tired-undo)
     ("y" . tired-copy-name)
-    ("w" . tired-copy-path))
+    ("w" . tired-copy-path)
+    ("W" . tired-copy-relative-path)
+    ("P" . tired-copy-project-path))
   "Keys that `tired-evil-mode' binds in normal state.
 Each entry is a key description and the command it runs.  The
 listing reads the selection, the region and then the row at point,

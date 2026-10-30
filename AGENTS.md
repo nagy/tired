@@ -201,7 +201,10 @@ Jumping and bookmarks:
   `tired--directory` in a Tired buffer, `buffer-file-name` in a file
   buffer, `default-directory` otherwise.  From a Tired buffer the target
   is the parent directory and the anchor is the shown directory, so
-  point lands on the directory that was left.
+  point lands on the directory that was left.  `tired-mode-map`
+  remaps `dired-jump` to `tired-jump`, so `C-x C-j` reaches Tired in a
+  Tired buffer.  Use the `"<remap> <dired-jump>"` key string:
+  `key-parse` reads the bracket form as literal characters.
 - `tired-bookmark-make-record` stores the directory in the record and
   `tired-bookmark-jump` reopens it.
 - `tired-find-file` completes over the whole subtree below
@@ -285,7 +288,9 @@ Evil integration:
 - The visual table is short on purpose: visual state needs its text
   objects, and the region already targets files for every command.
   The normal table leaves `j`, `k`, `gg`, `G`, `C-d`, `C-u`, `/`, `n`
-  and `N` to evil, the way `evil-collection-dired` does.
+  and `N` to evil, the way `evil-collection-dired` does.  It shadows
+  `w`, `W` and `P`, so the four copy commands keep their
+  `tired-mode-map` keys in normal state too.
 
 ## Conventions
 

@@ -1819,6 +1819,11 @@ joins the range."
           (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
           (should (eq (key-binding (key-parse "SPC"))
                       #'tired-select-toggle-next))
+          ;; The copy commands keep their `tired-mode-map' keys.
+          (should (eq (key-binding (key-parse "W"))
+                      #'tired-copy-relative-path))
+          (should (eq (key-binding (key-parse "P"))
+                      #'tired-copy-project-path))
           ;; Motion stays evil, so a Tired buffer is still navigable.
           (should (eq (key-binding (key-parse "j")) #'evil-next-line))
           (should (eq (key-binding (key-parse "gg"))

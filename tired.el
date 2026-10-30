@@ -2206,7 +2206,8 @@ selection is cleared afterwards."
   "+" #'tired-mkdir
   "M-t" #'tired-touch
   "U" #'tired-undo
-  "q" #'quit-window)
+  "q" #'quit-window
+  "<remap> <dired-jump>" #'tired-jump)
 
 ;;;###autoload
 (define-derived-mode tired-mode tabulated-list-mode "Tired"
