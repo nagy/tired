@@ -224,6 +224,18 @@ Copy commands:
   raises `user-error` outside a project.  All three share
   `tired--copy-targets`, so selection handling stays in one place.
 
+Browsing:
+
+- `tired-browse-url-of-file` follows `browse-url-of-dired-file`: it
+  reads `tired--selection-targets`, binds `browse-url-browser-function`
+  to `browse-url-secondary-browser-function` on a prefix argument and
+  empties `browse-url-default-handlers`, so no Emacs handler takes the
+  file back.  It runs `browse-url-of-file` on each target.  The name
+  keeps the `tired-` prefix, because package-lint rejects a
+  `browse-url-` name and rejects an alias with that name.  The command
+  has no key.  `browse-url` joins the top-level requires, so
+  byte-compile knows `browse-url-of-file`.
+
 File operations:
 
 - `tired--apply-to-targets` runs one function over the targets, deepest

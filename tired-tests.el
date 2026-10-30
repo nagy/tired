@@ -385,6 +385,50 @@ a symlink, and removes every Tired buffer it opened."
                (lambda (&rest _) nil)))
       (should-error (tired-copy-project-path) :type 'user-error))))
 
+(ert-deftest tired-browse-url-of-file-browses-the-targets ()
+  "Browsing sends every target path to the browser."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (let (visited)
+      (cl-letf (((symbol-function 'browse-url-of-file)
+                 (lambda (url &rest _) (push url visited))))
+        (tired-browse-url-of-file))
+      (should (equal (nreverse visited)
+                     (list (expand-file-name "alpha.txt" root)
+                           (expand-file-name "beta.txt" root)))))))
+
+(ert-deftest tired-browse-url-of-file-uses-the-secondary-browser ()
+  "A prefix argument selects the secondary browser."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let (browser handlers)
+      (cl-letf (((symbol-function 'browse-url-of-file)
+                 (lambda (&rest _)
+                   (setq browser browse-url-browser-function)
+                   (setq handlers browse-url-default-handlers))))
+        (tired-browse-url-of-file t))
+      (should (eq browser browse-url-secondary-browser-function))
+      (should-not handlers))))
+
+(ert-deftest tired-browse-url-of-file-browses-the-section-file ()
+  "A section row browses the file that holds it."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (tired root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Intro")
+    (let (visited)
+      (cl-letf (((symbol-function 'browse-url-of-file)
+                 (lambda (url &rest _) (push url visited))))
+        (tired-browse-url-of-file))
+      (should (equal visited (list (expand-file-name "notes.org" root)))))))
+
 (defmacro tired-tests--with-trash (&rest body)
   "Run BODY with a private trash directory and an empty undo stack."
   (declare (indent 0) (debug t))

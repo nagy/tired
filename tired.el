@@ -107,6 +107,7 @@
 ;;; Code:
 
 (require 'bookmark)
+(require 'browse-url)
 (require 'cl-lib)
 (require 'dired)
 (require 'filenotify)
@@ -2167,6 +2168,32 @@ selection is cleared afterwards."
   "Visit the target entries in another window."
   (interactive)
   (tired-open t))
+
+(defun tired-browse-url-of-file (&optional secondary)
+  "Ask a WWW browser to display the target files.
+Use `browse-url-secondary-browser-function' instead of
+`browse-url-browser-function' when SECONDARY is non-nil.  Act on
+the selection, then on the active region, then on the row at
+point.  A section row browses the file that holds it.  A directory
+target reaches the browser as a file URL, the way
+`browse-url-of-dired-file' does.  Like that command, this one
+leaves `browse-url-default-handlers' empty, so no Emacs handler
+takes the file back from the browser."
+  (interactive "P")
+  (let ((targets (tired--selection-targets)))
+    (unless targets
+      (user-error "No entry at point"))
+    (let ((browse-url-browser-function
+           (if secondary
+               browse-url-secondary-browser-function
+             browse-url-browser-function))
+          (browse-url-default-handlers nil))
+      (dolist (entry targets)
+        (browse-url-of-file (tired-entry-path entry))))
+    (deactivate-mark)
+    (message "Browsing %d file%s"
+             (length targets)
+             (if (= (length targets) 1) "" "s"))))
 
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."

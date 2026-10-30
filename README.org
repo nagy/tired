@@ -132,6 +132,13 @@ previous one, and an empty input removes the filter.
 directory, and =P= copies paths relative to the project root.  =P=
 signals an error when the shown directory belongs to no project.
 
+=M-x tired-browse-url-of-file= asks a WWW browser to display the
+target files.  A prefix argument uses
+=browse-url-secondary-browser-function=.  The command mirrors
+=browse-url-of-dired-file=: it acts on the selection, then on the
+region, then on the row at point, and a section row browses its
+file.  It has no key of its own.
+
 =N= narrows the listing to a snapshot of the selection plus the
 directories that contain the selected entries.  =N= again widens it.
 The mode line shows the total size of the selected non-directory
