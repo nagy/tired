@@ -2637,6 +2637,10 @@ into `context-menu-functions' locally."
           '(menu-item "Refresh" tired-refresh))))
     menu))
 
+(declare-function tired-export-csv "tired-export" ())
+(declare-function tired-export-json "tired-export" ())
+(declare-function tired-export-text "tired-export" ())
+
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
   :parent tabulated-list-mode-map
@@ -2765,6 +2769,14 @@ command that needs an entry stays insensitive on an empty row."
      :active (bound-and-true-p tired--undo-actions)]
     ["Shell command" tired-do-shell-command
      :active (tired--selection-targets)]
+    "--"
+    ("Export"
+     ["CSV" tired-export-csv
+      :help "Write the targets or the whole view as CSV"]
+     ["Text" tired-export-text
+      :help "Write the view with a full path on every line"]
+     ["JSON" tired-export-json
+      :help "Write the targets or the whole view in the rclone lsjson shape"])
     "--"
     ["Refresh" tired-refresh]
     ["Automatic refresh" tired-toggle-auto-revert

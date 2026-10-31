@@ -80,6 +80,9 @@ a symlink, and removes every Tired buffer it opened."
            ,@body)
        (dolist (buffer (buffer-list))
          (with-current-buffer buffer
+           (when (and (string-prefix-p "*Tired Export " (buffer-name))
+                      (string-prefix-p root (or default-directory "")))
+             (kill-buffer buffer))
            (when (and (derived-mode-p 'tired-mode)
                       tired--directory
                       (string-prefix-p root tired--directory))

@@ -78,6 +78,16 @@
 ;;
 ;;   M-x tired-jump  visit the directory of the current buffer
 ;;
+;; Export commands:
+;;
+;;   M-x tired-export-csv   the four listing columns as CSV
+;;   M-x tired-export-text  the view with a full path on every line
+;;   M-x tired-export-json  the array that `rclone lsjson' prints
+;;
+;; An export reads the selection, then the active region, then the
+;; whole visible view, and writes a read-only buffer.  Section rows
+;; stay out, because a section is not a file.
+;;
 ;; The mode sets `bookmark-make-record-function', so `bookmark-set'
 ;; records a Tired buffer and `bookmark-jump' restores it.
 ;;
@@ -112,6 +122,7 @@
 (require 'tired-core)
 (require 'tired-sections)
 (require 'tired-file-ops)
+(require 'tired-export)
 
 (declare-function recentf-add-file "recentf" (filename))
 

@@ -6,7 +6,7 @@ A directory editor on `tabulated-list-mode`.  Entries come from
 `directory-files-and-attributes`, never from `ls -l` output.  A row is
 a `tired-entry` or a `tired-section`, where a section belongs to a file
 that a handler can read.  `tired.el` is the entry point and requires
-three libraries, so a user command, a key and a lisp caller stay the
+four libraries, so a user command, a key and a lisp caller stay the
 same.
 
 Minimum Emacs 31.1, because `tabulated-list-print-entry` wants a
@@ -18,7 +18,7 @@ README before you document a command.
 
 ## Files
 
-- `tired.el` — entry point: commentary, the three requires, the public
+- `tired.el` — entry point: commentary, the four requires, the public
   commands (`tired`, `tired-other-window`, `tired-noselect`,
   `tired-find-file-mode`, `tired-jump`), the evil hook
 - `tired-core.el` — entries, section framework, display, selection,
@@ -27,11 +27,14 @@ README before you document a command.
   SQLite handlers
 - `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
   touch, shell
+- `tired-export.el` — the CSV, text and `rclone lsjson` exports and
+  their read-only buffers
 - `tired-evil.el` — optional evil bindings
 - `tired-tests.el` — loads the suites
 - `tired-tests-fixtures.el` — shared fixtures, helpers and setup
 - `tired-tests-core.el`, `tired-tests-sections.el`,
-  `tired-tests-file-ops.el`, `tired-tests-evil.el` — one suite per library
+  `tired-tests-file-ops.el`, `tired-tests-export.el`,
+  `tired-tests-evil.el` — one suite per library
 - `flake.nix`, `README.org`, `GLOSSARY.md`, `docs/adr/`, `LICENSE`
 
 ## Build & test
@@ -57,7 +60,7 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
   `TREESIT_EXTRA_LOAD_PATH`; a missing grammar skips its test instead of
   failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el`, `checkdoc` on
-  the five libraries, and `relint` on the same five.  `checkdoc` and
+  the six libraries, and `relint` on the same six.  `checkdoc` and
   `relint` exit 0 while they report, so the check gates on output.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix`.
@@ -69,9 +72,10 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 ## Architecture
 
 Dependencies point one way: `tired-core` requires no sibling,
-`tired-sections` and `tired-file-ops` require `tired-core`, and `tired`
-requires all three.  When `tired-core` names a command from another
-library, as `tired-mode-map` does, it adds a `declare-function`.
+`tired-sections`, `tired-file-ops` and `tired-export` require
+`tired-core`, and `tired` requires all four.  When `tired-core` names a
+command from another library, as `tired-mode-map` does, it adds a
+`declare-function`.
 
 Every `;;;###autoload` cookie for a command sits in `tired.el`, because
 the file that holds a cookie names the file that its autoload loads.
@@ -164,6 +168,13 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     'context-menu-functions)`, because `mouse.el` owns the variable.  A
     menu click leaves point alone, so each row command goes through
     `tired--context-command` and moves to the clicked position first.
+14. `tired--export` picks the targets, renders them in the format of
+    the command, and fills a read-only buffer.  The selection comes
+    first, then the region, then `tired--visible-entries`, so an
+    export never uses the row at point.  Section rows stay out, because
+    a section is not a file.  A whole-view export reuses one buffer per
+    format and directory.  A partial export makes a new buffer, because
+    another selection holds other rows.
 
 ## Conventions
 
@@ -209,6 +220,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - File commands never ask a confirmation and never call a shell, except
   `tired-do-shell-command`.  Removal goes through `tired--trash-move`,
   never through `delete-file`, so undo can restore the path.
+- An export command keeps the selection and the region, writes a
+  read-only buffer, and leaves the buffer unmodified.  The buffer takes
+  the listing directory as `default-directory`, so a later `C-x C-w`
+  starts in the shown directory.  Read a buffer-local variable before
+  `with-current-buffer`, or the target buffer supplies its own value.
 - AGPL3+ header in every Elisp file.
 
 ## Gotchas
@@ -374,6 +390,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - `tired-tests--with-trash` binds a private trash, an empty undo stack
   and an empty `tired-undo-push-functions`.  Use it for any test that
   removes or replaces a path.
+- `tired--export-json` follows the `rclone lsjson` object, so a field
+  name or a directory size of -1 stays as rclone prints it.  The CSV
+  export reports 0 for a directory, because that total needs a walk.
+  Test a new field against an rclone listing before you add it.
 - Batch Emacs dispatches no file notification event during `sit-for`, so
   the tests stub `file-notify-add-watch`.  Batch Emacs also has no window
   layout, so a test asserts buffer state, not window state.

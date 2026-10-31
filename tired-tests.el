@@ -32,6 +32,8 @@
 
 (require 'tired-tests-file-ops)
 
+(require 'tired-tests-export)
+
 (require 'tired-tests-evil)
 
 (provide 'tired-tests)

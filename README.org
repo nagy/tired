@@ -633,6 +633,55 @@ not report an edit to a file inside that directory.
 The Rust handler needs the tree-sitter grammar for Rust.  Without the
 grammar the handler returns no sections and the file row stays plain.
 
+* Export
+
+Three commands write the targets to a read-only buffer in another
+format: =M-x tired-export-csv=, =M-x tired-export-text= and =M-x
+tired-export-json=.  The commands read the transient selection first,
+then the active region, then the whole visible view, so a filter, a
+collapse or an inserted directory shows in the result.  Section rows
+stay out of every format, because a section is not a file.  The =Export=
+submenu on the menu bar runs the same three commands.
+
+The buffer takes the directory of the listing as =default-directory=
+and stays unmodified, so =C-x C-w= picks the file name.  A whole-view
+export reuses one buffer per format and directory, so a second call
+replaces the old text.  An export that a selection or a region limits
+always gets a new buffer, because another target set holds other rows.
+
+The CSV export prints the four listing columns.  A path is relative to
+the shown directory.  The size is a byte count, or 0 for a directory,
+because a recursive total costs one walk per directory.  RFC 4180
+quotes a field that holds a comma or a quote.
+
+#+begin_src text
+Name,Size,Modified,Mode
+sub,0,2026-10-31T19:08:14+00:00,drwxr-xr-x
+sub/inner.txt,5,2026-10-31T19:08:14+00:00,-rw-r--r--
+alpha.txt,3,2026-10-31T19:08:14+00:00,-rw-r--r--
+#+end_src
+
+The text export keeps the listing columns and prints the full path of
+every entry in the name column.  A grep finds a path on one line and
+takes it anywhere:
+
+#+begin_src text
+/home/user/notes/sub/inner.txt   5 2026-10-31 19:08 -rw-r--r--
+#+end_src
+
+The JSON export follows the =rclone lsjson= shape, so a script that
+reads an rclone listing reads this one.  Each object holds =Path=,
+=Name=, =Size=, =MimeType=, =ModTime= and =IsDir=.  =Path= is relative
+to the shown directory, =ModTime= is RFC 3339 in UTC, and a directory
+reports =Size= -1 with the =inode/directory= type.  The array holds one
+object per line:
+
+#+begin_src json
+[
+{"Path":"sub/inner.txt","Name":"inner.txt","Size":5,"MimeType":"text/plain","ModTime":"2026-10-31T19:08:14.947845220Z","IsDir":false}
+]
+#+end_src
+
 * Build and test
 
 #+begin_src sh

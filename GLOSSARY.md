@@ -41,6 +41,12 @@ else the active region, else the entry at point.  A command commits
 the region into the selection first, so its body reads one source.
 _Avoid_: Operand, subject
 
+**Export**:
+The read-only buffer that `tired-export-csv`, `tired-export-text` or
+`tired-export-json` writes from the targets or the whole visible
+listing.  A section row never joins, because a section is not a file.
+_Avoid_: Dump, report, save
+
 **Shell command**:
 The shell line that `tired-do-shell-command` builds from the targets
 and the substitution marks of the typed command.  The shell owns the
