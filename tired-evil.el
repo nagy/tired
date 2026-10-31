@@ -25,8 +25,9 @@
 ;;; Commentary:
 
 ;; This file is optional.  It gives a Tired buffer evil bindings that
-;; keep the motions: j, k, gg, G, C-d, C-u, /, n and N keep their
-;; meaning, and every Tired command gets a direct key.
+;; keep the motions: j, k, gg, G, C-d, C-u, n and N keep their
+;; meaning, and every Tired command gets a direct key.  The search
+;; key, /, runs `tired-filter' instead of `evil-ex-search-forward'.
 ;;
 ;;   (require 'tired-evil)
 ;;   (tired-evil-mode 1)
@@ -44,6 +45,7 @@
   '(;; Opening a row.
     ("RET" . tired-open)
     ("o" . tired-open-other-window)
+    ("f" . tired-find-file)
     ("-" . tired-up-directory)
     ("^" . tired-up-directory)
     ("TAB" . tired-toggle-subdir)
@@ -59,8 +61,9 @@
     ;; View.
     ("gr" . tired-refresh)
     ("<remap> <evil-replace>" . revert-buffer-quick)
+    ("<remap> <evil-ex-search-forward>" . tired-filter)
+    ("<remap> <evil-search-forward>" . tired-filter)
     ("s" . tired-sort)
-    ("f" . tired-filter)
     ("F" . tired-clear-filter)
     ("." . tired-toggle-dotfiles)
     ("N" . tired-toggle-narrow)

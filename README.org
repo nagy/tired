@@ -176,7 +176,7 @@ and moves down one line, and the same shadowing hits every Tired
 key.
 
 The bindings leave the evil motions alone.  =j=, =k=, =gg=, =G=,
-=C-d=, =C-u=, =/=, =n= and =N= keep their meaning, and every Tired
+=C-d=, =C-u=, =n= and =N= keep their meaning, and every Tired
 command gets a direct key:
 
 | Key        | Command                         |
@@ -185,14 +185,16 @@ command gets a direct key:
 | =o=          | =tired-open-other-window=         |
 | =-=, =^=       | =tired-up-directory=              |
 | =TAB=        | =tired-toggle-subdir=             |
-| =gf=, =gF=     | =tired-find-file=, other window   |
+| =gf=, =f=      | =tired-find-file=                 |
+| =gF=         | other window                      |
 | =i=, =M-i=     | insert, remove a subdirectory   |
 | =e=, =E=       | expand, collapse file sections  |
 | =C=          | =tired-toggle-collapse=           |
 | =gr=         | =tired-refresh=                   |
 | =r=          | =revert-buffer-quick=             |
 | =s=          | =tired-sort=                      |
-| =f=, =F=       | filter, clear the filter        |
+| =/=          | =tired-filter=                    |
+| =F=          | clear the filter                |
 | =.=          | =tired-toggle-dotfiles=           |
 | =N=          | =tired-toggle-narrow=             |
 | =A=          | =tired-toggle-auto-revert=        |

@@ -314,14 +314,19 @@ Evil integration:
   `tired-mode-map`.
 - The visual table is short on purpose: visual state needs its text
   objects, and the region already targets files for every command.
-  The normal table leaves `j`, `k`, `gg`, `G`, `C-d`, `C-u`, `/`, `n`
-  and `N` to evil, the way `evil-collection-dired` does.  It shadows
+  The normal table leaves `j`, `k`, `gg`, `G`, `C-d`, `C-u`, `n` and
+  `N` to evil, the way `evil-collection-dired` does.  It shadows
   `w`, `W` and `P`, so the four copy commands keep their
-  `tired-mode-map` keys in normal state too.  The table remaps
-  `evil-replace` to `revert-buffer-quick`, because a listing is
-  read-only and `r` has no other use there.  Spell the entry
-  `"<remap> <evil-replace>"`, because `key-parse` reads the bracket
-  form as literal characters.
+  `tired-mode-map` keys in normal state too.  It puts `f` on
+  `tired-find-file` and keeps `gf` as the same command.  The table
+  remaps `evil-replace` to `revert-buffer-quick`, because a listing
+  is read-only and `r` has no other use there.  It remaps
+  `evil-ex-search-forward` and `evil-search-forward` to
+  `tired-filter`, because a filter narrows the listing and a search
+  does not, and because evil binds `/` to one of the two depending on
+  `evil-search-module`.  Spell every remap entry
+  `"<remap> <evil-replace>"` and `"<remap> <evil-ex-search-forward>"`,
+  because `key-parse` reads the bracket form as literal characters.
 - The evil tables put the selection on `m`, not on `SPC`, and the move
   command on `R`, not on `m`.  Shadowing `m` costs the evil mark
   command, and shadowing `R` keeps the evil replace state out of a

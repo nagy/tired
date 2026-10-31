@@ -2175,7 +2175,10 @@ joins the range."
           (should (eq (key-binding (key-parse "D")) #'tired-delete))
           (should (eq (key-binding (key-parse "TAB"))
                       #'tired-toggle-subdir))
+          (should (eq (key-binding (key-parse "f")) #'tired-find-file))
           (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
+          ;; The search key narrows the listing instead of searching it.
+          (should (eq (key-binding (key-parse "/")) #'tired-filter))
           ;; `evil-replace' has nothing to do in a read-only listing,
           ;; so the remap turns its key into a reload.
           (should (eq (key-binding (key-parse "r"))
