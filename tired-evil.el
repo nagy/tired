@@ -66,7 +66,7 @@
     ("N" . tired-toggle-narrow)
     ("A" . tired-toggle-auto-revert)
     ;; Selection.
-    ("SPC" . tired-select-toggle-next)
+    ("m" . tired-select-toggle-next)
     ("M-SPC" . tired-select-toggle)
     ("t" . tired-select-all)
     ("u" . tired-select-none)
@@ -74,7 +74,7 @@
     ;; Files.
     ("D" . tired-delete)
     ("c" . tired-copy)
-    ("m" . tired-move)
+    ("R" . tired-move)
     ("+" . tired-mkdir)
     ("M-t" . tired-touch)
     ("U" . tired-undo)
@@ -90,11 +90,11 @@ so a visual range reaches every file command.")
 (defvar tired-evil-visual-keys
   '(("D" . tired-delete)
     ("c" . tired-copy)
-    ("m" . tired-move)
+    ("R" . tired-move)
     ("U" . tired-undo)
     ("y" . tired-copy-name)
     ("w" . tired-copy-path)
-    ("SPC" . tired-select-toggle))
+    ("m" . tired-select-toggle))
   "Keys that `tired-evil-mode' binds in visual state.
 A narrow set, because visual state needs its text objects.  Every
 command here reads the active region.")

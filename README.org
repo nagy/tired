@@ -188,9 +188,9 @@ command gets a direct key:
 | =.=          | =tired-toggle-dotfiles=           |
 | =N=          | =tired-toggle-narrow=             |
 | =A=          | =tired-toggle-auto-revert=        |
-| =SPC=, =M-SPC= | toggle the selection next, here |
+| =m=, =M-SPC=   | toggle the selection next, here |
 | =t=, =u=, =~=    | select all, none, invert        |
-| =D=, =c=, =m=    | delete, copy, move              |
+| =D=, =c=, =R=    | delete, copy, move              |
 | =+=, =M-t=     | create a directory, a file      |
 | =U=          | =tired-undo=                      |
 | =y=, =w=       | copy names, copy paths          |
@@ -203,9 +203,9 @@ adds and removes the keys for every Tired buffer, existing or new.
 
 * File operations
 
-=c= copies the targets into a directory.  =m= moves them.  With one
-target, =m= reads the destination as a new full path, so a rename
-works.  With several targets, =m= reads a destination directory.
+=c= copies the targets into a directory.  =R= moves them.  With one
+target, =R= reads the destination as a new full path, so a rename
+works.  With several targets, =R= reads a destination directory.
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
 empty file.  None of the commands asks for a confirmation.  None of
 them calls a shell.

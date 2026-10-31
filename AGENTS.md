@@ -318,6 +318,12 @@ Evil integration:
   read-only and `r` has no other use there.  Spell the entry
   `"<remap> <evil-replace>"`, because `key-parse` reads the bracket
   form as literal characters.
+- The evil tables put the selection on `m`, not on `SPC`, and the move
+  command on `R`, not on `m`.  Shadowing `m` costs the evil mark
+  command, and shadowing `R` keeps the evil replace state out of a
+  read-only listing.  Both tables use the same two keys.  The plain
+  `tired-mode-map` keeps `SPC` for `tired-select-toggle-next` and `m`
+  for `tired-move`.
 
 ## Conventions
 

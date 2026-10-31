@@ -2042,8 +2042,11 @@ joins the range."
           ;; so the remap turns its key into a reload.
           (should (eq (key-binding (key-parse "r"))
                       #'revert-buffer-quick))
-          (should (eq (key-binding (key-parse "SPC"))
+          (should (eq (key-binding (key-parse "m"))
                       #'tired-select-toggle-next))
+          ;; The move command takes shift-R, so the evil replace state
+          ;; stays out of a read-only listing.
+          (should (eq (key-binding (key-parse "R")) #'tired-move))
           ;; The copy commands keep their `tired-mode-map' keys.
           (should (eq (key-binding (key-parse "W"))
                       #'tired-copy-relative-path))
@@ -2071,6 +2074,9 @@ joins the range."
           (should (eq evil-state 'visual))
           (should (eq (key-binding (key-parse "D")) #'tired-delete))
           (should (eq (key-binding (key-parse "c")) #'tired-copy))
+          (should (eq (key-binding (key-parse "R")) #'tired-move))
+          (should (eq (key-binding (key-parse "m"))
+                      #'tired-select-toggle))
           ;; Visual state keeps its inner text objects.
           (should (keymapp (key-binding (key-parse "i")))))
       (evil-normal-state)
