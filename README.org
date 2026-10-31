@@ -180,6 +180,7 @@ command gets a direct key:
 | =e=, =E=       | expand, collapse file sections  |
 | =C=          | =tired-toggle-collapse=           |
 | =gr=         | =tired-refresh=                   |
+| =r=          | =revert-buffer-quick=             |
 | =s=          | =tired-sort=                      |
 | =f=, =F=       | filter, clear the filter        |
 | =.=          | =tired-toggle-dotfiles=           |

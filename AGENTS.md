@@ -305,7 +305,11 @@ Evil integration:
   The normal table leaves `j`, `k`, `gg`, `G`, `C-d`, `C-u`, `/`, `n`
   and `N` to evil, the way `evil-collection-dired` does.  It shadows
   `w`, `W` and `P`, so the four copy commands keep their
-  `tired-mode-map` keys in normal state too.
+  `tired-mode-map` keys in normal state too.  The table remaps
+  `evil-replace` to `revert-buffer-quick`, because a listing is
+  read-only and `r` has no other use there.  Spell the entry
+  `"<remap> <evil-replace>"`, because `key-parse` reads the bracket
+  form as literal characters.
 
 ## Conventions
 

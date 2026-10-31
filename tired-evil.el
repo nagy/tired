@@ -58,6 +58,7 @@
     ("C" . tired-toggle-collapse)
     ;; View.
     ("gr" . tired-refresh)
+    ("<remap> <evil-replace>" . revert-buffer-quick)
     ("s" . tired-sort)
     ("f" . tired-filter)
     ("F" . tired-clear-filter)
