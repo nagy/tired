@@ -2249,6 +2249,86 @@ takes the file back from the browser."
   "<remap> <dired-jump>" #'tired-jump
   "<remap> <end-of-buffer>" #'tired-goto-last-entry)
 
+(easy-menu-define tired-mode-menu tired-mode-map
+  "Menu for `tired-mode'.
+The menu names the commands that a new user cannot guess from the
+key map.  Each entry tests the listing when the menu opens, so a
+command that needs an entry stays insensitive on an empty row."
+  '("Tired"
+    ["Visit" tired-find-file
+     :active (tired--row-at-point)
+     :help "Visit the entry at point, or every selected file"]
+    ["Visit in other window" tired-find-file-other-window
+     :active (tired--row-at-point)]
+    ["Up" tired-up-directory]
+    "--"
+    ["Insert subdirectory" tired-insert-subdir
+     :active (tired--directory-entry-p (tired--row-at-point))
+     :help "Show the children of the directory at point"]
+    ["Remove subdirectory" tired-remove-subdir
+     :active (tired--directory-entry-p (tired--row-at-point))]
+    ["Toggle subtree" tired-toggle-subdir
+     :active (tired--directory-entry-p (tired--row-at-point))]
+    ["Expand file" tired-expand-file
+     :active (tired--row-at-point)
+     :help "Show the sections that a handler extracts"]
+    ["Collapse file" tired-collapse-file]
+    ("Filter"
+     ["Set filter" tired-filter
+      :help "Narrow the listing while typing"]
+     ["Clear filter" tired-clear-filter
+      :active tired--filter]
+     ["Show dotfiles" tired-toggle-dotfiles
+      :style toggle :selected (not tired--hide-dotfiles)]
+     ["Show hidden" tired-toggle-hidden
+      :style toggle :selected tired--show-hidden])
+    ("Select"
+     ["Toggle" tired-select-toggle
+      :active (tired--row-at-point)]
+     ["Toggle and move down" tired-select-toggle-next
+      :active (tired--row-at-point)]
+     ["All" tired-select-all]
+     ["None" tired-select-none
+      :active tired--selection]
+     ["Invert" tired-select-invert]
+     ["Narrow to selection" tired-toggle-narrow]
+     "--"
+     ["Copy name" tired-copy-name
+      :active (tired--row-at-point)]
+     ["Copy path" tired-copy-path
+      :active (tired--selection-targets)]
+     ["Copy relative path" tired-copy-relative-path
+      :active (tired--selection-targets)]
+     ["Copy project path" tired-copy-project-path
+      :active (tired--selection-targets)])
+    ("Sort"
+     ["Name" (tired-sort 'name)
+      :style radio :selected (eq tired--sort-key 'name)]
+     ["Size" (tired-sort 'size)
+      :style radio :selected (eq tired--sort-key 'size)]
+     ["Modified" (tired-sort 'modified)
+      :style radio :selected (eq tired--sort-key 'modified)]
+     ["Mode" (tired-sort 'mode)
+      :style radio :selected (eq tired--sort-key 'mode)])
+    "--"
+    ["Copy here" tired-copy
+     :active (tired--selection-targets)]
+    ["Move" tired-move
+     :active (tired--selection-targets)]
+    ["Delete" tired-delete
+     :active (tired--selection-targets)
+     :help "Move the targets into the session trash"]
+    ["Undo" tired-undo
+     :active (bound-and-true-p tired--undo-actions)]
+    ["Shell command" tired-do-shell-command
+     :active (tired--selection-targets)]
+    "--"
+    ["Refresh" tired-refresh]
+    ["Automatic refresh" tired-toggle-auto-revert
+     :style toggle :selected tired-auto-revert]
+    ["Single-child collapse" tired-toggle-collapse
+     :style toggle :selected tired-collapse-single-child]))
+
 ;;;###autoload
 (define-derived-mode tired-mode tabulated-list-mode "Tired"
   "Major mode for editing a directory as a tabulated list.

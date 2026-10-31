@@ -75,6 +75,13 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 
 * Key bindings
 
+The same commands sit in a =Tired= menu on the menu bar, so a reader
+without the key map still finds them.  An entry greys out when the
+row at point cannot take it, and =tired-toggle-dotfiles=,
+=tired-toggle-hidden=, =tired-toggle-auto-revert= and
+=tired-toggle-collapse= show a checkmark while on.  Terminal Emacs
+reaches the menu through =F10= or =M-`=.
+
 | Key     | Command                        | Description                             |
 |---------+--------------------------------+-----------------------------------------|
 | =RET=   | =tired-find-file=              | Visit the target entries                |

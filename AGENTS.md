@@ -485,6 +485,12 @@ Evil integration:
 - Public commands carry an `;;;###autoload` cookie only when they are
   entry points (`tired`, `tired-other-window`, `tired-mode`,
   `tired-noselect`).
+- `tired-mode-menu` in `tired-core.el` mirrors the key map on the menu
+  bar.  Add a new command to the menu when its key alone does not
+  explain it.  An `:active` form reads the listing when the menu
+  opens, so a row command stays insensitive on an empty row.  Use
+  `(bound-and-true-p VARIABLE)` for a state variable that another
+  library owns, because the menu data outlives a partial load.
 - Every function has a docstring.  `checkdoc` must pass.
 - Byte-compilation with warnings as errors must pass.
 - Faces inherit from Dired faces (`dired-directory`, `dired-symlink`,

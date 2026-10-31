@@ -513,6 +513,18 @@ costs one redraw and not one per character."
     (should (string-suffix-p "/"
                              (tired--name-cell (tired-tests--entry "sub"))))))
 
+(ert-deftest tired-mode-map-offers-a-menu ()
+  "The mode map holds a Tired menu bar entry.
+The menu names the file commands that a reader cannot find from the
+key map alone."
+  (let ((menu (lookup-key tired-mode-map [menu-bar tired])))
+    (should (keymapp menu))
+    (should (equal (cadr menu) "Tired"))
+    (should (seq-some (lambda (item)
+                        (and (consp item)
+                             (eq (nth 3 item) 'tired-delete)))
+                      (cdr menu)))))
+
 (ert-deftest tired-command-opens-a-listing ()
   "The `tired' command opens the listing of the directory it gets."
   (tired-tests--with-fixture
