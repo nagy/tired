@@ -183,17 +183,24 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired-evil-visual-keys` when it reads the region.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
   shadows it.
-- `tired` and `tired-other-window` go through `tired--show-buffer`: it
-  hands `tired-display-buffer-action` or `tired-other-window-action` to
-  `display-buffer` and then selects the returned window, because
-  `tired-jump` moves point in the listing after the call.  Keep both
-  action values cons cells: `display-buffer` reads any value that is
-  not a cons cell as the old request for another window, drops the
-  action function and adds `inhibit-same-window`, so a bare symbol
-  puts the listing in the wrong window and defeats a
-  `display-buffer-alist' rule that asks for the selected window.
-  `tired--show-buffer` wraps such a value in a list, but neither
-  defcustom offers one.
+- `tired` goes through `tired--show-buffer`: it hands
+  `tired-display-buffer-action` to `display-buffer` and then selects
+  the returned window, because `tired-jump` moves point in the listing
+  after the call.  Keep that action value a cons cell: `display-buffer`
+  reads any value that is not a cons cell as the old request for
+  another window, drops the action function and adds
+  `inhibit-same-window`, so a bare symbol puts the listing in the
+  wrong window and defeats a `display-buffer-alist' rule that asks for
+  the selected window.  `tired--show-buffer` wraps such a value in a
+  list, and the defcustom does not offer one.
+- `tired-other-window` and every directory row that opens with
+  OTHER-WINDOW call `switch-to-buffer-other-window`, as
+  `dired-other-window` and `dired-find-file-other-window` do.  The
+  `pop-up-windows` binding of that function makes a split obey
+  `split-height-threshold` and `split-width-threshold`.  Do not route
+  this path through a display action: an action that only reuses an
+  existing window finds none on a one-window frame, falls through to
+  `display-buffer-pop-up-frame` and pops a new frame.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.  A section
   label follows the same rule through `tired--section-cell`.

@@ -61,23 +61,29 @@
     (should (eq (tired-noselect root) (tired-noselect root)))))
 
 (ert-deftest tired-passes-the-display-action-to-display-buffer ()
-  "Each command hands its own action to `display-buffer'."
+  "`tired' hands its action to `display-buffer'."
   (tired-tests--with-fixture
     (let ((seen nil)
-          (tired-display-buffer-action '(display-buffer-same-window))
-          (tired-other-window-action '(display-buffer-use-some-window
-                                       (inhibit-same-window . t))))
+          (tired-display-buffer-action '(display-buffer-same-window)))
       (cl-letf (((symbol-function 'display-buffer)
                  (lambda (buffer action)
                    (push (list buffer action) seen)
                    (selected-window))))
-        (tired root)
-        (tired-other-window root))
+        (tired root))
       (setq seen (nreverse seen))
-      (should (equal (nth 1 (nth 0 seen)) '(display-buffer-same-window)))
-      (should (equal (nth 1 (nth 1 seen))
-                     '(display-buffer-use-some-window
-                       (inhibit-same-window . t)))))))
+      (should (equal (nth 1 (nth 0 seen)) '(display-buffer-same-window))))))
+
+(ert-deftest tired-other-window-splits-as-dired-does ()
+  "`tired-other-window' obeys the split thresholds.
+`switch-to-buffer-other-window' reads `pop-up-windows', the
+`split-height-threshold' and the `split-width-threshold', so the
+listing opens beside the current buffer and not on a new frame."
+  (tired-tests--with-fixture
+    (let (shown)
+      (cl-letf (((symbol-function 'switch-to-buffer-other-window)
+                 (lambda (buffer) (push buffer shown) buffer)))
+        (tired-other-window root))
+      (should (equal shown (list (tired-noselect root)))))))
 
 (ert-deftest tired-wrap-a-bare-action-function-in-a-list ()
   "A bare function symbol reaches `display-buffer' as a list.
@@ -94,11 +100,9 @@ for another window, so a bare symbol would drop the action and add
         (tired root))
       (should (equal (car seen) '(display-buffer-same-window))))))
 
-(ert-deftest tired-display-buffer-actions-start-as-lists ()
-  "Both display options hold a cons cell."
-  (dolist (variable '(tired-display-buffer-action
-                      tired-other-window-action))
-    (should (consp (default-value variable)))))
+(ert-deftest tired-display-buffer-action-starts-as-a-list ()
+  "The display option holds a cons cell."
+  (should (consp (default-value 'tired-display-buffer-action))))
 
 (ert-deftest tired-default-action-reaches-display-buffer-as-a-list ()
   "The default action must reach `display-buffer' as a cons cell."
@@ -112,13 +116,11 @@ for another window, so a bare symbol would drop the action and add
       (should (consp seen)))))
 
 (ert-deftest tired-display-buffer-action-is-a-user-option ()
-  "Both display options carry a docstring and start set."
-  (dolist (variable '(tired-display-buffer-action
-                      tired-other-window-action))
-    (should (custom-variable-p variable))
-    (should (default-value variable))
-    (should (stringp (documentation-property variable
-                                             'variable-documentation)))))
+  "The display option carries a docstring and starts set."
+  (should (custom-variable-p 'tired-display-buffer-action))
+  (should (default-value 'tired-display-buffer-action))
+  (should (stringp (documentation-property 'tired-display-buffer-action
+                                           'variable-documentation))))
 
 (ert-deftest tired-find-file-mode-toggles-find-directory-functions ()
   "`tired-find-file-mode' adds and removes the finder."
@@ -2018,6 +2020,18 @@ costs a network round trip, so the row stays plain."
     (tired-find-file-other-window)
     (should (equal buffer-file-name
                    (expand-file-name "alpha.txt" root)))))
+
+(ert-deftest tired-find-file-other-window-splits-for-a-directory ()
+  "A directory row splits the window the way Dired does."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (let (shown)
+      (cl-letf (((symbol-function 'switch-to-buffer-other-window)
+                 (lambda (buffer) (push buffer shown) buffer)))
+        (tired-find-file-other-window))
+      (should (equal shown
+                     (list (tired-noselect (expand-file-name "sub" root))))))))
 
 (ert-deftest tired-toggle-subdir-rejects-a-file-without-subtree ()
   "TAB on a plain file reports that no subtree exists."

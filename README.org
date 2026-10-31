@@ -53,15 +53,20 @@ the listing, in the manner of =M-x dired=.  =M-x tired-other-window=
 does the same in another window.  =tired-noselect= returns the buffer
 without showing it, the way =dired-noselect= does.
 
-The two commands hand their window choice to `display-buffer'.
-=tired-display-buffer-action= holds the action for =tired=, and
-=tired-other-window-action= holds the action for
-=tired-other-window=.  Each value takes the form that
-`display-buffer' accepts, so a user decides where the listing lands.
-Keep the value a list.  A bare function symbol does not work:
-`display-buffer' reads a value that is not a cons cell as the old
-request for another window, so the listing lands in the wrong
-window.
+=tired= hands its window choice to `display-buffer'.
+=tired-display-buffer-action= holds that action.  The value takes the
+form that `display-buffer' accepts, so a user decides where the
+listing lands.  Keep the value a list.  A bare function symbol does
+not work: `display-buffer' reads a value that is not a cons cell as
+the old request for another window, so the listing lands in the
+wrong window.
+
+=tired-other-window= shows the listing in another window, the way
+=dired-other-window= does, and =o= opens a directory row the same
+way.  When the window must split, the options
+=split-height-threshold= and =split-width-threshold= decide the
+direction.  A `display-buffer-alist' rule that matches the buffer
+name still wins, so a user keeps control of the window choice.
 
 #+begin_src elisp
   ;; Reuse a window, and pop up a new one when no window fits.

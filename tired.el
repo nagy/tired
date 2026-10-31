@@ -170,8 +170,8 @@ no command changes without the user's consent."
 
 (defun tired--show-buffer (buffer action)
   "Show BUFFER through ACTION, select its window and return BUFFER.
-Select the window that `display-buffer' chose, so a caller such as
-`tired-jump' can move point in the listing.  The command returns the
+Select the window that `display-buffer' chose, so `tired-jump' can
+move point in the listing after the call.  The command returns the
 buffer, as `dired' does, also when ACTION picks no window.  A value
 that is not a cons cell becomes a one-element function list, for
 `display-buffer' reads such a value as a request for another
@@ -198,11 +198,13 @@ command is the short way to open a listing, in the manner of
 ;;;###autoload
 (defun tired-other-window (directory)
   "Show DIRECTORY in a Tired buffer in another window.
-The listing goes through `tired-other-window-action'."
+Select the Tired window, the way `dired-other-window' does.  When
+the command must split the current window, the user options
+`split-height-threshold' and `split-width-threshold' decide whether
+the split runs horizontally or vertically."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
-  (tired--show-buffer (tired-noselect directory)
-                      tired-other-window-action))
+  (switch-to-buffer-other-window (tired-noselect directory)))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)

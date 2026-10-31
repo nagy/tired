@@ -126,14 +126,6 @@ action function and adds `inhibit-same-window', so a bare function
 symbol puts the listing in the wrong window."
   :type 'display-buffer--action-custom-type)
 
-(defcustom tired-other-window-action
-  '(display-buffer-use-some-window (inhibit-same-window . t))
-  "Display action that `tired-other-window' uses for the listing.
-The default reuses another window of the frame and never the
-selected one.  The value takes the form that `display-buffer'
-accepts: a list of action functions and an action alist."
-  :type 'display-buffer--action-custom-type)
-
 (defcustom tired-filter-delay 0.15
   "Seconds to wait before a typed filter redraws the listing.
 A redraw walks the tree and prints every row, so a fast typist would
@@ -2507,7 +2499,11 @@ selection is cleared afterwards."
         (deactivate-mark)))))
 
 (defun tired-find-file-other-window ()
-  "Visit the target entries in another window."
+  "Visit the target entries in another window.
+A directory opens through `switch-to-buffer-other-window', so the
+user options `split-height-threshold' and `split-width-threshold'
+decide the direction of a split, as they do for
+`dired-find-file-other-window'."
   (interactive)
   (tired-find-file t))
 
