@@ -47,7 +47,7 @@
 ;;   TAB     insert, expand or fold the subtree at point
 ;;   e       expand the sections of the file at point
 ;;   E       collapse the sections of the file at point
-;;   j       find a path anywhere below the shown directory
+;;   j       visit the entry at point, like RET
 ;;   J       the same, in another window
 ;;   M-i     remove the inserted children of the directory at point
 ;;   s       sort the listing
@@ -1674,57 +1674,6 @@ folds or unfolds its own children."
       (tired--toggle-expand (tired-entry-path row)))
      (t (user-error "No subtree at point")))))
 
-(defun tired--find-candidates (directory)
-  "Return the completion candidates below DIRECTORY.
-A candidate holds the name relative to DIRECTORY.  A directory
-candidate ends with a slash.  Hidden paths stay out when
-`tired--hide-dotfiles' holds.  Symbolic links to directories stay
-unfollowed."
-  (let* ((base (file-name-as-directory (expand-file-name directory)))
-         (hidden-p (lambda (path)
-                     (and tired--hide-dotfiles
-                          (string-match-p
-                           "\\(?:\\`\\|/\\)\\.[^/]"
-                           (file-relative-name path base))))))
-    (mapcar (lambda (path)
-              (let ((name (file-relative-name path base)))
-                (if (file-directory-p path)
-                    (concat name "/")
-                  name)))
-            (seq-remove hidden-p
-                        (directory-files-recursively
-                         base "" t
-                         (lambda (subdir)
-                           (not (funcall hidden-p subdir))))))))
-
-(defun tired-find-file (&optional other-window)
-  "Visit a path below the shown directory, chosen by name.
-Completion offers every file and directory in the subtree, so a
-partial name with slashes narrows the choice.  Hidden paths stay out
-when `tired-hide-dotfiles' holds.  A chosen directory opens as a
-Tired buffer.  With OTHER-WINDOW, use another window."
-  (interactive "P")
-  (unless tired--directory
-    (user-error "Not in a Tired buffer"))
-  (let ((candidates (tired--find-candidates tired--directory)))
-    (unless candidates
-      (user-error "No file below %s"
-                  (abbreviate-file-name tired--directory)))
-    (let ((path (expand-file-name
-                 (completing-read "Find file: " candidates nil t)
-                 tired--directory)))
-      (cond
-       ((file-directory-p path)
-        (if other-window (tired-other-window path) (tired path)))
-       (other-window (find-file-other-window path))
-       (t (find-file path))))))
-
-(defun tired-find-file-other-window ()
-  "Visit a path below the shown directory in another window.
-Completion works like `tired-find-file'."
-  (interactive)
-  (tired-find-file t))
-
 ;;;###autoload
 (defun tired-jump (&optional other-window)
   "Visit the directory of the current buffer in a Tired buffer.
@@ -2351,7 +2300,7 @@ with `find-file'."
             (find-file-other-window path)
           (find-file path))))))
 
-(defun tired-open (&optional other-window)
+(defun tired-find-file (&optional other-window)
   "Visit the target entries.
 Visit every target in another window when OTHER-WINDOW is non-nil.
 Without a selection or an active region, the row at point is the
@@ -2375,10 +2324,10 @@ selection is cleared afterwards."
         (tired-select-none)
         (deactivate-mark)))))
 
-(defun tired-open-other-window ()
+(defun tired-find-file-other-window ()
   "Visit the target entries in another window."
   (interactive)
-  (tired-open t))
+  (tired-find-file t))
 
 (defun tired-browse-url-of-file (&optional secondary)
   "Ask a WWW browser to display the target files.
@@ -2409,8 +2358,8 @@ takes the file back from the browser."
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
   :parent tabulated-list-mode-map
-  "RET" #'tired-open
-  "o" #'tired-open-other-window
+  "RET" #'tired-find-file
+  "o" #'tired-find-file-other-window
   "^" #'tired-up-directory
   "g" #'tired-refresh
   "l" #'tired-refresh
@@ -3009,7 +2958,7 @@ readable database."
 The arguments are ignored, so the function fits
 `after-load-functions'.  Evil keeps its state maps in
 `emulation-mode-map-alists', and Emacs checks those maps before
-`tired-mode-map'.  Evil therefore hides `tired-open' on RET and
+`tired-mode-map'.  Evil therefore hides `tired-find-file' on RET and
 every other Tired key.  `tired-evil' binds the same commands
 through the evil map machinery, which puts them back."
   (when (and (featurep 'evil)

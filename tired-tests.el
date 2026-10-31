@@ -765,22 +765,22 @@ a symlink, and removes every Tired buffer it opened."
       (should (string-prefix-p "beta.txt" (car (tired-tests--trash-entries)))))))
 
 
-(ert-deftest tired-open-file-visits-the-file ()
+(ert-deftest tired-find-file-visits-the-file ()
   "Opening a file entry visits that file."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "alpha.txt")
-    (tired-open)
+    (tired-find-file)
     (should (equal (buffer-file-name) (expand-file-name "alpha.txt" root)))
     (kill-buffer (current-buffer))))
 
-(ert-deftest tired-open-directory-replaces-the-listing ()
+(ert-deftest tired-find-file-directory-replaces-the-listing ()
   "Opening a directory entry shows it in a Tired buffer."
   (tired-tests--with-fixture
     (tired root)
     (let ((origin (current-buffer)))
       (tired-tests--goto "sub")
-      (tired-open)
+      (tired-find-file)
       (should (derived-mode-p 'tired-mode))
       (should (equal tired--directory
                      (file-name-as-directory (expand-file-name "sub" root))))
@@ -1190,7 +1190,7 @@ a symlink, and removes every Tired buffer it opened."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "alpha.txt")
-    (tired-open)
+    (tired-find-file)
     (let ((file-buffer (current-buffer)))
       (unwind-protect
           (progn
@@ -1207,7 +1207,7 @@ a symlink, and removes every Tired buffer it opened."
     (tired root)
     (let ((origin (current-buffer)))
       (tired-tests--goto "sub")
-      (tired-open)
+      (tired-find-file)
       (tired-jump)
       (should (eq (current-buffer) origin))
       (should (equal (tired-entry-name (tired--row-at-point)) "sub")))))
@@ -1641,7 +1641,7 @@ and it puts that window point back after the reprint."
       (should (equal (tired-entry-path entry)
                      (expand-file-name "chain/a/b/file.txt" root))))
     (tired-tests--goto "chain/a/b/file.txt")
-    (tired-open)
+    (tired-find-file)
     (should (equal (buffer-file-name)
                    (expand-file-name "chain/a/b/file.txt" root)))
     (kill-buffer (current-buffer))))
@@ -1908,7 +1908,7 @@ and it puts that window point back after the reprint."
       (tired-tests--goto "data.sqlite")
       (tired-toggle-subdir)
       (tired-tests--goto-section "users")
-      (tired-open)
+      (tired-find-file)
       (let ((buffer (get-buffer "*SQLite data.sqlite*")))
         (should buffer)
         (with-current-buffer buffer
@@ -1923,60 +1923,16 @@ and it puts that window point back after the reprint."
     (tired-tests--write "junk.db" "not a database")
     (should-not (tired-file-sections (expand-file-name "junk.db" root)))))
 
-(ert-deftest tired-find-file-completes-over-the-subtree ()
-  "The finder offers files and directories below the shown directory."
+(ert-deftest tired-find-file-other-window-visits-the-entry ()
+  "The other-window command visits the entry at point."
   (tired-tests--with-fixture
     (tired root)
-    (let (offered)
-      (cl-letf (((symbol-function 'completing-read)
-                 (lambda (_prompt collection &rest _)
-                   (setq offered collection)
-                   "sub/deep/leaf.txt")))
-        (tired-find-file))
-      (should (member "sub/deep/leaf.txt" offered))
-      (should (member "sub/" offered))
-      (should (equal buffer-file-name
-                     (expand-file-name "sub/deep/leaf.txt" root))))))
-
-(ert-deftest tired-find-file-hides-dotfiles-when-set ()
-  "A hidden path stays out of the finder list."
-  (tired-tests--with-fixture
-    (tired-tests--write "sub/.secret" "s")
-    (tired root)
-    (let ((tired--hide-dotfiles t)
-          offered)
-      (cl-letf (((symbol-function 'completing-read)
-                 (lambda (_prompt collection &rest _)
-                   (setq offered collection)
-                   "alpha.txt")))
-        (tired-find-file))
-      (should-not (seq-some (lambda (name) (string-match-p "/\\." name))
-                            offered))
-      (should (equal buffer-file-name
-                     (expand-file-name "alpha.txt" root))))))
-
-(ert-deftest tired-find-file-other-window-visits-the-choice ()
-  "The other-window finder visits the chosen file."
-  (tired-tests--with-fixture
-    (tired root)
-    (cl-letf (((symbol-function 'completing-read)
-               (lambda (&rest _) "sub/inner.txt")))
-      (tired-find-file-other-window))
+    (tired-tests--goto "alpha.txt")
+    (tired-find-file-other-window)
     (should (equal buffer-file-name
-                   (expand-file-name "sub/inner.txt" root)))))
+                   (expand-file-name "alpha.txt" root)))))
 
-(ert-deftest tired-find-file-opens-a-chosen-directory ()
-  "A directory candidate opens as a Tired buffer."
-  (tired-tests--with-fixture
-    (tired root)
-    (cl-letf (((symbol-function 'completing-read)
-               (lambda (&rest _) "sub/")))
-      (tired-find-file))
-    (should (derived-mode-p 'tired-mode))
-    (should (equal tired--directory
-                   (file-name-as-directory (expand-file-name "sub" root))))))
-
-(ert-deftest tired-open-section-visits-its-line ()
+(ert-deftest tired-find-file-section-visits-its-line ()
   "RET on a section row visits the file at the section line."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
@@ -1984,14 +1940,14 @@ and it puts that window point back after the reprint."
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Detail")
-    (tired-open)
+    (tired-find-file)
     (should (equal (buffer-file-name)
                    (expand-file-name "notes.org" root)))
     ;; An org heading narrows the buffer, so widen before the line check.
     (widen)
     (should (= 3 (line-number-at-pos)))))
 
-(ert-deftest tired-open-org-heading-narrows-to-its-subtree ()
+(ert-deftest tired-find-file-org-heading-narrows-to-its-subtree ()
   "RET on an org heading narrows the visited buffer to that subtree."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org"
@@ -2000,7 +1956,7 @@ and it puts that window point back after the reprint."
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Detail")
-    (tired-open)
+    (tired-find-file)
     (should (buffer-narrowed-p))
     (let ((text (buffer-substring-no-properties
                  (point-min) (point-max))))
@@ -2008,7 +1964,7 @@ and it puts that window point back after the reprint."
       (should (string-match-p "detail body" text))
       (should-not (string-match-p "Intro" text)))))
 
-(ert-deftest tired-open-org-heading-stays-wide-when-option-off ()
+(ert-deftest tired-find-file-org-heading-stays-wide-when-option-off ()
   "An org heading opens wide when `tired-org-narrow-on-open' is nil."
   (tired-tests--with-fixture
     (tired-tests--write "notes.org" "* Intro\nintro body\n* Plans\n")
@@ -2017,13 +1973,13 @@ and it puts that window point back after the reprint."
       (tired-tests--goto "notes.org")
       (tired-toggle-subdir)
       (tired-tests--goto-section "Plans")
-      (tired-open)
+      (tired-find-file)
       (should-not (buffer-narrowed-p))
       (should (string-match-p
                "Intro" (buffer-substring-no-properties
                         (point-min) (point-max)))))))
 
-(ert-deftest tired-open-non-org-section-stays-wide ()
+(ert-deftest tired-find-file-non-org-section-stays-wide ()
   "A section of a non-org file opens without narrowing."
   (tired-tests--with-fixture
     (tired-tests--write "code.el" "(defun alpha ())\n(defun beta ())\n")
@@ -2031,7 +1987,7 @@ and it puts that window point back after the reprint."
     (tired-tests--goto "code.el")
     (tired-toggle-subdir)
     (tired-tests--goto-section "defun beta")
-    (tired-open)
+    (tired-find-file)
     (should-not (buffer-narrowed-p))))
 
 (ert-deftest tired-section-rows-are-not-selectable ()
@@ -2274,7 +2230,7 @@ and it puts that window point back after the reprint."
           (tired-evil-mode -1)
           (tired--enable-evil-bindings)
           (should (bound-and-true-p tired-evil-local-mode))
-          (should (eq (key-binding (key-parse "RET")) #'tired-open)))
+          (should (eq (key-binding (key-parse "RET")) #'tired-find-file)))
       (tired-evil-mode -1)
       (evil-local-mode -1))))
 

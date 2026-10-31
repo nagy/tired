@@ -230,14 +230,14 @@ Jumping and bookmarks:
   `key-parse` reads the bracket form as literal characters.
 - `tired-bookmark-make-record` stores the directory in the record and
   `tired-bookmark-jump` reopens it.
-- `tired-find-file` completes over the whole subtree below
-  `tired--directory`, through `tired--find-candidates` and
-  `directory-files-recursively`.  A directory candidate ends with a
-  slash and opens a Tired buffer, a file candidate opens the file.
+- `tired-find-file` visits the target entries at once, without a
+  confirmation, the way `dired-find-file` does.  Without a selection
+  or an active region the row at point is the target, so a section row
+  visits its own file position.  A directory opens as a Tired buffer.
   `tired-find-file-other-window` passes the other-window flag through,
-  the way `dired-find-file-other-window` does.  The walk prunes hidden
-  directories when `tired--hide-dotfiles' holds and never follows a
-  directory symlink.
+  the way `dired-find-file-other-window` does.  The command clears the
+  selection afterwards.  There is no completion command: a path below
+  the shown directory is reached by inserting it.
 
 Copy commands:
 
@@ -311,7 +311,7 @@ Evil integration:
   Emacs checks that list before the major mode map, so `evil-ret' on
   RET wins over `tired-mode-map' and moves down one line.
   `evil-define-minor-mode-key` installs the maps ahead of the state
-  maps, which restores `tired-open' and every other Tired key.
+  maps, which restores `tired-find-file' and every other Tired key.
 - `tired-evil-keys` and `tired-evil-visual-keys` hold the key tables.
   `tired-evil--bind` feeds them to `evil-define-minor-mode-key` for the
   private minor mode `tired-evil-local-mode`.

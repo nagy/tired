@@ -102,12 +102,6 @@ such as a database table.  The ordinal keeps fold state and point
 restore apart.
 _Avoid_: Fake line, dummy line
 
-**Finder**:
-The completion command `tired-find-file` that offers every path below
-the shown directory, including paths inside directories the listing
-does not insert.
-_Avoid_: Jump, search, locate
-
 **Fold**:
 Hide the child sections of one section row.  A fold is local to a
 section.  A collapse concerns a directory chain.

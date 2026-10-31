@@ -72,53 +72,45 @@ reaches =tired-jump= in a Tired buffer and =dired-jump= elsewhere.
 =tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=
 records a directory buffer and =M-x bookmark-jump= restores it.
 
-* Finding a path
-
-=j= completes over every path below the shown directory.  A chosen
-file opens, a chosen directory opens as a Tired buffer.  =J= does the
-same in another window.  Hidden paths stay out when =.= hides
-dotfiles.  The finder walks the subtree, so it reaches files inside
-directories that the listing does not insert.
-
 * Key bindings
 
-| Key     | Command                    | Description                              |
-|---------+----------------------------+------------------------------------------|
-| =RET=   | =tired-open=               | Visit target entries                     |
-| =o=     | =tired-open-other-window=  | Visit target entries in another window   |
-| =^=     | =tired-up-directory=       | Go to the parent directory               |
-| =g=     | =tired-refresh=            | Reload the listing                       |
-| =l=     | =tired-refresh=            | Reload the listing                       |
-| =i=     | =tired-insert-subdir=      | Insert the directory at point            |
-| =TAB=   | =tired-toggle-subdir=      | Insert, expand or fold the subtree        |
-| =e=     | =tired-expand-file=        | Expand the sections of the file          |
-| =j=     | =tired-find-file=          | Find a path below the shown directory    |
-| =J=     | =tired-find-file-other-window= | The same, in another window          |
-| =E=     | =tired-collapse-file=      | Collapse the sections of the file        |
-| =M-i=   | =tired-remove-subdir=      | Remove an inserted section               |
-| =s=     | =tired-sort=               | Sort by a column                         |
-| =SPC=   | =tired-select-toggle-next= | Toggle selection, move down              |
-| =M-SPC= | =tired-select-toggle=      | Toggle selection at point                |
-| =t=     | =tired-select-all=         | Select every visible entry               |
-| =u=     | =tired-select-none=        | Clear the selection                      |
-| =~=     | =tired-select-invert=      | Invert the selection                     |
-| =N=     | =tired-toggle-narrow=      | Narrow to the selection, or widen        |
-| =A=     | =tired-toggle-auto-revert= | Toggle automatic refresh                 |
-| =C=     | =tired-toggle-collapse=    | Toggle single-child collapse             |
-| =f=     | =tired-filter=             | Narrow live, RET keeps, C-g restores    |
-| =F=     | =tired-clear-filter=       | Remove the filter                        |
-| =.=     | =tired-toggle-dotfiles=    | Toggle hidden entries                    |
-| =y=     | =tired-copy-name=          | Copy names of the targets                |
-| =w=     | =tired-copy-path=          | Copy full paths of the targets           |
-| =W=     | =tired-copy-relative-path= | Copy paths relative to the shown dir     |
-| =P=     | =tired-copy-project-path=  | Copy paths relative to the project root  |
-| =c=     | =tired-copy=               | Copy the targets into a directory        |
-| =m=     | =tired-move=               | Move the targets                         |
-| =D=     | =tired-delete=             | Delete the targets, no confirmation      |
-| =+=     | =tired-mkdir=              | Create a directory                       |
-| =M-t=   | =tired-touch=              | Create an empty file                     |
-| =U=     | =tired-undo=               | Undo the last file operation             |
-| =q=     | =quit-window=              | Bury the buffer                          |
+| Key     | Command                        | Description                             |
+|---------+--------------------------------+-----------------------------------------|
+| =RET=   | =tired-find-file=              | Visit the target entries                |
+| =o=     | =tired-find-file-other-window= | The same, in another window             |
+| =^=     | =tired-up-directory=           | Go to the parent directory              |
+| =g=     | =tired-refresh=                | Reload the listing                      |
+| =l=     | =tired-refresh=                | Reload the listing                      |
+| =i=     | =tired-insert-subdir=          | Insert the directory at point           |
+| =TAB=   | =tired-toggle-subdir=          | Insert, expand or fold the subtree      |
+| =e=     | =tired-expand-file=            | Expand the sections of the file         |
+| =j=     | =tired-find-file=              | The same as =RET=                       |
+| =J=     | =tired-find-file-other-window= | The same, in another window             |
+| =E=     | =tired-collapse-file=          | Collapse the sections of the file       |
+| =M-i=   | =tired-remove-subdir=          | Remove an inserted section              |
+| =s=     | =tired-sort=                   | Sort by a column                        |
+| =SPC=   | =tired-select-toggle-next=     | Toggle selection, move down             |
+| =M-SPC= | =tired-select-toggle=          | Toggle selection at point               |
+| =t=     | =tired-select-all=             | Select every visible entry              |
+| =u=     | =tired-select-none=            | Clear the selection                     |
+| =~=     | =tired-select-invert=          | Invert the selection                    |
+| =N=     | =tired-toggle-narrow=          | Narrow to the selection, or widen       |
+| =A=     | =tired-toggle-auto-revert=     | Toggle automatic refresh                |
+| =C=     | =tired-toggle-collapse=        | Toggle single-child collapse            |
+| =f=     | =tired-filter=                 | Narrow live, RET keeps, C-g restores    |
+| =F=     | =tired-clear-filter=           | Remove the filter                       |
+| =.=     | =tired-toggle-dotfiles=        | Toggle hidden entries                   |
+| =y=     | =tired-copy-name=              | Copy names of the targets               |
+| =w=     | =tired-copy-path=              | Copy full paths of the targets          |
+| =W=     | =tired-copy-relative-path=     | Copy paths relative to the shown dir    |
+| =P=     | =tired-copy-project-path=      | Copy paths relative to the project root |
+| =c=     | =tired-copy=                   | Copy the targets into a directory       |
+| =m=     | =tired-move=                   | Move the targets                        |
+| =D=     | =tired-delete=                 | Delete the targets, no confirmation     |
+| =+=     | =tired-mkdir=                  | Create a directory                      |
+| =M-t=   | =tired-touch=                  | Create an empty file                    |
+| =U=     | =tired-undo=                   | Undo the last file operation            |
+| =q=     | =quit-window=                  | Bury the buffer                         |
 
 The selection is transient.  It belongs to the buffer and it is pruned
 when entries disappear.  Commands that act on it clear it afterwards.
@@ -179,32 +171,32 @@ The bindings leave the evil motions alone.  =j=, =k=, =gg=, =G=,
 =C-d=, =C-u=, =n= and =N= keep their meaning, and every Tired
 command gets a direct key:
 
-| Key        | Command                         |
-|------------+---------------------------------|
-| =RET=        | =tired-open=                      |
-| =o=          | =tired-open-other-window=         |
-| =-=, =^=       | =tired-up-directory=              |
-| =TAB=        | =tired-toggle-subdir=             |
-| =gf=, =f=      | =tired-find-file=                 |
-| =gF=         | other window                      |
-| =i=, =M-i=     | insert, remove a subdirectory   |
-| =e=, =E=       | expand, collapse file sections  |
-| =C=          | =tired-toggle-collapse=           |
-| =gr=         | =tired-refresh=                   |
-| =r=          | =revert-buffer-quick=             |
-| =s=          | =tired-sort=                      |
-| =/=          | =tired-filter=                    |
-| =F=          | clear the filter                |
-| =.=          | =tired-toggle-dotfiles=           |
-| =N=          | =tired-toggle-narrow=             |
-| =A=          | =tired-toggle-auto-revert=        |
-| =m=, =M-SPC=   | toggle the selection next, here |
-| =t=, =u=, =~=    | select all, none, invert        |
-| =D=, =c=, =R=    | delete, copy, move              |
-| =+=, =M-t=     | create a directory, a file      |
-| =U=          | =tired-undo=                      |
-| =y=, =w=       | copy names, copy paths          |
-| =q=          | bury the buffer                 |
+| Key           | Command                         |
+|---------------+---------------------------------|
+| =RET=         | =tired-find-file=               |
+| =o=           | =tired-find-file-other-window=  |
+| =-=, =^=      | =tired-up-directory=            |
+| =TAB=         | =tired-toggle-subdir=           |
+| =gf=, =f=     | =tired-find-file=               |
+| =gF=          | other window                    |
+| =i=, =M-i=    | insert, remove a subdirectory   |
+| =e=, =E=      | expand, collapse file sections  |
+| =C=           | =tired-toggle-collapse=         |
+| =gr=          | =tired-refresh=                 |
+| =r=           | =revert-buffer-quick=           |
+| =s=           | =tired-sort=                    |
+| =/=           | =tired-filter=                  |
+| =F=           | clear the filter                |
+| =.=           | =tired-toggle-dotfiles=         |
+| =N=           | =tired-toggle-narrow=           |
+| =A=           | =tired-toggle-auto-revert=      |
+| =m=, =M-SPC=  | toggle the selection next, here |
+| =t=, =u=, =~= | select all, none, invert        |
+| =D=, =c=, =R= | delete, copy, move              |
+| =+=, =M-t=    | create a directory, a file      |
+| =U=           | =tired-undo=                    |
+| =y=, =w=      | copy names, copy paths          |
+| =q=           | bury the buffer                 |
 
 Visual state keeps its text objects.  The keys that act on files stay
 bound there, so =V= followed by a motion and =D= deletes the range,

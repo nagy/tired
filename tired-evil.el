@@ -43,8 +43,8 @@
 
 (defvar tired-evil-keys
   '(;; Opening a row.
-    ("RET" . tired-open)
-    ("o" . tired-open-other-window)
+    ("RET" . tired-find-file)
+    ("o" . tired-find-file-other-window)
     ("f" . tired-find-file)
     ("-" . tired-up-directory)
     ("^" . tired-up-directory)
