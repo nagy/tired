@@ -300,7 +300,12 @@ File operations:
   path first, then clears the selection, refreshes and reports.  A
   failing target does not stop the rest, and
   `tired--report-operation` lists every failure in the *Warnings*
-  buffer.
+  buffer.  When the refresh drops the row at point, the command puts
+  point on the next surviving row, not on the first line.
+  `tired--next-surviving-row` reads that row before the operation and
+  skips every row of the target path and below it, so a removed
+  directory takes its children and a removed file takes its sections.
+  `tired--path-under-p` holds the path test.
 - `tired-delete` moves each target to `tired-trash-directory`.
   `tired-copy` and `tired-move` move a replaced destination there
   first, and roll the destination back when the copy or the move

@@ -2170,12 +2170,43 @@ non-nil, so the command signals a user error then."
     (message "%s: %d done, %d failed.  See *Warnings*"
              description done (length failures))))
 
+(defun tired--path-under-p (path parent)
+  "Return non-nil when PATH is PARENT or lies below it."
+  (let ((path (directory-file-name (expand-file-name path)))
+        (parent (directory-file-name (expand-file-name parent))))
+    (or (equal path parent)
+        (string-prefix-p (file-name-as-directory parent) path))))
+
+(defun tired--next-surviving-row (row)
+  "Return the first row below ROW that a removal of ROW keeps.
+Rows of the same path and rows below it count as doomed, because a
+command that removes a directory removes its children and a command
+that removes a file removes its sections.  Return nil when no row
+stays below ROW."
+  (let ((from (and row (tired--row-position row))))
+    (when from
+      (let ((path (tired--row-path row))
+            result)
+        (save-excursion
+          (goto-char from)
+          (forward-line 1)
+          (while (and (not result) (not (eobp)))
+            (let ((here (tired--row-at-point)))
+              (when (and here
+                         (not (tired--path-under-p
+                               (tired--row-path here) path)))
+                (setq result here)))
+            (forward-line 1)))
+        result))))
+
 (defun tired--apply-to-targets (description function)
   "Call FUNCTION with each target path and then clear the selection.
 DESCRIPTION names the action.  Deepest paths run first, so a
 selection that holds a directory and its children reaches the
 children first.  A failure does not stop the remaining targets.
-Report the failures and refresh the listing."
+A command that removed the row at point leaves point on the next
+row that survives, not on the first line.  Report the failures and
+refresh the listing."
   (let ((targets (tired--selection-targets)))
     (unless targets
       (user-error "No entry at point"))
@@ -2184,8 +2215,10 @@ Report the failures and refresh the listing."
                 (lambda (a b)
                   (> (length (tired-entry-path a))
                      (length (tired-entry-path b))))))
-    (let ((done 0)
-          (failures nil))
+    (let* ((done 0)
+           (failures nil)
+           (point-row (tired--row-at-point))
+           (successor (tired--next-surviving-row point-row)))
       (dolist (entry targets)
         (let ((path (tired-entry-path entry)))
           (condition-case err
@@ -2194,6 +2227,8 @@ Report the failures and refresh the listing."
             (error (push (cons path (error-message-string err)) failures)))))
       (tired-select-none)
       (tired-refresh)
+      (unless (tired--row-position point-row)
+        (tired--goto-row successor))
       (deactivate-mark)
       (tired--report-operation description done (nreverse failures)))))
 

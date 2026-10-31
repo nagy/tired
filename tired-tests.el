@@ -856,6 +856,37 @@ deleted afterwards."
       (should-not (member "alpha.txt" (tired-tests--names)))
       (should-not (member "beta.txt" (tired-tests--names))))))
 
+(ert-deftest tired-delete-leaves-point-on-the-next-entry ()
+  "Delete moves point to the entry below the removed one."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt")))))
+
+(ert-deftest tired-delete-of-a-directory-leaves-point-on-the-next-entry ()
+  "Delete of a directory with rows below it moves point past its subtree."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-delete)
+      (should (equal (tired-entry-name (tired--row-at-point)) ".hidden")))))
+
+(ert-deftest tired-delete-of-an-expanded-file-leaves-point-on-the-next-entry ()
+  "Delete of an expanded file moves point past the sections of that file."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-tests--write "notes.org" "* Intro\n* Body\n")
+      (tired root)
+      (tired-tests--goto "notes.org")
+      (tired-toggle-subdir)
+      (tired-tests--goto-section "Intro")
+      (tired-delete)
+      (should (equal (tired-entry-name (tired--row-at-point)) "sub")))))
+
 (ert-deftest tired-delete-reports-partial-failure ()
   "A vanished target does not stop the remaining targets."
   (tired-tests--with-fixture
