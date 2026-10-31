@@ -82,45 +82,10 @@ row at point cannot take it, and =tired-toggle-dotfiles=,
 =tired-toggle-collapse= show a checkmark while on.  Terminal Emacs
 reaches the menu through =F10= or =M-`=.
 
-| Key     | Command                        | Description                             |
-|---------+--------------------------------+-----------------------------------------|
-| =RET=   | =tired-find-file=              | Visit the target entries                |
-| =o=     | =tired-find-file-other-window= | The same, in another window             |
-| =^=     | =tired-up-directory=           | Go to the parent directory              |
-| =g=     | =tired-refresh=                | Reload the listing                      |
-| =l=     | =tired-refresh=                | Reload the listing                      |
-| =i=     | =tired-insert-subdir=          | Insert the directory at point           |
-| =TAB=   | =tired-toggle-subdir=          | Insert, expand or fold the subtree      |
-| =e=     | =tired-expand-file=            | Expand the sections of the file         |
-| =j=     | =tired-find-file=              | The same as =RET=                       |
-| =J=     | =tired-find-file-other-window= | The same, in another window             |
-| =E=     | =tired-collapse-file=          | Collapse the sections of the file       |
-| =M-i=   | =tired-remove-subdir=          | Remove an inserted section              |
-| =s=     | =tired-sort=                   | Sort by a column                        |
-| =SPC=   | =tired-select-toggle-next=     | Toggle selection, move down             |
-| =M-SPC= | =tired-select-toggle=          | Toggle selection at point               |
-| =t=     | =tired-select-all=             | Toggle every visible entry              |
-| =u=     | =tired-select-none=            | Clear the selection                     |
-| =~=     | =tired-toggle-hidden=         | Show or hide regexp-hidden entries      |
-| =N=     | =tired-toggle-narrow=          | Narrow to the selection, or widen       |
-| =A=     | =tired-toggle-auto-revert=     | Toggle automatic refresh                |
-| =C=     | =tired-toggle-collapse=        | Toggle single-child collapse            |
-| =f=     | =tired-filter=                 | Narrow live, RET keeps, C-g restores    |
-| =F=     | =tired-clear-filter=           | Remove the filter                       |
-| =.=     | =tired-toggle-dotfiles=        | Toggle hidden entries                   |
-| =y=     | =tired-copy-name=              | Copy names of the targets               |
-| =w=     | =tired-copy-path=              | Copy full paths of the targets          |
-| =W=     | =tired-copy-relative-path=     | Copy paths relative to the shown dir    |
-| =P=     | =tired-copy-project-path=      | Copy paths relative to the project root |
-| =c=     | =tired-copy=                   | Copy the targets into a directory       |
-| =m=     | =tired-move=                   | Move the targets                        |
-| =D=     | =tired-delete=                 | Delete the targets, no confirmation     |
-| =!=     | =tired-do-shell-command=       | Run a shell command on the targets      |
-| =+=     | =tired-mkdir=                  | Create a directory                      |
-| =M-t=   | =tired-touch=                  | Create an empty file                    |
-| =U=     | =tired-undo=                   | Undo the last file operation            |
-| =M->=   | =tired-goto-last-entry=        | Move to the last row of the listing     |
-| =q=     | =quit-window=                  | Bury the buffer                         |
+The full list lives in =tired-mode-map=, so the source never drifts
+from this page.  Type =C-h m= in a listing, or =M-x
+describe-keymap RET tired-mode-map RET=, to read every key with its
+command name and docstring.  =C-h k= explains one key.
 
 The selection is transient.  It belongs to the buffer and it is pruned
 when entries disappear.  Commands that act on it clear it afterwards.
@@ -189,37 +154,12 @@ key.
 The bindings leave the evil motions alone.  =j=, =k=, =gg=,
 =C-d=, =C-u=, =n= and =N= keep their meaning, and every Tired
 command gets a direct key.  =G= reaches =tired-goto-last-entry=,
-because the plain motion stops on the empty line below the
-listing:
+because the plain motion stops on the empty line below the listing.
 
-| Key           | Command                         |
-|---------------+---------------------------------|
-| =RET=         | =tired-find-file=               |
-| =o=           | =tired-find-file-other-window=  |
-| =-=, =^=      | =tired-up-directory=            |
-| =TAB=         | =tired-toggle-subdir=           |
-| =gf=, =f=     | =tired-find-file=               |
-| =gF=          | other window                    |
-| =i=, =M-i=    | insert, remove a subdirectory   |
-| =e=, =E=      | expand, collapse file sections  |
-| =C=           | =tired-toggle-collapse=         |
-| =gr=          | =tired-refresh=                 |
-| =r=           | =revert-buffer-quick=           |
-| =s=           | =tired-sort=                    |
-| =/=           | =tired-filter=                  |
-| =F=           | clear the filter                |
-| =.=           | =tired-toggle-dotfiles=         |
-| =N=           | =tired-toggle-narrow=           |
-| =~=           | =tired-toggle-hidden=           |
-| =A=           | =tired-toggle-auto-revert=      |
-| =m=, =M-SPC=  | toggle the selection next, here |
-| =t=, =u=      | toggle all, none                |
-| =D=, =c=, =R= | delete, copy, move              |
-| =!=           | =tired-do-shell-command=        |
-| =+=, =M-t=    | create a directory, a file      |
-| =U=           | =tired-undo=                    |
-| =y=, =w=      | copy names, copy paths          |
-| =q=           | bury the buffer                 |
+The key tables are =tired-evil-keys= for normal state and
+=tired-evil-visual-keys= for visual state.  =M-x describe-keymap RET
+tired-evil-local-mode-map RET=, or =C-h m= in a listing with evil
+active, shows the bindings that a buffer really carries.
 
 Visual state keeps its text objects.  The keys that act on files stay
 bound there, so =V= followed by a motion and =D= deletes the range,
