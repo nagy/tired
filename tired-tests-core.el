@@ -572,33 +572,33 @@ costs one redraw and not one per character."
       (tired-up-directory)
       (should (eq (current-buffer) origin)))))
 
-(ert-deftest tired-row-carries-the-mouse-properties ()
-  "A printed row lights up and explains the mouse commands."
+(ert-deftest tired-row-carries-the-help-text ()
+  "A printed row explains the mouse commands, and does not highlight."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "sub")
-    (should (eq (get-text-property (point) 'mouse-face) 'highlight))
     (should (string-match-p "double-click"
                             (get-text-property (point) 'help-echo)))
-    ;; The size column and the space after the mode column react too.
+    ;; The size column and the space after the mode column explain too.
     (let ((last (1- (line-end-position))))
-      (should (eq (get-text-property last 'mouse-face) 'highlight))
       (should (string-match-p "mouse-2"
                               (get-text-property last 'help-echo))))
-    ;; The indent belongs to the row, so a child row lights up from
-    ;; the left edge too.
+    ;; The indent belongs to the row, so a child row explains from the
+    ;; left edge too.
     (tired-insert-subdir)
     (tired-tests--goto "inner.txt")
-    (should (eq (get-text-property (point) 'mouse-face) 'highlight))
-    (should (eq (get-text-property (line-beginning-position) 'mouse-face)
-                'highlight))))
+    (should (string-match-p "mouse-2"
+                            (get-text-property (line-beginning-position)
+                                               'help-echo)))
+    ;; The pointer leaves the row alone, so no face follows the mouse.
+    (should-not (text-property-not-all (point-min) (point-max)
+                                       'mouse-face nil))))
 
 (ert-deftest tired-mouse-click-does-not-follow-a-link ()
   "One click moves point, so a marked row is no link."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "sub")
-    (should (eq (get-text-property (point) 'mouse-face) 'highlight))
     (should-not (mouse-on-link-p (list (selected-window) (point))))))
 
 (ert-deftest tired-mouse-find-file-other-window-opens-the-clicked-row ()

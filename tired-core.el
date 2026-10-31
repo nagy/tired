@@ -1059,11 +1059,12 @@ a double click toggles it."
     "mouse-2: visit in another window, double-click: expand or collapse")
    (t "mouse-2: visit in another window")))
 
-(defun tired--paint-row-mouse ()
-  "Add the mouse face and the help text to every printed row.
+(defun tired--paint-row-help ()
+  "Add the help text to every printed row.
 `tabulated-list-print' erases and reprints the buffer, so this pass
-runs after each print.  The whole line reacts, so the indent of a
-nested row and the space beside the columns light up too."
+runs after each print.  The whole line carries the text, so the
+indent of a nested row and the space beside the columns explain the
+mouse commands too."
   (let ((inhibit-read-only t))
     (save-excursion
       (goto-char (point-min))
@@ -1072,8 +1073,7 @@ nested row and the space beside the columns light up too."
           (when row
             (add-text-properties
              (line-beginning-position) (line-end-position)
-             (list 'mouse-face 'highlight
-                   'help-echo (tired--mouse-help row)))))
+             (list 'help-echo (tired--mouse-help row)))))
         (forward-line 1)))))
 
 (defvar tired--size-cache (make-hash-table :test #'equal)
@@ -1711,7 +1711,7 @@ point and the scroll position of every window that shows the listing."
                           "  "
                           tired--header-base))))
           (tabulated-list-print t)
-          (tired--paint-row-mouse))
+          (tired--paint-row-help))
       (setq tired--rows nil))
     (tired--goto-entry point-entry)
     (tired--restore-window-views views)

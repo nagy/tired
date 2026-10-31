@@ -156,9 +156,12 @@ entries next to the selection count.
 
 * Mouse
 
-The whole row lights up under the pointer with =highlight=, and its
-help text names the two mouse commands.  The indent of a nested row
-and the space beside the columns belong to the row, so they react too.
+The help text of a row names the two mouse commands.  The indent of a
+nested row and the space beside the columns carry it too.  The
+pointer does not highlight a row.  The key map binds
+=follow-link= to a predicate that returns nil, because
+=tabulated-list-mode= turns a click on a =mouse-face= row into a click
+on the other button.
 
 - =double-mouse-1= toggles the row under the pointer.  A directory row
   inserts or removes its children.  A file row with a section handler
@@ -169,10 +172,7 @@ and the space beside the columns belong to the row, so they react too.
   the selection keeps working.
 
 One click moves point to the row, and a drag makes a region, as in any
-Emacs buffer.  A row is not a link, so no click opens an entry.  The key
-map binds =follow-link= to a predicate that returns nil, because
-=tabulated-list-mode= turns a click on a =mouse-face= row into a click
-on the other button.
+Emacs buffer.  A row is not a link, so no click opens an entry.
 
 Every column header takes a click.  =mouse-1= on =Name=, =Size=,
 =Modified= or =Mode= sorts the listing by that column, and a click on
