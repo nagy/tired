@@ -147,7 +147,10 @@ Data flow:
    `tired--selection`.  The selection is buffer-local and transient.
    `tired--selection-set` mirrors it as a hash set for O(1) membership.
    `tired--selection-size` sums the sizes of selected non-directory
-   entries for the mode line.  `tired--selection-targets` reads the
+   entries for the mode line.  `tired--mode-line` collects one part
+   per piece of optional state and wraps them in one bracket group,
+   so a plain listing shows no group at all.
+   `tired--selection-targets` reads the
    selection first, then `tired--region-entries`, then the row at point;
    a command that acts on the region deactivates it.  A section row
    resolves to the file entry that owns it, and `tired-select-toggle`

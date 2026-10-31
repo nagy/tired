@@ -1031,30 +1031,34 @@ column from the current listing."
             "  [dotfiles hidden]")))
 
 (defun tired--mode-line ()
-  "Return the `tired-mode' mode line string."
-  (concat " ["
-          (if tired--selection
-              (format "%d selected, %s"
-                      (length tired--selection)
-                      (file-size-human-readable (tired--selection-size)))
-            "0 selected")
-          (when (and (null tired--selection) (use-region-p))
-            (format ", %d in region" (length (tired--region-entries))))
-          (when tired--narrowed
-            ", narrowed")
-          (when (and (hash-table-p tired--inserted)
-                     (> (hash-table-count tired--inserted) 0))
-            (format ", %d inserted" (hash-table-count tired--inserted)))
-          (when (and (hash-table-p tired--expanded)
-                     (> (hash-table-count tired--expanded) 0))
-            (format ", %d expanded" (hash-table-count tired--expanded)))
-          (when tired--filter
-            (format ", filter: %s" tired--filter))
-          (unless tired-collapse-single-child
-            ", no collapse")
-          (unless tired-auto-revert
-            ", auto-revert off")
-          "]"))
+  "Return the `tired-mode' mode line string.
+Return the empty string when the listing holds no optional state, so
+an ordinary listing shows no bracket group at all."
+  (let ((parts '()))
+    (when tired--selection
+      (push (format "%d selected, %s"
+                    (length tired--selection)
+                    (file-size-human-readable (tired--selection-size)))
+            parts))
+    (when (and (null tired--selection) (use-region-p))
+      (push (format "%d in region" (length (tired--region-entries))) parts))
+    (when tired--narrowed
+      (push "narrowed" parts))
+    (when (and (hash-table-p tired--inserted)
+               (> (hash-table-count tired--inserted) 0))
+      (push (format "%d inserted" (hash-table-count tired--inserted)) parts))
+    (when (and (hash-table-p tired--expanded)
+               (> (hash-table-count tired--expanded) 0))
+      (push (format "%d expanded" (hash-table-count tired--expanded)) parts))
+    (when tired--filter
+      (push (format "filter: %s" tired--filter) parts))
+    (unless tired-collapse-single-child
+      (push "no collapse" parts))
+    (unless tired-auto-revert
+      (push "auto-revert off" parts))
+    (if parts
+        (concat " [" (string-join (nreverse parts) ", ") "]")
+      "")))
 
 (defun tired--row-at-point ()
   "Return the row at point, or nil when there is none.

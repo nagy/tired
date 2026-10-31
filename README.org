@@ -122,7 +122,9 @@ costs one motion instead of one =SPC= per row.  A non-empty selection
 wins over the region.  The row on which the region ends stays out,
 because the region ends at the beginning of that line.  A command that
 acts on the region deactivates it, in the same way it clears the
-selection.  The mode line shows the region count.
+selection.  The mode line shows the region count.  The mode line
+bracket group appears only while the listing holds optional state, so
+a plain listing shows no group at all.
 
 The filter is live.  =f= opens a minibuffer and every keystroke
 redraws the listing.  =RET= keeps the typed filter, =C-g= restores the

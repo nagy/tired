@@ -1309,6 +1309,17 @@ joins the range."
     (should (equal (tired-entry-name (tired--row-at (mark t)))
                    "beta.txt"))))
 
+(ert-deftest tired-mode-line-is-empty-without-state ()
+  "A plain listing shows no bracket group in the mode line."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t)
+          (tired-collapse-single-child t))
+      (tired root)
+      (should (equal "" (tired--mode-line)))
+      (tired-tests--goto "alpha.txt")
+      (tired-select-toggle)
+      (should (string-prefix-p " [1 selected" (tired--mode-line))))))
+
 (ert-deftest tired-mode-line-counts-the-region ()
   "The mode line reports the region when the selection is empty."
   (tired-tests--with-fixture
