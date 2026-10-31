@@ -1252,14 +1252,17 @@ print the buffer name."
   (replace-regexp-in-string "%" "%%" text t t))
 
 (defun tired--header-title ()
-  "Return the directory title shown in the header line."
-  (concat (abbreviate-file-name tired--directory)
-          (when tired--narrowed
-            "  [narrowed]")
-          (when tired--filter
-            (format "  [filter: %s]" tired--filter))
-          (when tired--hide-dotfiles
-            "  [dotfiles hidden]")))
+  "Return the listing state shown in the header line.
+The buffer name already names the directory, so the header line
+holds the state alone and stays empty without one."
+  (let ((parts '()))
+    (when tired--narrowed
+      (push "[narrowed]" parts))
+    (when tired--filter
+      (push (format "[filter: %s]" tired--filter) parts))
+    (when tired--hide-dotfiles
+      (push "[dotfiles hidden]" parts))
+    (mapconcat #'identity (nreverse parts) "  ")))
 
 (defun tired--count-hidden ()
   "Return the number of entries that `tired-hidden-regexps' matches.
@@ -1677,11 +1680,13 @@ point and the scroll position of every window that shows the listing."
           (tabulated-list-init-header)
           (setq tired--header-base header-line-format)
           (setq header-line-format
-                (list (propertize (tired--escape-mode-line
-                                   (tired--header-title))
-                                  'face 'bold)
-                      "  "
-                      tired--header-base))
+                (let ((title (tired--header-title)))
+                  (if (string-empty-p title)
+                      tired--header-base
+                    (list (propertize (tired--escape-mode-line title)
+                                      'face 'bold)
+                          "  "
+                          tired--header-base))))
           (tabulated-list-print t)
           (tired--paint-row-mouse))
       (setq tired--rows nil))
