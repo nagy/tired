@@ -2373,7 +2373,6 @@ takes the file back from the browser."
   "o" #'tired-find-file-other-window
   "^" #'tired-up-directory
   "g" #'tired-refresh
-  "l" #'tired-refresh
   "i" #'tired-insert-subdir
   "M-i" #'tired-remove-subdir
   "TAB" #'tired-toggle-subdir

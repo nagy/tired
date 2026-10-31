@@ -42,7 +42,6 @@
 ;;   o       same, in another window
 ;;   ^       go to the parent directory
 ;;   g       refresh the listing
-;;   l       refresh the listing, including inserted sections
 ;;   i       insert the children of the directory at point
 ;;   TAB     insert, expand or fold the subtree at point
 ;;   e       expand the sections of the file at point
