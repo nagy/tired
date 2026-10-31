@@ -220,6 +220,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - File commands never ask a confirmation and never call a shell, except
   `tired-do-shell-command`.  Removal goes through `tired--trash-move`,
   never through `delete-file`, so undo can restore the path.
+- No key, no menu entry and no evil binding runs `tired-undo`.  The
+  command changes paths, so the user reaches it through `M-x` alone.
+  The autoload form in `tired.el` keeps that path, because
+  `tired-file-ops` carries no cookie.  A test in
+  `tired-tests-file-ops` fails when a binding returns.
 - An export command keeps the selection and the region, writes a
   read-only buffer, and leaves the buffer unmodified.  The buffer takes
   the listing directory as `default-directory`, so a later `C-x C-w`

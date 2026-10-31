@@ -134,6 +134,10 @@
 ;; loads that file alone, and then `tired-file-handlers' would name a
 ;; void section handler and the file commands would signal.
 
+;;;###autoload
+(autoload 'tired-undo "tired-file-ops"
+  "Reverse the last Tired file operation." t)
+
 (defun tired--buffer-name (directory)
   "Return the Tired buffer name for DIRECTORY."
   (format "Tired: %s" (abbreviate-file-name directory)))

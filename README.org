@@ -272,9 +272,9 @@ and a refresh keeps the line when a file leaves the disk.
 of the frame shows a Tired buffer for another directory, the command
 moves the targets into that directory at once and asks no question.
 The window scan follows =dired-dwim-target-next=, so =tired-move=
-behaves like =dired-do-rename= with a dwim target.  =U= undoes the
-move.  Set =tired-dwim-target= to nil to keep the minibuffer
-question.
+behaves like =dired-do-rename= with a dwim target.  =M-x tired-undo=
+undoes the move.  Set =tired-dwim-target= to nil to keep the
+minibuffer question.
 
 Every command reports the paths that failed and continues with the
 rest of the targets.  The *Warnings* buffer holds the full list.
@@ -284,10 +284,10 @@ default value is nil, and nil means a directory under
 =temporary-file-directory= whose name carries the user id and the
 Emacs process id, so two Emacs sessions never share one trash.  The
 system removes it on reboot.  A copy or a move that replaces a path
-moves the old path there first, so no bytes get lost.  =U= undoes the
-last operation.  A reversed delete, copy, move, mkdir or touch puts
-the paths back where they were.  Set the option to keep the removed
-paths elsewhere:
+moves the old path there first, so no bytes get lost.  =M-x
+tired-undo= undoes the last operation.  A reversed delete, copy,
+move, mkdir or touch puts the paths back where they were.  Set the
+option to keep the removed paths elsewhere:
 
 #+begin_src elisp
   (setq tired-trash-directory "~/.local/state/tired/trash/")
@@ -350,9 +350,9 @@ A synchronous command refreshes the listing when it ends, so a new or
 removed path shows at once.  A background command leaves the listing
 alone, because the shell owns the timing.
 
-The shell owns the result, so =U= cannot reverse this command.  =!=
-clears the selection and the region, like every other command that
-acts on targets.
+The shell owns the result, so =M-x tired-undo= cannot reverse this
+command.  =!= clears the selection and the region, like every other
+command that acts on targets.
 
 * Directory sizes
 

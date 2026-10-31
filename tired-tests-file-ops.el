@@ -712,6 +712,15 @@ must be a defcustom and not a plain defvar."
     (tired root)
     (should (eq (key-binding (key-parse "!")) #'tired-do-shell-command))))
 
+(ert-deftest tired-undo-reaches-the-user-through-m-x-alone ()
+  "No key and no menu entry runs `tired-undo'.
+The command changes paths, so a stray key must not reach it.  `M-x'
+finds it through the autoload in `tired.el'."
+  (tired-tests--with-fixture
+    (tired root)
+    (should-not (where-is-internal #'tired-undo tired-mode-map))
+    (should (commandp #'tired-undo))))
+
 (ert-deftest tired-region-delete-acts-on-every-row ()
   "Delete removes every row of the region."
   (tired-tests--with-fixture

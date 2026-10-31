@@ -49,7 +49,6 @@
 (declare-function tired-move "tired-file-ops" (destination))
 (declare-function tired-rename "tired-file-ops" (name))
 (declare-function tired-touch "tired-file-ops" (file))
-(declare-function tired-undo "tired-file-ops" nil)
 
 ;; The entry points live in `tired', which requires this library.  The
 ;; declarations keep the commands below free of a load-time dependency
@@ -2685,7 +2684,6 @@ into `context-menu-functions' locally."
   "!" #'tired-do-shell-command
   "+" #'tired-mkdir
   "M-t" #'tired-touch
-  "U" #'tired-undo
   "q" #'quit-window
   "<remap> <dired-jump>" #'tired-jump
   "<remap> <end-of-buffer>" #'tired-goto-last-entry)
@@ -2765,8 +2763,6 @@ command that needs an entry stays insensitive on an empty row."
     ["Delete" tired-delete
      :active (tired--selection-targets)
      :help "Move the targets into the session trash"]
-    ["Undo" tired-undo
-     :active (bound-and-true-p tired--undo-actions)]
     ["Shell command" tired-do-shell-command
      :active (tired--selection-targets)]
     "--"
