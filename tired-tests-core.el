@@ -1400,6 +1400,20 @@ A redraw does not run for a region change, so the buffer-local
     (tired-toggle-dotfiles)
     (should-not (member "secret/a/.hiddenfile" (tired-tests--names)))))
 
+(ert-deftest tired-collapse-skips-a-remote-directory ()
+  "A remote directory keeps its own row instead of a collapsed one.
+The chain walk reads one directory per level, and a remote read
+costs a network round trip, so the row stays plain."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/inner" root) t)
+    (tired-tests--write "chain/inner/only.txt" "x")
+    (tired root)
+    (let ((entry (tired--entry-for-path (expand-file-name "chain" root))))
+      (should (tired--collapsed-display-entry root entry))
+      (cl-letf (((symbol-function 'file-remote-p)
+                 (lambda (&rest _) "/ssh:host:")))
+        (should-not (tired--collapsed-display-entry root entry))))))
+
 (ert-deftest tired-collapse-paints-the-path-and-the-file-apart ()
   "A collapsed row paints its directory part and its file part apart."
   (tired-tests--with-fixture

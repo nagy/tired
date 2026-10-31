@@ -442,7 +442,9 @@ that file.  For example `sub/deep/leaf.txt' replaces the `sub' row.
 Every listed directory is inspected on refresh.  The chain stops at
 the first branch, so a directory with two entries stays a directory.
 Hidden files count, which means they block a collapse or form the
-final file themselves.
+final file themselves.  A remote directory keeps its own row, because
+the walk reads one directory per level and a remote read costs a
+network round trip.
 
 The collapsed row keeps the directory's sort position, shows the file
 attributes, and acts as the file.  =RET= opens it and =w= copies its

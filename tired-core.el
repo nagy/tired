@@ -541,9 +541,12 @@ stops at the first branch.  A visited-truename set stops cycles."
 (defun tired--collapsed-display-entry (directory entry)
   "Return a display clone for ENTRY when it collapses to one file.
 DIRECTORY is the listed parent and provides the relative name.  The
-result is nil when ENTRY is not a directory or does not collapse."
+result is nil when ENTRY is not a directory or does not collapse.
+A remote directory never collapses, because the chain walk reads
+one directory per level, and every read costs a network round trip."
   (when (and tired-collapse-single-child
-             (tired-entry-dirp entry))
+             (tired-entry-dirp entry)
+             (not (file-remote-p (tired-entry-path entry))))
     (let ((file (tired--collapsed-file (tired-entry-path entry))))
       (when file
         (let ((clone (copy-tired-entry file)))

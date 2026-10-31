@@ -745,6 +745,8 @@ Evil integration:
   sort position and its own link size.
 - Single-child collapse inspects every listed directory on refresh, so a
   root with many subdirectories costs one `directory-files` call each.
+  A remote directory never collapses, because the chain walk reads one
+  directory per level and every remote read costs a round trip.
   The cache lives only until the next refresh.  Chain inspection stops at
   the first branch, and hidden files count as entries.
 - A collapsed row stores the real file path with a relative display name.
