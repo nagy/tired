@@ -623,6 +623,109 @@ the width of the listing untouched."
                         (expand-file-name "alpha.txt" root))
                        "abc"))))))
 
+(defmacro tired-tests--with-other-window (directory &rest body)
+  "Show DIRECTORY in another window and run BODY.
+The selected window keeps the current buffer.  The window is
+deleted afterwards."
+  (declare (indent 1) (debug t))
+  (let ((window (make-symbol "window"))
+        (other (make-symbol "other")))
+    `(let* ((,window (selected-window))
+            (,other (split-window)))
+       (unwind-protect
+           (progn
+             (set-window-buffer ,other (tired-noselect ,directory))
+             (select-window ,window)
+             ,@body)
+         (delete-window ,other)))))
+
+(ert-deftest tired-other-tired-directory-finds-another-window ()
+  "The dwim helper returns the directory of a Tired buffer in another window."
+  (tired-tests--with-fixture
+    (let ((other (file-name-as-directory
+                  (make-temp-file "tired-tests-other-" t))))
+      (unwind-protect
+          (progn
+            (tired root)
+            (tired-tests--with-other-window other
+              (should (equal (tired--other-tired-directory) other))))
+        (delete-directory other t)))))
+
+(ert-deftest tired-other-tired-directory-skips-the-shown-directory ()
+  "The dwim helper ignores a window that shows the same directory."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--with-other-window root
+      (should-not (tired--other-tired-directory)))))
+
+(ert-deftest tired-move-uses-another-window-directory-at-once ()
+  "Move with another Tired window asks no question and moves at once."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((other (file-name-as-directory
+                    (make-temp-file "tired-tests-other-" t))))
+        (unwind-protect
+            (progn
+              (tired root)
+              (tired-tests--goto "alpha.txt")
+              (tired-tests--with-other-window other
+                (cl-letf (((symbol-function 'read-file-name)
+                           (lambda (&rest _)
+                             (ert-fail "tired-move asked a question"))))
+                  (call-interactively #'tired-move))
+                (should (equal "abc"
+                               (tired-tests--contents
+                                (expand-file-name "alpha.txt" other))))
+                (should-not (file-exists-p
+                             (expand-file-name "alpha.txt" root)))
+                (tired-undo)
+                (should (equal "abc"
+                               (tired-tests--contents
+                                (expand-file-name "alpha.txt" root))))
+                (should-not (file-exists-p
+                             (expand-file-name "alpha.txt" other)))))
+          (delete-directory other t))))))
+
+(ert-deftest tired-move-prompts-without-another-window ()
+  "Move asks in the minibuffer when no other window shows a Tired buffer."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (let (asked)
+        (cl-letf (((symbol-function 'read-file-name)
+                   (lambda (&rest _)
+                     (setq asked t)
+                     (expand-file-name "renamed.txt" root))))
+          (call-interactively #'tired-move))
+        (should asked)
+        (should (file-regular-p (expand-file-name "renamed.txt" root)))))))
+
+(ert-deftest tired-move-prompts-when-dwim-is-off ()
+  "The dwim option nil keeps the question in the minibuffer."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((other (file-name-as-directory
+                    (make-temp-file "tired-tests-other-" t)))
+            (tired-dwim-target nil))
+        (unwind-protect
+            (progn
+              (tired root)
+              (tired-tests--goto "alpha.txt")
+              (tired-tests--with-other-window other
+                (let (asked)
+                  (cl-letf (((symbol-function 'read-file-name)
+                             (lambda (&rest _)
+                               (setq asked t)
+                               (expand-file-name "renamed.txt" root))))
+                    (call-interactively #'tired-move))
+                  (should asked)
+                  (should (file-regular-p
+                           (expand-file-name "renamed.txt" root)))
+                  (should-not (file-exists-p
+                               (expand-file-name "alpha.txt" other))))))
+          (delete-directory other t))))))
+
 (ert-deftest tired-delete-moves-target-to-trash ()
   "Delete removes the target from the listing and keeps it in the trash."
   (tired-tests--with-fixture

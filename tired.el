@@ -182,6 +182,15 @@ Emacs collects garbage several times during one walk of a large
 tree, so such a hook would empty the table faster than it fills."
   :type 'natnum)
 
+(defcustom tired-dwim-target t
+  "When non-nil, `tired-move' reads a destination from another window.
+The command scans the windows of the frame, the way
+`dired-dwim-target-next' does.  When another window shows a Tired
+buffer for another directory, the command moves the targets into
+that directory at once and asks no question.  When no such window
+exists, the command prompts in the minibuffer."
+  :type 'boolean)
+
 (defcustom tired-name-faces nil
   "Alist of rules that colorize entry names.
 Each rule starts with a REGEXP that matches the entry name.  A rule
@@ -2138,6 +2147,23 @@ Return nil when PATH is absent."
   (when (tired--path-exists-p path)
     (tired--trash-move path)))
 
+(defun tired--other-tired-directory ()
+  "Return the directory of a Tired buffer in another window.
+Scan the windows of this frame from the one after the selected
+window, as `dired-dwim-target-next' does.  Return nil when no
+other window shows a Tired buffer, or when that buffer shows the
+directory of this buffer, because a move into the same directory
+would change nothing."
+  (let ((here tired--directory))
+    (catch 'found
+      (dolist (window (window-list-1 (next-window nil 'nomini) 'nomini))
+        (unless (eq window (selected-window))
+          (with-current-buffer (window-buffer window)
+            (when (and (derived-mode-p 'tired-mode)
+                       tired--directory
+                       (not (equal tired--directory here)))
+              (throw 'found tired--directory))))))))
+
 (defun tired-copy (directory)
   "Copy the targets into DIRECTORY.
 An existing destination goes to `tired-trash-directory' first, so
@@ -2173,19 +2199,25 @@ An existing destination goes to `tired-trash-directory' first, so
   "Move the targets to DESTINATION.
 With one target, DESTINATION is the new full path, unless it names
 an existing directory.  With several targets, DESTINATION is a
-directory.  An existing destination goes to
+directory.  Interactively, when `tired-dwim-target' holds and
+another window of the frame shows a Tired buffer for another
+directory, the command moves the targets into that directory at
+once and asks no question.  An existing destination goes to
 `tired-trash-directory' first, so `tired-undo' puts it back.  The
 move never calls a shell."
   (interactive
-   (let ((targets (tired--selection-targets)))
+   (let ((targets (tired--selection-targets))
+         (dwim (and tired-dwim-target (tired--other-tired-directory))))
      (unless targets
        (user-error "No entry at point"))
-     (if (null (cdr targets))
-         (list (read-file-name
-                "Move to: " tired--directory nil nil
-                (file-name-nondirectory
-                 (directory-file-name (tired-entry-path (car targets))))))
-       (list (read-directory-name "Move targets to: " tired--directory)))))
+     (cond
+      (dwim (list dwim))
+      ((null (cdr targets))
+       (list (read-file-name
+              "Move to: " tired--directory nil nil
+              (file-name-nondirectory
+               (directory-file-name (tired-entry-path (car targets)))))))
+      (t (list (read-directory-name "Move targets to: " tired--directory))))))
   (let* ((targets (tired--selection-targets))
          (single (null (cdr targets)))
          (destination (expand-file-name destination))

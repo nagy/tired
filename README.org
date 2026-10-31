@@ -215,6 +215,14 @@ works.  With several targets, =R= reads a destination directory.
 empty file.  None of the commands asks for a confirmation.  None of
 them calls a shell.
 
+=R= reads its destination from a second window.  When another window
+of the frame shows a Tired buffer for another directory, the command
+moves the targets into that directory at once and asks no question.
+The window scan follows =dired-dwim-target-next=, so =tired-move=
+behaves like =dired-do-rename= with a dwim target.  =U= undoes the
+move.  Set =tired-dwim-target= to nil to keep the minibuffer
+question.
+
 Every command reports the paths that failed and continues with the
 rest of the targets.  The *Warnings* buffer holds the full list.
 

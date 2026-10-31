@@ -294,7 +294,15 @@ File operations:
   and does nothing when the original exists again.
 - `tired-copy` prompts for a directory.  `tired-move` prompts for a
   full path when it has one target and the typed name is no directory,
-  otherwise for a directory.  `tired-mkdir` and `tired-touch` start
+  otherwise for a directory.  With `tired-dwim-target` set,
+  `tired-move` first asks `tired--other-tired-directory`, which scans
+  the windows of the frame from the one after the selected window, as
+  `dired-dwim-target-next` does.  A Tired buffer in another window
+  gives the destination, so the move runs at once and asks no
+  question.  The helper returns nil for the shown directory itself,
+  because a move into it would change nothing, and that case keeps the
+  prompt.  The immediate move pushes the same undo action as a typed
+  move, so `tired-undo` reverses it.  `tired-mkdir` and `tired-touch` start
   from `tired--creation-directory`: the directory at point when point
   names one, else `tired--directory`.
 - Every command calls `tired--push-undo` with a description and one
