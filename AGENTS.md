@@ -334,6 +334,14 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   spaces after `beginning-of-line`.  Call `forward-line` there, not
   `next-line`: the byte compiler rejects an interactive-only function.
   A name that starts with a space loses that space to the skip.
+- A row name is the `filename` thing, through
+  `tired--filename-at-point` and `tired--name-bounds` in the two
+  provider alists that `tired-mode` fills.  The bounds cover the
+  name text alone, without the depth indent, the directory slash and
+  the symlink arrow.  A provider that returns nil cannot veto the
+  plain Emacs guess, so `thing-at-point` outside the name column still
+  reports what it reports in any buffer, while
+  `tired--filename-at-point` stays nil.
 - The section read passes VISIT to `insert-file-contents`, so the buffer
   carries `buffer-file-name` and no modified flag; without it every
   expand raises a kill question.  A handler selects its own major mode

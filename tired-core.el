@@ -38,6 +38,7 @@
 (require 'seq)
 (require 'subr-x)
 (require 'tabulated-list)
+(require 'thingatpt)
 
 ;; `tired-mode-map' binds commands that `tired-file-ops' defines.  The
 ;; declaration keeps the keymap free of a load-time dependency on the
@@ -1435,6 +1436,51 @@ The row is a `tired-entry' or a `tired-section'."
     (save-excursion
       (goto-char position)
       (tired--row-at-point))))
+
+(defun tired--name-text (row)
+  "Return the displayed name of ROW without indentation and decoration.
+The decoration covers the arrow that shows a symbolic link target
+and the slash that closes a directory name."
+  (let ((cell (tired--row-name-cell row)))
+    (cond
+     ((and (tired-entry-p row)
+           (eq (tired-entry-type row) 'symlink))
+      (string-remove-suffix (tired--symlink-suffix row) cell))
+     ((and (tired-entry-p row) (tired-entry-dirp row))
+      (string-remove-suffix "/" cell))
+     (t cell))))
+
+(defun tired--name-bounds ()
+  "Return the buffer region that shows the name of the row at point.
+The name column starts at the line start, and its cell holds two
+spaces per depth level, so the printed cell minus the name text
+gives the indent.  Return nil when the line holds no row, or when
+point leaves the name for the size, date or mode column.  The
+region stops before the arrow that shows a symbolic link target."
+  (let ((row (tired--row-at-point))
+        (columns (tabulated-list-get-entry)))
+    (when (and row columns)
+      (let* ((cell (aref columns 0))
+             (indent (- (length cell)
+                        (length (tired--row-name-cell row))))
+             (start (+ (line-beginning-position) indent))
+             (width (nth 1 (aref tabulated-list-format 0)))
+             (end (min (+ start (length (tired--name-text row)))
+                       (+ (line-beginning-position) width)
+                       (line-end-position))))
+        (when (and (<= (line-beginning-position) start)
+                   (<= start end)
+                   (<= start (point))
+                   (<= (point) end))
+          (cons start end))))))
+
+(defun tired--filename-at-point ()
+  "Return the absolute name of the row at point, or nil.
+The provider reads the name column alone, so point on the size,
+date or mode column yields no name here.  `thing-at-point' then
+falls back to its own guess.  A section row names its file."
+  (when (tired--name-bounds)
+    (tired--row-path (tired--row-at-point))))
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
@@ -2862,6 +2908,14 @@ The directory contents come from `directory-files' and
   (setq-local tabulated-list-sort-key nil)
   (setq-local revert-buffer-function #'tired--revert)
   (setq-local bookmark-make-record-function #'tired-bookmark-make-record)
+  ;; A row name is a file name at point, so `thing-at-point', `ffap'
+  ;; and `embark' read the name column alone.
+  (setq-local thing-at-point-provider-alist
+              (cons '(filename . tired--filename-at-point)
+                    thing-at-point-provider-alist))
+  (setq-local bounds-of-thing-at-point-provider-alist
+              (cons '(filename . tired--name-bounds)
+                    bounds-of-thing-at-point-provider-alist))
   (setq-local tired--mode-line-base (default-value 'mode-line-format))
   (setq-local tired--mode-line-cache "")
   (setq-local mode-line-format tired--mode-line-base)

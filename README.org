@@ -40,6 +40,9 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Optional recursive size of a directory
 - Optional evil bindings in =tired-evil.el=, with the evil motions kept
 - Native Elisp listing, no external process
+- A `thing-at-point' provider for `filename' and `existing-filename',
+  confined to the name column, so `embark' and any tool that reads
+  the thing gets the exact path
 
 * Usage
 

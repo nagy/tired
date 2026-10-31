@@ -2165,6 +2165,66 @@ costs a network round trip, so the row stays plain."
     (should (eq (key-binding (key-parse "n")) #'tired-next-line))
     (should (eq (key-binding (key-parse "p")) #'tired-previous-line))))
 
+(ert-deftest tired-thing-at-point-reads-the-row-name ()
+  "A filename thing reads the path of the row under point."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "alpha.txt" root)))
+    (should (equal (thing-at-point 'existing-filename t)
+                   (expand-file-name "alpha.txt" root)))))
+
+(ert-deftest tired-thing-at-point-bounds-cover-the-name ()
+  "The bounds stop before the size column and before the link arrow."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let ((bounds (bounds-of-thing-at-point 'filename)))
+      (should (equal (buffer-substring (car bounds) (cdr bounds))
+                     "alpha.txt")))
+    (tired-tests--goto "link")
+    (let ((bounds (bounds-of-thing-at-point 'filename)))
+      (should (equal (buffer-substring (car bounds) (cdr bounds))
+                     "link")))
+    ;; The target text after the arrow holds no name.
+    (search-forward "alpha.txt")
+    (should-not (tired--filename-at-point))
+    ;; Neither does the mode column at the end of the line.
+    (goto-char (line-end-position))
+    (should-not (tired--filename-at-point))))
+
+(ert-deftest tired-thing-at-point-follows-the-depth-indent ()
+  "A nested row gives its name from the start of the name column."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-insert-subdir)
+    (tired-tests--goto "sub")
+    (tired-next-line)
+    (should (equal (tired-entry-name (tired--row-at-point))
+                   "deep/leaf.txt"))
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "sub/deep/leaf.txt" root)))
+    (let ((bounds (bounds-of-thing-at-point 'filename)))
+      (should (= 2 (- (car bounds) (line-beginning-position))))
+      (should (equal (buffer-substring (car bounds) (cdr bounds))
+                     "deep/leaf.txt")))))
+
+(ert-deftest tired-thing-at-point-reads-the-file-of-a-section ()
+  "A section row names the file that holds it."
+  (tired-tests--with-fixture
+    (tired-tests--write "code.el" "(defun code-foo (a) a)\n")
+    (tired root)
+    (tired-tests--goto "code.el")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "defun code-foo")
+    (forward-char (current-indentation))
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "code.el" root)))
+    (let ((bounds (bounds-of-thing-at-point 'filename)))
+      (should (equal (buffer-substring (car bounds) (cdr bounds))
+                     "defun code-foo")))))
+
 (provide 'tired-tests-core)
 
 ;;; tired-tests-core.el ends here
