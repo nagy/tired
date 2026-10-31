@@ -83,6 +83,16 @@ A delay coalesces bursts of events, such as a build writing many
 files, into one refresh."
   :type 'number)
 
+(defcustom tired-filter-delay 0.15
+  "Seconds to wait before a typed filter redraws the listing.
+A redraw walks the tree and prints every row, so a fast typist would
+pay one redraw per keystroke.  The delay coalesces a burst of
+keystrokes into one redraw, and the exit and quit keys apply the
+pending text at once.  Set the value to 0 to redraw on every
+keystroke."
+  :type 'number
+  :group 'tired)
+
 (defcustom tired-collapse-single-child t
   "When non-nil, collapse a directory that leads to exactly one file.
 The collapsed row shows the path relative to the listed directory,
@@ -335,6 +345,9 @@ the tree itself and never sees a stale row set.")
 
 (defvar-local tired--revert-timer nil
   "Pending `tired-auto-revert-delay' timer, or nil.")
+
+(defvar-local tired--filter-timer nil
+  "Pending `tired-filter-delay' timer, or nil.")
 
 (defvar-local tired--collapse-cache nil
   "Hash table mapping a directory to its single-entry chain result.
@@ -1938,26 +1951,54 @@ with the opposite direction."
           tired--sort-flip (and reverse t)))
   (tired--redraw))
 
+(defun tired--filter-cancel-timer ()
+  "Cancel a pending filter redraw, if one waits."
+  (when (timerp tired--filter-timer)
+    (cancel-timer tired--filter-timer)
+    (setq tired--filter-timer nil)))
+
+(defun tired--filter-flush (filter)
+  "Cancel a pending filter redraw and apply FILTER at once.
+The exit and the quit path call this, because the user expects the
+final text to reach the listing without the delay."
+  (tired--filter-cancel-timer)
+  (tired--apply-filter filter))
+
 (defun tired--apply-filter (filter)
   "Set `tired--filter' to FILTER and redraw the listing.
-An empty FILTER removes the current filter."
+An empty FILTER removes the current filter.  A pending delayed
+redraw goes away, because this call supersedes it."
+  (tired--filter-cancel-timer)
   (setq tired--filter (unless (or (null filter) (string-empty-p filter)) filter))
   (tired--redraw))
 
 (defun tired--filter-changed (origin)
   "Apply the current minibuffer text as the filter of ORIGIN.
-Read the minibuffer before the switch, because
-`minibuffer-contents' returns the text of the current buffer when
-that buffer is not a minibuffer."
+Delay the redraw by `tired-filter-delay', so a typed word costs one
+redraw.  A zero delay applies the text at once.  Read the minibuffer
+before the switch, because `minibuffer-contents' returns the text of
+the current buffer when that buffer is not a minibuffer."
   (let ((text (minibuffer-contents)))
     (with-current-buffer origin
-      (tired--apply-filter text))))
+      (tired--filter-cancel-timer)
+      (if (or (null tired-filter-delay) (<= tired-filter-delay 0))
+          (tired--apply-filter text)
+        (setq tired--filter-timer
+              (run-with-idle-timer
+               tired-filter-delay nil
+               (lambda (buffer filter)
+                 (when (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (setq tired--filter-timer nil)
+                     (tired--apply-filter filter))))
+               origin text))))))
 
 (defun tired-filter ()
   "Narrow the listing while typing a filter.
-Every change updates the listing immediately.  \[exit-minibuffer]
-keeps the filter, \[keyboard-quit] restores the previous one.  An
-empty filter removes it."
+A change updates the listing after `tired-filter-delay'.
+\[exit-minibuffer] keeps the filter and applies the typed text at
+once, \[keyboard-quit] restores the previous one.  An empty filter
+removes it."
   (interactive)
   (unless tired--directory
     (user-error "Not in a Tired buffer"))
@@ -1974,10 +2015,10 @@ empty filter removes it."
                                nil t))
                  (read-string "Filter: " original))))
           (with-current-buffer origin
-            (tired--apply-filter result)))
+            (tired--filter-flush result)))
       (quit
        (with-current-buffer origin
-         (tired--apply-filter original)
+         (tired--filter-flush original)
          (tired--goto-entry start))))))
 
 (defun tired-clear-filter ()

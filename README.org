@@ -134,9 +134,13 @@ selection.  The mode line shows the region count.  The mode line
 bracket group appears only while the listing holds optional state, so
 a plain listing shows no group at all.
 
-The filter is live.  =f= opens a minibuffer and every keystroke
-redraws the listing.  =RET= keeps the typed filter, =C-g= restores the
-previous one, and an empty input removes the filter.
+The filter is live.  =f= opens a minibuffer and a keystroke updates
+the listing after =tired-filter-delay= seconds, which is 0.15 by
+default.  The delay folds a typed word into one redraw, because a
+redraw walks the tree and prints every row.  =RET= keeps the typed
+filter and applies it at once, =C-g= restores the previous one, and
+an empty input removes the filter.  Set =tired-filter-delay= to 0 to
+redraw on every keystroke.
 
 =w= copies absolute paths, =W= copies paths relative to the shown
 directory, and =P= copies paths relative to the project root.  =P=

@@ -269,12 +269,35 @@ the width of the listing untouched."
   "A keystroke applies the minibuffer text, not the buffer body."
   (tired-tests--with-fixture
     (tired root)
-    (let ((origin (current-buffer)))
+    (let ((origin (current-buffer))
+          (tired-filter-delay 0))
       (cl-letf (((symbol-function 'minibuffer-contents)
                  (lambda () "BETA")))
         (tired--filter-changed origin))
       (should (equal tired--filter "BETA"))
       (should (equal (tired-tests--names) '("beta.txt"))))))
+
+(ert-deftest tired-filter-command-waits-for-the-delay ()
+  "A keystroke schedules one redraw instead of applying it.
+A second keystroke replaces the pending redraw, so a typed word
+costs one redraw and not one per character."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((tired-filter-delay 30))
+      (cl-letf (((symbol-function 'minibuffer-contents)
+                 (lambda () "bet")))
+        (tired--filter-changed (current-buffer)))
+      (let ((first tired--filter-timer))
+        (should (timerp first))
+        (should-not tired--filter)
+        (cl-letf (((symbol-function 'minibuffer-contents)
+                   (lambda () "beta")))
+          (tired--filter-changed (current-buffer)))
+        (should (timerp tired--filter-timer))
+        (should-not (eq first tired--filter-timer)))
+      (tired--filter-flush "beta")
+      (should-not tired--filter-timer)
+      (should (equal tired--filter "beta")))))
 
 (ert-deftest tired-selection-drives-targets ()
   "Selecting an entry makes it the target of file commands."

@@ -248,11 +248,17 @@ Data flow:
     captures its buffer, and `kill-buffer-hook` calls
     `tired--stop-watching`.
 12. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
-   and calls `tired--apply-filter` on every keystroke.  RET keeps the
-   value, C-g restores the previous filter and moves point back to the
-   row that held it when `tired-filter` started.
+   and schedules a redraw on every keystroke.
    `tired--filter-changed` reads `minibuffer-contents` before it
-   switches to the listed buffer.
+   switches to the listed buffer, then starts an idle timer of
+   `tired-filter-delay` seconds and cancels the pending one, so a
+   typed word costs one redraw.  A delay of 0 applies at once.  RET
+   and C-g call `tired--filter-flush`, which cancels the timer and
+   applies at once, so the final text never waits.  RET keeps the
+   value, C-g restores the previous filter and moves point back to the
+   row that held it when `tired-filter` started.  The timer lives in
+   the listed buffer as `tired--filter-timer`, and `tired--apply-filter`
+   cancels it, so a direct call supersedes a pending redraw.
 13. `tired-noselect` returns the buffer for a directory and never shows
    it.  It sets `tired--directory` and `default-directory`, then
    refreshes.  Loading the library changes nothing global.  The
