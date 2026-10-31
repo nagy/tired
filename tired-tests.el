@@ -1079,6 +1079,19 @@ a symlink, and removes every Tired buffer it opened."
       (should (eq 'tired-directory-face
                   (get-text-property 0 'font-lock-face cell))))))
 
+(ert-deftest tired-file-size-cell-carries-the-size-face ()
+  "The size column takes `tired-file-size' and an empty cell stays plain."
+  (tired-tests--with-fixture
+    (tired root)
+    (let* ((entry (tired-tests--entry "alpha.txt"))
+           (cell (aref (tired--row entry 0) 1)))
+      (should (eq 'tired-file-size (get-text-property 0 'face cell)))
+      (should (eq 'tired-file-size
+                  (get-text-property 0 'font-lock-face cell)))
+      (should (string= cell (tired--size-cell entry))))
+    (let ((cell (aref (tired--row (tired-tests--entry "sub") 0) 1)))
+      (should (equal "" cell)))))
+
 (ert-deftest tired-date-cell-carries-the-date-face ()
   "The modification time column takes `tired-date'."
   (tired-tests--with-fixture

@@ -357,6 +357,12 @@ Evil integration:
   Do not require org for the face.  The stamp column is the only place
   that prints a date or a time.  The trash name uses a timestamp, but
   it stays invisible as a path component.
+  The size cell carries both properties as well, with
+  `tired-file-size', which inherits `marginalia-size'.  Marginalia may
+  stay unloaded, for the same reason.  An empty size cell keeps no
+  face.  `tired--size-column' adds the paint, and
+  `tired--size-cell' stays a plain string, so the tests compare it
+  with `string=' or `equal'.
 - `tired-mode` does not set `font-lock-defaults`.  No upstream
   tabulated-list mode does: the printer already built the row strings,
   so colorization belongs in the entry data.  `proced` uses font-lock

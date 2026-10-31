@@ -252,6 +252,12 @@ takes effect on the next open without a re-parse."
 The column takes the Org date face, so a theme colors the stamp the
 way it colors a date in an Org file.")
 
+(defface tired-file-size
+  '((t :inherit marginalia-size))
+  "Face for the size column.
+The column takes the Marginalia size face, so a theme colors a size
+the way it colors a size in the Minibuffer completion list.")
+
 (cl-defstruct (tired-entry (:constructor tired--entry-create))
   "One entry of a directory listing.
 NAME is the file name without its directory.  PATH is the absolute
@@ -972,6 +978,16 @@ network costs one round trip per file."
     (file-size-human-readable
      (tired--directory-total (tired-entry-path entry))))))
 
+(defun tired--size-column (entry)
+  "Return the size cell for ENTRY, painted with `tired-file-size'.
+An empty cell keeps no face, because a face on no text shows
+nothing."
+  (let ((text (tired--size-cell entry)))
+    (if (string-empty-p text)
+        text
+      (propertize text 'face 'tired-file-size
+                  'font-lock-face 'tired-file-size))))
+
 (defun tired--row (row depth)
   "Return the tabulated list row for ROW at DEPTH.
 ROW is a `tired-entry' or a `tired-section'.  A section fills the
@@ -986,7 +1002,7 @@ Emacs 31 requires a vector of column descriptors here; a list makes
               "")
     (vector (concat (make-string (* 2 depth) ?\s)
                     (tired--name-cell row))
-            (tired--size-cell row)
+            (tired--size-column row)
             (propertize (format-time-string tired-date-format
                                             (tired-entry-mtime row))
                         'face 'tired-date
