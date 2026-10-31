@@ -2116,6 +2116,55 @@ costs a network round trip, so the row stays plain."
     (should (eq (key-binding (key-parse "M->"))
                 #'tired-goto-last-entry))))
 
+(ert-deftest tired-next-line-lands-on-the-name ()
+  "The line motion stops on the name, past the depth indent."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-insert-subdir)
+    (tired-tests--goto "sub")
+    (tired-next-line)
+    (should (equal (tired-entry-name (tired--row-at-point))
+                   "deep/leaf.txt"))
+    (should (= 2 (current-column)))
+    (should (looking-at-p "deep/leaf\\.txt"))))
+
+(ert-deftest tired-next-line-drops-the-column-of-the-old-row ()
+  "A motion from the size column lands on the name of the next row."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (end-of-line)
+    (tired-next-line)
+    (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))
+    (should (= 0 (current-column)))))
+
+(ert-deftest tired-previous-line-lands-on-the-name ()
+  "The line motion up stops on the name of the row above."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (end-of-line)
+    (tired-previous-line)
+    (should (equal (tired-entry-name (tired--row-at-point)) "loop"))
+    (should (= 2 (current-column)))))
+
+(ert-deftest tired-next-line-takes-a-count ()
+  "A count moves that many lines and keeps the name position."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (tired-next-line 2)
+    (should (equal (tired-entry-name (tired--row-at-point)) "link"))
+    (should (= 0 (current-column)))))
+
+(ert-deftest tired-line-motions-keep-their-keys ()
+  "The listing binds the two motions, as `dired' does."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq (key-binding (key-parse "n")) #'tired-next-line))
+    (should (eq (key-binding (key-parse "p")) #'tired-previous-line))))
+
 (provide 'tired-tests-core)
 
 ;;; tired-tests-core.el ends here

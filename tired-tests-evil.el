@@ -78,8 +78,11 @@
                       #'tired-copy-relative-path))
           (should (eq (key-binding (key-parse "P"))
                       #'tired-copy-project-path))
-          ;; Motion stays evil, so a Tired buffer is still navigable.
-          (should (eq (key-binding (key-parse "j")) #'evil-next-line))
+          ;; Motion stays evil, so a Tired buffer is still navigable,
+          ;; and the two line motions stop on the name.
+          (should (eq (key-binding (key-parse "j")) #'tired-next-line))
+          (should (eq (key-binding (key-parse "k"))
+                      #'tired-previous-line))
           (should (eq (key-binding (key-parse "gg"))
                       #'evil-goto-first-line))
           ;; G skips the empty line below the listing.
@@ -142,6 +145,29 @@
           (tired--enable-evil-bindings)
           (should (bound-and-true-p tired-evil-local-mode))
           (should (eq (key-binding (key-parse "RET")) #'tired-find-file)))
+      (tired-evil-mode -1)
+      (evil-local-mode -1))))
+
+(ert-deftest tired-evil-line-motion-lands-on-the-name ()
+  "The evil line motions stop on the name of the row."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode 1)
+          (tired-insert-subdir)
+          (tired-tests--goto "sub")
+          (call-interactively (key-binding (key-parse "j")))
+          (should (equal (tired-entry-name (tired--row-at-point))
+                         "deep/leaf.txt"))
+          (should (= 2 (current-column)))
+          (call-interactively (key-binding (key-parse "k")))
+          (should (equal (tired-entry-name (tired--row-at-point)) "sub"))
+          (should (= 0 (current-column))))
+      (evil-normal-state)
       (tired-evil-mode -1)
       (evil-local-mode -1))))
 

@@ -245,7 +245,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `evil-define-minor-mode-key` with `key-parse`.  `define-key` reads
   `"RET"` as three characters.  A remap entry reads
   `"<remap> <evil-replace>"`, because `key-parse` treats the bracket form
-  as literal characters.
+  as literal characters.  The normal table remaps `evil-replace`,
+  `evil-goto-line`, `evil-next-line` and `evil-previous-line`, so `r`
+  renames and `j`, `k` and `G` stop on a row.  `j` and `k` keep their
+  key through the remap, and visual state keeps the plain motions.
 - `define-minor-mode` defines a defcustom, so a mode without
   `:group 'tired` fails byte compilation.
 - `tabulated-list-mode` binds `follow-link` to `mouse-face`, and with
@@ -325,6 +328,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   not push point down.  When no row above stays, point stops on the
   first line, and a shorter listing clamps to the last row, never to
   the first line.
+- The name column starts at the line start, and its cell holds two
+  spaces per depth level.  `tired-next-line` and `tired-previous-line`
+  reach the name through `tired--beginning-of-name`, which skips the
+  spaces after `beginning-of-line`.  Call `forward-line` there, not
+  `next-line`: the byte compiler rejects an interactive-only function.
+  A name that starts with a space loses that space to the skip.
 - The section read passes VISIT to `insert-file-contents`, so the buffer
   carries `buffer-file-name` and no modified flag; without it every
   expand raises a kill question.  A handler selects its own major mode

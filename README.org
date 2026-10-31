@@ -227,8 +227,9 @@ and moves down one line, and the same shadowing hits every Tired
 key.
 
 The bindings leave the evil motions alone.  =j=, =k=, =gg=,
-=C-d=, =C-u=, =n= and =N= keep their meaning, and every Tired
-command gets a direct key.  =G= reaches =tired-goto-last-entry=,
+=C-d=, =C-u=, =n= and =N= keep their meaning, and =j= and =k=
+stop on the name of the row, as =n= and =p= do without evil.  Every
+Tired command gets a direct key.  =G= reaches =tired-goto-last-entry=,
 because the plain motion stops on the empty line below the listing.
 The replace key, =r=, renames the row at point, because
 =evil-replace= has no meaning in a listing.  =R= keeps

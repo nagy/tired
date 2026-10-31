@@ -1944,6 +1944,31 @@ IGNORE-AUTO and NOCONFIRM are accepted for `revert-buffer-function'."
     (user-error "Not in a Tired buffer"))
   (tired (file-name-directory (directory-file-name tired--directory))))
 
+(defun tired--beginning-of-name ()
+  "Move point to the first character of the name on the current line.
+The name column starts at the line start, and its cell holds two
+spaces per depth level, so skipping the spaces reaches the first
+character of the name."
+  (beginning-of-line)
+  (skip-chars-forward " ")
+  (point))
+
+(defun tired-next-line (&optional arg)
+  "Move point ARG lines down and put it at the start of the name.
+ARG defaults to one line.  The `^' interactive code keeps
+`shift-select-mode' working, as it does in `dired-next-line'."
+  (interactive "^p")
+  (forward-line (or arg 1))
+  (tired--beginning-of-name))
+
+(defun tired-previous-line (&optional arg)
+  "Move point ARG lines up and put it at the start of the name.
+ARG defaults to one line.  The `^' interactive code keeps
+`shift-select-mode' working, as it does in `dired-previous-line'."
+  (interactive "^p")
+  (forward-line (- (or arg 1)))
+  (tired--beginning-of-name))
+
 (defun tired--last-row-position ()
   "Return the position of the last row of the listing, or nil."
   (save-excursion
@@ -2673,6 +2698,8 @@ into `context-menu-functions' locally."
   "RET" #'tired-find-file
   "o" #'tired-find-file-other-window
   "^" #'tired-up-directory
+  "n" #'tired-next-line
+  "p" #'tired-previous-line
   "g" #'tired-refresh
   "i" #'tired-insert-subdir
   "M-i" #'tired-remove-subdir
