@@ -141,11 +141,25 @@ command here reads the active region.")
                    (list (key-parse (car binding)) (cdr binding)))
                  keys)))
 
+(defun tired-evil--name-edit ()
+  "Keep a name edit in the evil insert state.
+The normal state map of `tired-evil-local-mode' binds every row key
+ahead of the name edit key map, so the insert state is the one
+state where a typed character reaches a name.
+`tired-name-edit-mode-hook' runs for both directions, so read
+`tired--name-edit', the flag that names the real state."
+  (if tired--name-edit
+      (evil-insert-state)
+    (when (evil-insert-state-p)
+      (evil-normal-state))))
+
 (define-minor-mode tired-evil-local-mode
   "Minor mode that installs the evil bindings of `tired-evil-mode'.
 Enable `tired-evil-mode' instead of this mode."
   :group 'tired
-  :lighter nil)
+  :lighter nil
+  (unless tired-evil-local-mode
+    (remove-hook 'tired-name-edit-mode-hook #'tired-evil--name-edit t)))
 
 (tired-evil--bind 'normal tired-evil-keys)
 (tired-evil--bind 'visual tired-evil-visual-keys)
@@ -153,7 +167,12 @@ Enable `tired-evil-mode' instead of this mode."
 (defun tired-evil--enable-buffer ()
   "Turn on `tired-evil-local-mode' in a Tired buffer."
   (when (derived-mode-p 'tired-mode)
-    (tired-evil-local-mode 1)))
+    (tired-evil-local-mode 1)
+    (add-hook 'tired-name-edit-mode-hook #'tired-evil--name-edit nil t)
+    ;; An edit that started before evil arrived still needs the insert
+    ;; state, because the normal state map binds every row key.
+    (when tired--name-edit
+      (tired-evil--name-edit))))
 
 ;;;###autoload
 (define-minor-mode tired-evil-mode

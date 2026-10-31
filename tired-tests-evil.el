@@ -171,6 +171,61 @@
       (tired-evil-mode -1)
       (evil-local-mode -1))))
 
+(ert-deftest tired-evil-name-edit-enters-the-insert-state ()
+  "A name edit types in the insert state and leaves it again.
+The normal state map binds every row key ahead of the edit key map,
+so only the insert state carries a typed character to a name."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (evil-local-mode 1)
+      (unwind-protect
+          (progn
+            (tired-evil-mode 1)
+            (should (eq (bound-and-true-p evil-state) 'normal))
+            (tired-edit-names)
+            (should (eq evil-state 'insert))
+            (tired-tests--goto "alpha.txt")
+            (let ((region (tired--rename-region)))
+              (delete-region (car region) (cdr region))
+              (goto-char (car region))
+              (execute-kbd-macro "evil.txt"))
+            (execute-kbd-macro (kbd "C-c C-c"))
+            (should (eq evil-state 'normal))
+            (should-not tired--name-edit)
+            (should (file-regular-p (expand-file-name "evil.txt" root))))
+        (evil-normal-state)
+        (tired-evil-mode -1)
+        (evil-local-mode -1)))))
+
+(ert-deftest tired-evil-name-edit-survives-a-late-enable ()
+  "Evil started during an edit enters the insert state at once, and a
+buffer that leaves the local mode keeps no stale hook."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (evil-local-mode 1)
+      (unwind-protect
+          (progn
+            (tired-edit-names)
+            (should-not (bound-and-true-p tired-evil-local-mode))
+            (tired-evil-mode 1)
+            (should (bound-and-true-p tired-evil-local-mode))
+            (should (eq (bound-and-true-p evil-state) 'insert))
+            (tired-evil-local-mode -1)
+            (should-not (bound-and-true-p tired-evil-local-mode))
+            (should-not (memq #'tired-evil--name-edit
+                              tired-name-edit-mode-hook)))
+        (when tired--name-edit
+          (tired-abort-edits))
+        (tired-evil-mode -1)
+        (evil-normal-state)
+        (evil-local-mode -1)))))
+
 (provide 'tired-tests-evil)
 
 ;;; tired-tests-evil.el ends here

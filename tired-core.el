@@ -414,6 +414,12 @@ list.  A changed time re-parses the file.")
 (defvar-local tired--folded nil
   "Hash set of `(PATH . LINE)' keys for folded sections.")
 
+(defvar-local tired--name-edit nil
+  "Non-nil while the listing shows editable name cells.
+`tired-name-edit-mode' sets it, and `tired-edit-names' turns that
+mode on.  A reprint then erases what the user typed, so
+`tired--redraw' draws nothing while the value holds.")
+
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
 The table maps file names to `tired-entry' structs."
@@ -1450,13 +1456,13 @@ and the slash that closes a directory name."
       (string-remove-suffix "/" cell))
      (t cell))))
 
-(defun tired--name-bounds ()
-  "Return the buffer region that shows the name of the row at point.
+(defun tired--name-region ()
+  "Return the buffer region that shows the name of the row on this line.
 The name column starts at the line start, and its cell holds two
 spaces per depth level, so the printed cell minus the name text
-gives the indent.  Return nil when the line holds no row, or when
-point leaves the name for the size, date or mode column.  The
-region stops before the arrow that shows a symbolic link target."
+gives the indent.  The region stops before the slash that closes a
+directory name and before the arrow that targets a symbolic link.
+Return nil when the line holds no row."
   (let ((row (tired--row-at-point))
         (columns (tabulated-list-get-entry)))
     (when (and row columns)
@@ -1464,15 +1470,22 @@ region stops before the arrow that shows a symbolic link target."
              (indent (- (length cell)
                         (length (tired--row-name-cell row))))
              (start (+ (line-beginning-position) indent))
-             (width (nth 1 (aref tabulated-list-format 0)))
              (end (min (+ start (length (tired--name-text row)))
-                       (+ (line-beginning-position) width)
                        (line-end-position))))
         (when (and (<= (line-beginning-position) start)
-                   (<= start end)
-                   (<= start (point))
-                   (<= (point) end))
+                   (<= start end))
           (cons start end))))))
+
+(defun tired--name-bounds ()
+  "Return the buffer region that shows the name of the row at point.
+Return nil when the line holds no row, or when point leaves the
+name for the size, date or mode column.  The region stops before
+the arrow that shows a symbolic link target."
+  (let ((region (tired--name-region)))
+    (when (and region
+               (<= (car region) (point))
+               (<= (point) (cdr region)))
+      region)))
 
 (defun tired--filename-at-point ()
   "Return the absolute name of the row at point, or nil.
@@ -1846,6 +1859,15 @@ whose point vanished keeps its own point."
               (set-window-start window start-position))))))))
 
 (defun tired--redraw (&optional window)
+  "Redraw the listing, unless an edit owns the buffer text.
+WINDOW is the window that shows the buffer.  `tired-edit-names'
+leaves `tired--name-edit' set while the name cells accept changes,
+and a reprint then erases what the user typed, so the redraw draws
+nothing."
+  (unless tired--name-edit
+    (tired--redraw-buffer window)))
+
+(defun tired--redraw-buffer (&optional window)
   "Redraw the listing from the cached entries.
 WINDOW is the window that shows the buffer, or nil for the selected
 window.  Its width limits the name column.  The redraw keeps the

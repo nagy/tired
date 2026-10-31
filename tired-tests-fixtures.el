@@ -135,6 +135,18 @@ property."
     (unless found
       (error "Entry not listed: %s" name))))
 
+(defun tired-tests--edit-name (name new)
+  "Replace the editable name NAME with NEW in the current listing.
+The listing must hold the name edit mode, so the change reaches the
+name cell alone."
+  (tired-tests--goto name)
+  (let ((region (tired--rename-region)))
+    (unless region
+      (error "No editable name on %s" name))
+    (delete-region (car region) (cdr region))
+    (goto-char (car region))
+    (insert new)))
+
 (defun tired-tests--goto-section (label)
   "Move point to the section row whose label is LABEL."
   (goto-char (point-min))

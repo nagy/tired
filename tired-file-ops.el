@@ -204,7 +204,10 @@ listing under point keeps its line through the refresh, so a
 collapsed chain row that still shows a path under a removed leaf
 keeps focus.  A shorter listing clamps point to its last row,
 never to the first line.  Report the failures and refresh the
-listing."
+listing.  A name edit holds the buffer text, so the command signals
+a user error there, because its redraw would draw nothing."
+  (when tired--name-edit
+    (user-error "Commit or abort the name edit first"))
   (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
@@ -259,6 +262,24 @@ listing."
 Return nil when PATH is absent."
   (when (tired--path-exists-p path)
     (tired--trash-move path)))
+
+(defun tired--name-target (path name)
+  "Return the path that the base name NAME gives to PATH.
+The result joins PATH's directory and NAME as plain text, so no
+name reaches `expand-file-name'.  A name such as \"~\" then stays a
+file name in that directory, and never names the home directory."
+  (concat (file-name-as-directory
+           (file-name-directory (directory-file-name path)))
+          name))
+
+(defun tired--same-name-entry-p (path target)
+  "Return non-nil when PATH and TARGET differ in case alone.
+A case-insensitive file system resolves such a TARGET to PATH
+itself, so the rename needs no trash step.  A case-sensitive file
+system keeps two files, and the caller trashes TARGET first."
+  (let ((path (directory-file-name path)))
+    (and (string-equal-ignore-case path target)
+         (file-equal-p path target))))
 
 (defun tired--other-tired-directory ()
   "Return the directory of a Tired buffer in another window.
@@ -375,35 +396,44 @@ move never calls a shell."
 NAME holds the new base name and no directory part.  Interactively,
 the minibuffer shows the current name first.  An existing
 destination goes to `tired-trash-directory' first, so `tired-undo'
-puts it back.  The command reads the row at point alone and ignores
-the selection and the region.  A later `tired-undo' returns the old
-name.  Point follows the renamed row.  The command never calls a
-shell."
+puts it back.  A destination that names a directory signals a user
+error, so no subtree leaves the listing by accident.  The command
+reads the row at point alone and ignores the selection and the
+region.  A later `tired-undo' returns the old name.  Point follows
+the renamed row.  The command never calls a shell, and it signals a
+user error while a name edit holds the buffer text."
   (interactive
-   (let ((row (tired--row-at-point)))
-     (unless row
-       (user-error "No entry at point"))
-     (when (tired-section-p row)
-       (user-error "Cannot rename a section"))
-     (let ((old (file-name-nondirectory
-                 (directory-file-name (tired-entry-path row)))))
-       (list (read-string (format "Rename %s to: " old) old)))))
+   (if tired--name-edit
+       (user-error "Commit or abort the name edit first")
+     (let ((row (tired--row-at-point)))
+       (unless row
+         (user-error "No entry at point"))
+       (when (tired-section-p row)
+         (user-error "Cannot rename a section"))
+       (let ((old (file-name-nondirectory
+                   (directory-file-name (tired-entry-path row)))))
+         (list (read-string (format "Rename %s to: " old) old))))))
   (let ((row (tired--row-at-point)))
+    (when tired--name-edit
+      (user-error "Commit or abort the name edit first"))
     (unless row
       (user-error "No entry at point"))
     (unless (tired-entry-p row)
       (user-error "Cannot rename a section"))
     (let* ((path (tired-entry-path row))
-           (directory (file-name-directory (directory-file-name path)))
            (old (file-name-nondirectory (directory-file-name path)))
-           (target (expand-file-name name directory)))
-      (when (or (string-empty-p name) (member name '("." "..")))
+           (target (tired--name-target path name)))
+      (when (or (string-empty-p (string-trim name))
+                (member name '("." "..")))
         (user-error "Invalid name %s" name))
       (when (file-name-directory name)
         (user-error "A name holds no directory part: %s" name))
       (if (equal (directory-file-name target) (directory-file-name path))
           (message "Name unchanged")
-        (let ((previous (tired--replace-with-trash target)))
+        (when (file-directory-p target)
+          (user-error "%s names a directory" name))
+        (let ((previous (unless (tired--same-name-entry-p path target)
+                          (tired--replace-with-trash target))))
           (rename-file path target)
           (tired--push-undo
            (format "rename %s to %s" old name)
@@ -415,6 +445,320 @@ shell."
           (tired-refresh)
           (tired--goto-path target)
           (message "Renamed %s to %s" old name))))))
+
+;;; Name edits
+
+(defvar tired-name-edit-mode-map
+  (let ((map (make-sparse-keymap)))
+    (dolist (char (number-sequence ?\s ?~))
+      (define-key map (char-to-string char) #'tired--name-self-insert))
+    (define-key map [remap self-insert-command] #'tired--name-self-insert)
+    (define-key map "\C-c\C-c" #'tired-commit-edits)
+    (define-key map "\C-c\C-k" #'tired-abort-edits)
+    ;; A newline would split a row, and TAB would toggle a subtree.
+    (dolist (key '("TAB" "RET" "C-j" "C-o"))
+      (define-key map (kbd key) #'undefined))
+    map)
+  "Key map for `tired-name-edit-mode'.
+Every printable character inserts itself, because the listing key
+map binds most letters to a command.  The remap of
+`self-insert-command' replaces the one of `special-mode-map'.")
+
+(defun tired--name-self-insert (&optional arg)
+  "Insert ARG copies of the typed character at point.
+`special-mode-map' remaps `self-insert-command' to `undefined', and
+the listing inherits that remap, so the name edit mode needs a
+command of its own for a typed character."
+  (interactive "*p")
+  (self-insert-command (or arg 1)))
+
+(defvar-local tired--name-edit-regions nil
+  "Alist of entry, start marker and end marker for the name edit.
+The start marker stays before text inserted at the name start, and
+the end marker follows text appended to the name, so both markers
+track the user's changes.  `tired-commit-edits' reads the text
+between the markers.")
+
+(defvar-local tired--name-edit-sticky nil
+  "List of (START . END) regions that the name edit made sticky.
+`tired--mark-name-edits' records every region whose
+`rear-nonsticky' or `front-sticky' property it changes, and
+`tired--stop-name-edit' reads the list, so a sticky property that
+another feature set elsewhere in the buffer stays.")
+
+(defun tired--rename-region ()
+  "Return the buffer region that a name edit changes on this line.
+A collapsed chain row shows a relative name, so the region covers
+the leaf component alone and the directory part stays out.  Return
+nil when the line holds no entry row."
+  (let ((row (tired--row-at-point))
+        (region (tired--name-region)))
+    (when (and region (tired-entry-p row) (< (car region) (cdr region)))
+      (cons (save-excursion
+              (goto-char (cdr region))
+              (if (search-backward "/" (car region) t)
+                  (1+ (point))
+                (car region)))
+            (cdr region)))))
+
+(defun tired--mark-name-edits (regions)
+  "Make each region in REGIONS the only writable text of the buffer.
+REGIONS holds (START . END) conses, one per editable name leaf.
+The rest of the listing takes a `read-only' text property, so a
+change reaches no other column.  The character before a name is
+`rear-nonsticky' for that property, because a user who deletes a
+whole name retypes it at the same place.  The first character of a
+read-only line start is `front-sticky' instead, so an insertion
+never lands in the indentation or in front of a section label.
+Every changed sticky property joins `tired--name-edit-sticky'."
+  (let ((inhibit-read-only t))
+    (add-text-properties (point-min) (point-max) '(read-only t))
+    (dolist (region regions)
+      (remove-text-properties (car region) (cdr region) '(read-only t))
+      (when (> (car region) (point-min))
+        (add-text-properties (1- (car region)) (car region)
+                             '(rear-nonsticky (read-only)))
+        (push (cons (1- (car region)) (car region))
+              tired--name-edit-sticky)))
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when (get-text-property (point) 'read-only)
+          (add-text-properties (point) (1+ (point))
+                               '(front-sticky (read-only)))
+          (push (cons (point) (1+ (point))) tired--name-edit-sticky))
+        (forward-line 1)))))
+
+(defun tired--start-name-edit ()
+  "Record every name cell and make the listing accept name changes.
+The markers around a name follow the user's edits, so a name that
+the user deleted accepts a new one at the same place."
+  (setq buffer-read-only nil)
+  (setq tired--name-edit-regions nil)
+  (setq tired--name-edit-sticky nil)
+  (let (regions)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((row (tired--row-at-point))
+              (region (tired--rename-region)))
+          (when region
+            (push region regions)
+            (push (list row
+                        (copy-marker (car region) nil)
+                        (copy-marker (cdr region) t))
+                  tired--name-edit-regions)))
+        (forward-line 1)))
+    (setq tired--name-edit-regions (nreverse tired--name-edit-regions))
+    (setq tired--name-edit t)
+    (tired--mark-name-edits (nreverse regions))))
+
+(defun tired--stop-name-edit ()
+  "Drop the name markers and make the listing read only again.
+The edit owns the `read-only' property of the whole buffer, so that
+property goes everywhere.  The sticky properties belong to the
+name edit alone, so only the regions in `tired--name-edit-sticky'
+lose them, and a sticky property that another feature set stays."
+  (let ((inhibit-read-only t))
+    (remove-text-properties (point-min) (point-max) '(read-only nil))
+    (dolist (region tired--name-edit-sticky)
+      (remove-text-properties
+       (max (point-min) (car region))
+       (min (point-max) (cdr region))
+       '(front-sticky nil rear-nonsticky nil))))
+  (setq tired--name-edit-regions nil)
+  (setq tired--name-edit-sticky nil)
+  (setq tired--name-edit nil)
+  (setq buffer-read-only t))
+
+(define-minor-mode tired-name-edit-mode
+  "Minor mode that makes the name cells of a listing editable.
+`tired-edit-names' turns the mode on.  Only the name of an entry
+row accepts a change.  `tired-commit-edits' renames the rows that
+hold a new name, and `tired-abort-edits' drops every change.  The
+mode reads the printed rows, so a redraw waits until the mode goes
+off.
+
+\\{tired-name-edit-mode-map}"
+  :lighter " Edit"
+  :keymap tired-name-edit-mode-map
+  :group 'tired
+  (cond
+   ((not tired-name-edit-mode)
+    (when tired--name-edit
+      (tired--stop-name-edit)))
+   ((not (derived-mode-p 'tired-mode))
+    (setq tired-name-edit-mode nil)
+    (user-error "Not a Tired listing"))
+   (t (tired--start-name-edit))))
+
+(defun tired-edit-names ()
+  "Edit the names of the listed entries in place.
+Only the name of each row accepts a change.  `tired-commit-edits'
+renames the rows that hold a new name, and `tired-abort-edits'
+drops every change.  A commit refuses a blank name, a name that
+carries a directory part, a name that repeats another name, a name
+that belongs to a row which the same commit renames, a destination
+that names a directory, and a row whose path left the disk.  An
+existing destination goes to `tired-trash-directory' first, and one
+undo action holds the whole commit, so `tired-undo' returns every
+old name.  A rename that fails keeps its row editable and turns
+the other rows read only, so a second commit retries it.
+
+The command reads no selection and allocates no key.  A collapsed
+chain row shows a relative name, and its editable part is the leaf
+alone."
+  (interactive)
+  (unless tired--directory
+    (user-error "Not in a Tired buffer"))
+  (when tired--name-edit
+    (user-error "Names are editable already"))
+  (unless (tired--visible-entries)
+    (user-error "No entry to edit"))
+  (tired-name-edit-mode 1)
+  (message "Edit names, C-c C-c renames, C-c C-k drops the changes"))
+
+(defun tired-abort-edits ()
+  "Drop every edited name and leave the name edit mode."
+  (interactive)
+  (unless tired--name-edit
+    (user-error "Names are not editable"))
+  (tired-name-edit-mode -1)
+  (tired-refresh)
+  (message "Names unchanged"))
+
+(defun tired--name-edit-changes ()
+  "Return (ENTRY . NAME) conses for every row whose name changed.
+A row whose name the user deleted counts as changed to an empty
+name, so the commit refuses it."
+  (let (changes)
+    (dolist (record tired--name-edit-regions)
+      (let* ((entry (nth 0 record))
+             (name (buffer-substring-no-properties
+                    (marker-position (nth 1 record))
+                    (marker-position (nth 2 record))))
+             (old (file-name-nondirectory
+                   (directory-file-name (tired-entry-path entry)))))
+        (unless (equal old name)
+          (push (cons entry name) changes))))
+    (nreverse changes)))
+
+(defun tired--check-name-edits (changes)
+  "Signal a user error when CHANGES cannot reach the disk.
+A change is an (ENTRY . NAME) cons.  Refuse a blank name, a name
+that holds a directory part or a control character, a name that
+the commit already took, a name that belongs to a row which the
+same commit renames, a destination that names a directory, and a
+row whose path left the disk."
+  (let ((sources (make-hash-table :test #'equal))
+        (targets (make-hash-table :test #'equal)))
+    (dolist (change changes)
+      (puthash (directory-file-name
+                (expand-file-name (tired-entry-path (car change))))
+               change sources))
+    (dolist (change changes)
+      (let* ((entry (car change))
+             (name (cdr change))
+             (path (tired-entry-path entry))
+             (target (tired--name-target path name)))
+        (when (string-empty-p (string-trim name))
+          (user-error "A name is empty"))
+        (when (member name '("." ".."))
+          (user-error "Invalid name %s" name))
+        (when (file-name-directory name)
+          (user-error "A name holds no directory part: %s" name))
+        (when (cl-some (lambda (char) (or (< char 32) (= char 127))) name)
+          (user-error "A name holds no control character: %s" name))
+        (unless (tired--path-exists-p path)
+          (user-error "%s left the disk" (abbreviate-file-name path)))
+        (when (file-directory-p target)
+          (user-error "%s names a directory" name))
+        (when (gethash target targets)
+          (user-error "Two entries take the name %s" name))
+        (let ((other (gethash target sources)))
+          (when (and other (not (eq other change)))
+            (user-error "The name %s belongs to a renamed entry" name)))
+        (puthash target change targets)))))
+
+(defun tired-commit-edits ()
+  "Rename every entry whose name changed.
+The commit leaves the name edit mode, unless a rename fails.
+The commit refuses a blank name, a name that carries a directory
+part, a name that repeats another name, a name that belongs to a
+row that the same commit renames, a destination that names a
+directory, and a row whose path left the disk.  Such a refusal
+keeps the edits, so the user fixes the name or runs
+`tired-abort-edits'.  An existing destination goes to
+`tired-trash-directory' first.  A failure does not stop the
+remaining names: the rows that took their new name become read
+only, and the rows that failed stay editable, so a second commit
+retries them or an abort drops them.  The commit reports the paths
+that failed.  One undo action holds the whole commit, so
+`tired-undo' returns every old name."
+  (interactive)
+  (unless tired--name-edit
+    (user-error "Names are not editable"))
+  (let ((changes (tired--name-edit-changes)))
+    (tired--check-name-edits changes)
+    (if (null changes)
+        (progn
+          (tired-name-edit-mode -1)
+          (tired-refresh)
+          (message "No name changed"))
+      (let ((done 0)
+            (renames nil)
+            (trashed nil)
+            (settled nil)
+            (failures nil))
+        (dolist (change changes)
+          (let* ((entry (car change))
+                 (name (cdr change))
+                 (path (tired-entry-path entry))
+                 (target (tired--name-target path name))
+                 (previous nil)
+                 (renamed nil))
+            (condition-case err
+                (progn
+                  (setq previous (unless (tired--same-name-entry-p path target)
+                                   (tired--replace-with-trash target)))
+                  (when previous
+                    (push (cons previous target) trashed))
+                  (rename-file path target)
+                  (setq renamed t)
+                  (push (cons target path) renames)
+                  (push entry settled)
+                  (setq done (1+ done)))
+              (error
+               (unless renamed
+                 (when previous
+                   (setq trashed (delete (assoc previous trashed) trashed))
+                   (ignore-errors (tired--restore-path previous target))))
+               (push (cons path (error-message-string err)) failures)))))
+        (when renames
+          (tired--push-undo
+           (format "rename of %d %s" (length renames)
+                   (if (= (length renames) 1) "entry" "entries"))
+           (lambda () (tired--undo-move renames trashed))))
+        (setq failures (nreverse failures))
+        (if failures
+            ;; The rows that failed keep their typed name, so the edit
+            ;; mode stays and the other rows turn read only.
+            (progn
+              (setq tired--name-edit-regions
+                    (cl-remove-if (lambda (record)
+                                    (memq (nth 0 record) settled))
+                                  tired--name-edit-regions))
+              (tired--mark-name-edits
+               (mapcar (lambda (record)
+                         (cons (marker-position (nth 1 record))
+                               (marker-position (nth 2 record))))
+                       tired--name-edit-regions))
+              (tired-refresh))
+          (tired-name-edit-mode -1)
+          (tired-refresh))
+        (tired--report-operation "Renamed" done failures)
+        (when failures
+          (message "Fix the failed names, C-c C-c retries, C-c C-k drops"))))))
 
 (defun tired-delete ()
   "Move the targets into `tired-trash-directory'.

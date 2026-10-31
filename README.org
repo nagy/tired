@@ -32,6 +32,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   middle button opens it in another window
 - Copy, move, delete, mkdir and touch without a confirmation question
 - Rename the row at point, with the old name prefilled
+- Edit every name in place, the way =wdired= does, and commit the
+  whole listing with =C-c C-c=
 - Delete and replaced targets go to a session trash, so undo restores them
 - Live name filter, dotfile toggle and regexp-hidden toggle
 - Regexp rules that hide entries, with a mode line count
@@ -263,6 +265,7 @@ works.  With several targets, =m= reads a destination directory.
 current name, and an existing destination goes to the trash first.
 The command reads the row at point alone, so a selection and a
 region stay untouched.
+
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
 empty file.  None of these commands asks for a confirmation.  None
 of them calls a shell.  =!= is the one command that runs a shell, and
@@ -304,6 +307,40 @@ A global undo system can take these actions.  Add a function to
 =tired-undo-push-functions=.  It receives a description and a
 function that reverts the action.  While the hook is empty, Tired
 keeps the action on a stack for =tired-undo=.
+
+=M-x tired-edit-names= makes the names editable in place.  Only the
+name of a row accepts a change: the indentation, the size, date and
+mode columns, the slash of a directory and the arrow of a symbolic
+link stay read only.  A collapsed chain row shows a relative name,
+and its editable part is the leaf alone, so a rename moves the leaf
+and never the chain above it.  =C-c C-c= renames the rows that hold a
+new name and =C-c C-k= drops every change.  Neither command carries a
+key outside the edit mode, so =M-x= alone reaches them.
+
+A commit refuses a blank name, a name with a directory part, a
+control character, a name that repeats another name, a name that a
+row the same commit also renames leaves behind, a destination that
+names an existing directory, and a row whose file left the disk.  A
+refusal keeps the edits, so the user fixes the name or aborts.  An
+existing destination file goes to =tired-trash-directory= first, and
+the whole commit lands on the undo stack once, so =M-x tired-undo=
+returns every old name.  A rename that fails keeps its row editable
+and turns the other rows read only, so a second =C-c C-c= retries it.
+A refresh waits while the edit mode holds the text, so a typed name
+never vanishes under the user.
+
+A file command signals a user error while the edit mode holds the
+buffer text, because its reprint would erase the typed names.
+
+A name of =~= stays a file name in the shown directory, because the
+commit joins the directory and the new name as plain text.  A name
+that repeats the spelling of a directory row signals a user error
+instead of replacing that directory.
+
+Under =evil=, the edit mode enters the insert state by itself,
+because the normal state map binds every row key ahead of the edit
+key map.  =C-c C-c= and =C-c C-k= work in the insert state, and a
+finished edit returns to the normal state.
 
 * Shell commands
 

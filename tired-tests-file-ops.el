@@ -204,6 +204,339 @@ though the moved leaf sits inside the destination directory now."
       (tired-tests--goto-section "One")
       (should-error (tired-rename "other.org") :type 'user-error))))
 
+(ert-deftest tired-edit-names-renames-a-row ()
+  "A committed name edit renames the file and undo puts the old name back."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (should tired--name-edit)
+      (should-not buffer-read-only)
+      (tired-tests--edit-name "alpha.txt" "renamed.txt")
+      (tired-commit-edits)
+      (should (file-regular-p (expand-file-name "renamed.txt" root)))
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should-not tired--name-edit)
+      (should buffer-read-only)
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should-not (file-exists-p (expand-file-name "renamed.txt" root))))))
+
+(ert-deftest tired-edit-names-marks-one-undo-action ()
+  "A commit of several names lands on the undo stack once."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "one.txt")
+      (tired-tests--edit-name "beta.txt" "two.txt")
+      (tired-commit-edits)
+      (should (equal (mapcar #'car tired--undo-actions)
+                     '("rename of 2 entries")))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should (file-regular-p (expand-file-name "beta.txt" root)))
+      (should-not (file-exists-p (expand-file-name "one.txt" root)))
+      (should-not (file-exists-p (expand-file-name "two.txt" root))))))
+
+(ert-deftest tired-edit-names-keeps-the-other-columns ()
+  "Only a name cell accepts a change."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-edit-names)
+      (tired-tests--goto "inner.txt")
+      (goto-char (line-beginning-position))
+      (should-error (insert "x") :type 'text-read-only)
+      (goto-char (line-end-position))
+      (should-error (insert "x") :type 'text-read-only)
+      (tired-abort-edits)
+      (should (equal (tired-entry-name (tired--row-at-point)) "inner.txt")))))
+
+(ert-deftest tired-edit-names-rejects-a-duplicate-name ()
+  "Two rows cannot take the same new name."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "same.txt")
+      (tired-tests--edit-name "beta.txt" "same.txt")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should tired--name-edit)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should (file-regular-p (expand-file-name "beta.txt" root)))
+      (should-not (file-exists-p (expand-file-name "same.txt" root))))))
+
+(ert-deftest tired-edit-names-rejects-a-directory-part ()
+  "A name edit leaves the directory of a row alone."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "sub/alpha.txt")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should-not (file-exists-p (expand-file-name "sub/alpha.txt" root))))))
+
+(ert-deftest tired-edit-names-rejects-a-taken-over-name ()
+  "A commit refuses a name that another renamed row leaves behind."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "beta.txt")
+      (tired-tests--edit-name "beta.txt" "gamma.txt")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should (file-regular-p (expand-file-name "beta.txt" root)))
+      (should (equal (tired-tests--contents
+                      (expand-file-name "beta.txt" root))
+                     (make-string 40 ?x))))))
+
+(ert-deftest tired-edit-names-rejects-a-vanished-row ()
+  "A commit refuses a row whose path left the disk."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "renamed.txt")
+      (delete-file (expand-file-name "alpha.txt" root))
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should tired--name-edit)
+      (should-not (file-exists-p (expand-file-name "renamed.txt" root))))))
+
+(ert-deftest tired-edit-names-trashes-an-existing-destination ()
+  "A new name that exists on disk goes to the trash first."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "beta.txt")
+      (tired-commit-edits)
+      (should (equal (tired-tests--contents
+                      (expand-file-name "beta.txt" root))
+                     "abc"))
+      (should (= 1 (length (tired-tests--trash-entries))))
+      (tired-undo)
+      (should (equal (tired-tests--contents
+                      (expand-file-name "alpha.txt" root))
+                     "abc"))
+      (should (equal (tired-tests--contents
+                      (expand-file-name "beta.txt" root))
+                     (make-string 40 ?x))))))
+
+(ert-deftest tired-edit-names-abort-drops-the-changes ()
+  "Abort reprints the names and leaves the edit mode."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "junk.txt")
+      (tired-abort-edits)
+      (should-not tired--name-edit)
+      (should buffer-read-only)
+      (should-not (get-text-property (point-min) 'read-only))
+      (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt"))
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should-not (file-exists-p (expand-file-name "junk.txt" root))))))
+
+(ert-deftest tired-edit-names-leaves-a-section-read-only ()
+  "A section row carries no name of its own."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-tests--write "note.org" "* One\n")
+      (tired root)
+      (tired-tests--goto "note.org")
+      (tired-expand-file)
+      (tired-edit-names)
+      (tired-tests--goto-section "One")
+      (should-not (tired--rename-region))
+      (should-error (insert "x") :type 'text-read-only)
+      (tired-abort-edits))))
+
+(ert-deftest tired-edit-names-holds-a-typed-name-across-a-redraw ()
+  "A refresh waits while the name edit mode owns the buffer text."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "later.txt")
+      (tired-refresh)
+      (should tired--name-edit)
+      (should (equal (mapcar #'cdr (tired--name-edit-changes))
+                     '("later.txt")))
+      (tired-commit-edits)
+      (should (file-regular-p (expand-file-name "later.txt" root))))))
+
+(ert-deftest tired-edit-names-renames-a-collapsed-leaf ()
+  "The editable part of a chain row is the leaf name alone."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (make-directory (expand-file-name "foo/a/b/c" root) t)
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "foo/a/b/c" "d")
+      (tired-commit-edits)
+      (should (file-directory-p (expand-file-name "foo/a/b/d" root)))
+      (should-not (file-directory-p (expand-file-name "foo/a/b/c" root)))
+      (should (equal (tired-entry-name (tired--row-at-point)) "foo/a/b/d")))))
+
+(ert-deftest tired-edit-names-commit-without-a-change ()
+  "A commit that finds no new name leaves the mode and touches nothing."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-commit-edits)
+      (should-not tired--name-edit)
+      (should buffer-read-only)
+      (should-not tired--undo-actions)
+      (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-edit-names-refuses-outside-the-edit-mode ()
+  "The commit and the abort need the edit mode."
+  (tired-tests--with-fixture
+    (tired root)
+    (should-error (tired-commit-edits) :type 'user-error)
+    (should-error (tired-abort-edits) :type 'user-error)
+    (tired-edit-names)
+    (should-error (tired-edit-names) :type 'user-error)
+    (tired-abort-edits)))
+
+(ert-deftest tired-edit-names-reaches-the-user-through-m-x-alone ()
+  "No key and no menu entry runs the name edit.
+The command changes paths, so a stray key must not reach it."
+  (tired-tests--with-fixture
+    (tired root)
+    (should-not (where-is-internal #'tired-edit-names tired-mode-map))
+    (should (commandp #'tired-edit-names))
+    (should (eq (lookup-key tired-name-edit-mode-map (kbd "C-c C-c"))
+                #'tired-commit-edits))
+    (should (eq (lookup-key tired-name-edit-mode-map (kbd "C-c C-k"))
+                #'tired-abort-edits))))
+
+(ert-deftest tired-edit-names-keeps-a-tilde-a-plain-name ()
+  "A name of ~ stays a file name in the shown directory.
+`expand-file-name' would read it as the home directory, so the
+commit joins the directory and the name as plain text."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "~")
+      (tired-commit-edits)
+      (should (equal (tired-tests--contents (concat root "~"))
+                     "abc"))
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-rename-keeps-a-tilde-a-plain-name ()
+  "The single rename reads the same target, so ~ stays local."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-rename "~")
+      (should (equal (tired-tests--contents (concat root "~"))
+                     "abc")))))
+
+(ert-deftest tired-edit-names-rejects-a-directory-target ()
+  "A commit refuses a name that an existing directory holds.
+The trash would take the whole subtree, so the commit signals."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "sub")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should tired--name-edit)
+      (should (file-directory-p (expand-file-name "sub" root)))
+      (should (file-regular-p (expand-file-name "sub/inner.txt" root)))
+      (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-rename-rejects-a-directory-target ()
+  "The single rename keeps the subtree of a directory too."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (should-error (tired-rename "sub") :type 'user-error)
+      (should (file-directory-p (expand-file-name "sub" root)))
+      (should (file-regular-p (expand-file-name "sub/inner.txt" root)))
+      (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-edit-names-rejects-a-blank-name ()
+  "A name of spaces alone counts as an empty name."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (should-error (tired-rename "   ") :type 'user-error)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "   ")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should tired--name-edit)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (tired-abort-edits))))
+
+(ert-deftest tired-edit-names-renames-a-plain-directory ()
+  "An ordinary directory row edits its own name, not a chain leaf."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "sub" "other")
+      (tired-commit-edits)
+      (should (file-directory-p (expand-file-name "other" root)))
+      (should (file-regular-p (expand-file-name "other/inner.txt" root)))
+      (should-not (file-exists-p (expand-file-name "sub" root))))))
+
+(ert-deftest tired-edit-names-keeps-a-failed-name-editable ()
+  "A rename that fails keeps its row, and the other rows turn read only.
+A name longer than the file system allows makes `rename-file'
+signal after the check passed."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (let ((long (concat (make-string 300 ?y) ".txt")))
+        (tired-tests--edit-name "alpha.txt" "one.txt")
+        (tired-tests--edit-name "beta.txt" long)
+        (tired-commit-edits)
+        (should tired--name-edit)
+        (should (file-regular-p (expand-file-name "one.txt" root)))
+        (should (file-regular-p (expand-file-name "beta.txt" root)))
+        (should (equal (mapcar #'cdr (tired--name-edit-changes))
+                       (list long)))
+        (goto-char (point-min))
+        (should (search-forward "one.txt" nil t))
+        (should (get-text-property (match-beginning 0) 'read-only))
+        (goto-char (point-min))
+        (should (search-forward (substring long 0 4) nil t))
+        (should-not (get-text-property (match-beginning 0) 'read-only))
+        (tired-abort-edits)
+        (should (file-regular-p (expand-file-name "one.txt" root)))))))
+
+(ert-deftest tired-file-commands-refuse-while-names-are-editable ()
+  "A file command signals while the names accept changes.
+Its redraw would draw nothing, so the listing would disagree with
+the disk."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-edit-names)
+      (should-error (tired--apply-to-targets "Ignored" #'ignore)
+                    :type 'user-error)
+      (should-error (tired-delete) :type 'user-error)
+      (should-error (tired-rename "other.txt") :type 'user-error)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (tired-abort-edits)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root))))))
+
 (ert-deftest tired-move-many-targets-into-a-directory ()
   "Move with several targets reads the destination as a directory."
   (tired-tests--with-fixture

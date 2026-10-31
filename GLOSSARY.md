@@ -96,6 +96,13 @@ paints the whole name, or only the text of one submatch when its third
 element holds an integer.
 _Avoid_: Highlight, font-lock keyword
 
+**Name edit**:
+The state that `tired-edit-names' starts, in which the leaf of every
+name is editable and the rest of the listing is read only.  A commit
+renames the rows that hold a new name, and an abort drops every
+change.  A collapsed chain row edits its leaf alone.
+_Avoid_: Wdired mode, inline rename mode
+
 **Name span**:
 The text of one submatch that a partial name rule paints.
 _Avoid_: Highlight range, overlay

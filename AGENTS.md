@@ -26,7 +26,7 @@ README before you document a command.
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Markdown, Cargo and
   SQLite handlers
 - `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
-  touch, shell
+  touch, shell, and the in-place name edit
 - `tired-export.el` — the CSV, text and `rclone lsjson` exports and
   their read-only buffers
 - `tired-evil.el` — optional evil bindings
@@ -155,7 +155,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     the region stay untouched.
 11. `tired-evil.el` is a second library.  `tired.el` installs its hook
     after `provide`, so both load orders work.
-12. `tired--paint-row-help` runs after `tabulated-list-print` and gives
+12. `tired-edit-names` turns `tired-name-edit-mode` on, and the mode
+    marks every character outside a name leaf with a `read-only` text
+    property.  The start and the end of each name live in
+    `tired--name-edit-regions` as markers, because the printed column
+    vector is stale after an edit, and `tired--name-edit-sticky`
+    holds every region whose sticky property the edit changed, so
+    `tired--stop-name-edit` reads both.  `tired-commit-edits` reads
+    the text between the markers, checks it, and renames through
+    `tired--name-target` and `tired--replace-with-trash`.  One undo
+    action holds the commit.  A rename that fails keeps its row
+    editable and turns the rows that succeeded read only.
+13. `tired--paint-row-help` runs after `tabulated-list-print` and gives
     every printed line the `help-echo` from `tired--mouse-help`, so the
     whole row explains the mouse.  It sets no `mouse-face`: the pointer
     leaves a row alone.  Bind `inhibit-read-only`, because the listing
@@ -165,13 +176,13 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     in another window and `tired-mouse-toggle` runs `tired-toggle-subdir`
     on it.  `tired--click-selects-row` returns nil
     and takes the `follow-link` binding, so one click selects.
-13. `tired-context-menu` fills the `mouse-3` menu from the row under the
+14. `tired-context-menu` fills the `mouse-3` menu from the row under the
     click.  `tired-mode` adds it to `context-menu-functions` with a
     buffer-local hook, and the guard reads `(boundp
     'context-menu-functions)`, because `mouse.el` owns the variable.  A
     menu click leaves point alone, so each row command goes through
     `tired--context-command` and moves to the clicked position first.
-14. `tired--export` picks the targets, renders them in the format of
+15. `tired--export` picks the targets, renders them in the format of
     the command, and fills a read-only buffer.  The selection comes
     first, then the region, then `tired--visible-entries`, so an
     export never uses the row at point.  Section rows stay out, because
@@ -232,6 +243,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   The autoload form in `tired.el` keeps that path, because
   `tired-file-ops` carries no cookie.  A test in
   `tired-tests-file-ops` fails when a binding returns.
+- `tired-edit-names`, `tired-commit-edits` and `tired-abort-edits`
+  carry no key in `tired-mode-map`, no menu entry and no evil binding:
+  `M-x` alone reaches them.  The edit mode binds `C-c C-c` and
+  `C-c C-k` in its own key map, and that map goes away with the mode.
+  A test in `tired-tests-file-ops` fails when a listing binding
+  returns.
 - An export command keeps the selection and the region, writes a
   read-only buffer, and leaves the buffer unmodified.  The buffer takes
   the listing directory as `default-directory`, so a later `C-x C-w`
@@ -241,6 +258,64 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 
 ## Gotchas
 
+- A signal from `before-change-functions` clears that buffer-local
+  hook, so the hook cannot guard the name edit: the first refused key
+  would leave every later key unguarded.  The edit mode guards with a
+  `read-only` text property instead.
+- A `read-only` property alone keeps a name from growing and from
+  coming back after a deletion: insertion next to read-only text is an
+  error only when the new text inherits the property.  Mark the
+  character before a name `rear-nonsticky` for `read-only`, so a user
+  retypes a deleted name at the same place, and mark the first
+  character of a read-only line `front-sticky` for it, so no insertion
+  lands in an indent or in front of a section label.
+- `special-mode-map` remaps `self-insert-command` to `undefined`, and
+  `tired-mode-map` inherits that remap.  A key map that types needs its
+  own `<remap> <self-insert-command>` and an explicit binding for every
+  printable character, because the listing key map binds most letters
+  to a command.  `tired--name-self-insert` is that remap.
+- `tired-evil-local-mode` puts its normal state map ahead of the name
+  edit key map, and that map binds every row key, so a name edit could
+  never type a letter.  `tired-evil.el` adds
+  `tired-evil--name-edit` to `tired-name-edit-mode-hook` in each
+  buffer: the edit starts in the insert state, and its end returns to
+  the normal state.  The edit mode never calls an evil function, so a
+  user without evil runs the same code.
+- `tired--redraw` draws nothing while `tired--name-edit` holds, or a
+  reprint would erase the typed names.  `tired-refresh` still reloads
+  the tables, so a commit and an abort show the disk as it is.
+- `tired--rename-region` reads `tired--name-region` and then narrows a
+  collapsed chain row to its leaf, so a rename moves the leaf and
+  never the chain above it.
+- The commit checks every name before it touches the disk: blank, a
+  directory part, a control character, a repeated name, a name that
+  the same commit also moves away, a destination that names a
+  directory, and a row that left the disk.  It keeps display order, so
+  a renamed parent runs before a renamed child, and the child then
+  reports a failure instead of losing bytes.  A blank name reads
+  through `string-trim', so a name of spaces alone counts as empty.
+- Build every new path with `tired--name-target`, never with
+  `expand-file-name`: that function reads a name of `~` as the home
+  directory, so the commit would move the home directory into the
+  trash and rename the row onto it.  The helper joins the directory
+  and the name as plain text.
+- A destination that names a directory signals a user error, in
+  `tired--check-name-edits` and in `tired-rename`.  The trash step
+  would otherwise take the whole subtree out of the listing.
+- `tired--same-name-entry-p` drops the trash step when the source and
+  the destination differ in case alone, and the file system resolves
+  them to one entry.  `tired-undo` cannot move such a path back,
+  because the old spelling names the same file.
+- A file command signals a user error while `tired--name-edit` holds:
+  `tired--apply-to-targets` refreshes, `tired--redraw` draws nothing
+  then, and the listing would disagree with the disk.
+- A rename that fails after the check keeps its row editable and turns
+  the rows that succeeded read only, so a second commit retries the
+  failed names and no typed name vanishes.
+- Changing a text property sets the modified flag, and
+  `tired--paint-row-help` adds properties after every print, so a
+  listing buffer counts as modified.  Do not read that flag as a sign
+  of an unsaved name edit.
 - `evil-define-key` is a macro, so `tired-evil.el` uses the function
   `evil-define-minor-mode-key` with `key-parse`.  `define-key` reads
   `"RET"` as three characters.  A remap entry reads
