@@ -46,12 +46,14 @@ the path back.  The directory lives under the variable
 machine reboots.  Emacs copies the path and then deletes it when
 the trash sits on another file system.")
 
-(defvar tired-undo-push-functions nil
+(defcustom tired-undo-push-functions nil
   "Abnormal hook that takes every undoable Tired action.
 Each function receives DESCRIPTION and FUNCTION.  DESCRIPTION is a
 string that names the action.  FUNCTION reverts the action and
 takes no argument.  While the hook is empty, Tired keeps the
-action on `tired--undo-actions' for `tired-undo'.")
+action on `tired--undo-actions' for `tired-undo'."
+  :type 'hook
+  :group 'tired)
 
 (defvar tired--undo-actions nil
   "Stack of undo actions as (DESCRIPTION . FUNCTION) conses.

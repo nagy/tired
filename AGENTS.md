@@ -344,7 +344,8 @@ File operations:
 - Every command calls `tired--push-undo` with a description and one
   function that reverts the whole operation.  The function moves
   paths back from the trash, so no byte is destroyed.  With
-  `tired-undo-push-functions` set, that hook takes the pair and
+  `tired-undo-push-functions` (a `defcustom` of type `hook`) set,
+  that hook takes the pair and
   `tired--undo-actions` stays empty.  Otherwise `tired-undo` pops and
   runs the pair, and `tired--refresh-buffers` redraws every Tired
   buffer.

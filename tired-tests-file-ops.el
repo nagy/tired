@@ -414,6 +414,13 @@
         (funcall (cdar captured))
         (should (file-regular-p (expand-file-name "alpha.txt" root)))))))
 
+(ert-deftest tired-undo-push-functions-is-a-user-option ()
+  "A user can set the undo hook through Custom.
+The hook is the one place a global undo package takes over, so it
+must be a defcustom and not a plain defvar."
+  (should (custom-variable-p 'tired-undo-push-functions))
+  (should (eq (get 'tired-undo-push-functions 'custom-type) 'hook)))
+
 (ert-deftest tired-undo-without-actions-errors ()
   "Undo signals a user error when the stack is empty."
   (tired-tests--with-fixture
