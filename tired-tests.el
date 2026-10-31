@@ -888,6 +888,51 @@ a symlink, and removes every Tired buffer it opened."
       ;; back to the root stays unfollowed.
       (should (= 3 calls)))))
 
+(ert-deftest tired--size-key-needs-no-truename ()
+  "The size memo keys on the absolute name, not on a resolved link."
+  (tired-tests--with-fixture
+    (should (equal (directory-file-name root) (tired--size-key root)))
+    (should (equal (expand-file-name "sub" root)
+                   (tired--size-key (expand-file-name "sub/" root))))
+    (let ((resolved 0))
+      (cl-letf (((symbol-function 'file-truename)
+                 (lambda (&rest _) (setq resolved (1+ resolved)) 'never)))
+        (let ((tired--size-cache (make-hash-table :test #'equal)))
+          (should (equal 53 (tired--subtree-size root)))))
+      (should (= 0 resolved)))))
+
+(ert-deftest tired-redraw-reuses-the-size-memo ()
+  "A redraw after a redraw reads no directory twice."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (calls 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq calls (1+ calls))
+                   (apply original args))))
+        (tired root)
+        (let ((first calls))
+          (should (> first 0))
+          (tired--redraw)
+          (tired--redraw)
+          (should (= first calls)))))))
+
+(ert-deftest tired-refresh-rebuilds-the-size-memo ()
+  "A refresh sees a changed file, and the redraw after it reuses it."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-tests--entry "sub"))))
+      (with-temp-file (expand-file-name "sub/inner.txt")
+        (insert (make-string 100 ?y)))
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-tests--entry "sub"))))
+      (tired-refresh)
+      (should (equal (file-size-human-readable 104)
+                     (tired--size-cell (tired-tests--entry "sub")))))))
+
 (ert-deftest tired-name-cell-fontifies-broken-symlink ()
   "A link that does not resolve gets the broken symlink face."
   (tired-tests--with-fixture

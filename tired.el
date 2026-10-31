@@ -893,16 +893,27 @@ its target arrow."
                    (tired--symlink-suffix entry)))
           (_ (tired--propertize-name name face spans)))))))
 
-(defvar tired--size-cache nil
-  "Hash table that maps a truename to the size of a directory subtree.
-`tired--directory-total' binds the table for one calculation.")
+(defvar-local tired--size-cache nil
+  "Memo table for `tired--subtree-size' in the current buffer.
+Each key holds the absolute name of a directory, so the walk needs
+no `file-truename' call to build one.  `tired--reload-tables'
+refills the table, so a redraw reuses every total that the previous
+redraw already computed.")
+
+(defun tired--size-key (directory)
+  "Return the `tired--size-cache' key for DIRECTORY.
+Normalise the name without a symbolic link resolution: the walk
+starts on one directory and never descends through a link, so the
+absolute name stays unique.  `file-truename' would cost one file
+round trip per path component."
+  (directory-file-name (expand-file-name directory)))
 
 (defun tired--subtree-size (directory)
   "Return the number of bytes in every regular file under DIRECTORY.
 Skip symbolic links, so a link cycle cannot loop.  Store each
 visited directory in `tired--size-cache', so one calculation reads a
 nested directory once.  An unreadable directory counts as zero."
-  (let* ((key (file-truename directory))
+  (let* ((key (tired--size-key directory))
          (hit (gethash key tired--size-cache 'tired--miss)))
     (if (not (eq hit 'tired--miss))
         hit
@@ -925,9 +936,9 @@ nested directory once.  An unreadable directory counts as zero."
 
 (defun tired--directory-total (directory)
   "Return the number of bytes in every regular file under DIRECTORY.
-Reuse the cache that `tired--tabulated-entries' binds for one redraw,
-or make a cache for this call.  The cache never outlives the redraw,
-so a changed file leaves no stale size behind."
+Reuse `tired--size-cache', or make a temporary table when the
+buffer has none.  `tired--reload-tables' clears the table, so the
+value stays until the next refresh."
   (let ((tired--size-cache (or tired--size-cache
                                (make-hash-table :test #'equal))))
     (tired--subtree-size directory)))
@@ -962,14 +973,12 @@ Emacs 31 requires a vector of column descriptors here; a list makes
 
 (defun tired--tabulated-entries ()
   "Return `tabulated-list-entries' for the current listing.
-When `tired-directory-size' is non-nil, one memo table serves every
-row of the redraw, so a nested directory costs one read, not one
-read per ancestor."
-  (let ((tired--size-cache (and tired-directory-size
-                                (make-hash-table :test #'equal))))
-    (mapcar (lambda (row)
-              (list (car row) (tired--row (car row) (cdr row))))
-            (tired--display-rows t))))
+When `tired-directory-size' is non-nil, the memo table of the
+buffer serves every row of every redraw, so a nested directory costs
+one read per refresh, not one read per redraw."
+  (mapcar (lambda (row)
+            (list (car row) (tired--row (car row) (cdr row))))
+          (tired--display-rows t)))
 
 (defun tired--column-label (label key)
   "Return LABEL with a direction indicator when KEY is the sort key."
@@ -1338,6 +1347,7 @@ Drop inserted directories that no longer exist.  Drop expanded
 files that vanished."
   (setq tired--tables (make-hash-table :test #'equal))
   (setq tired--collapse-cache (make-hash-table :test #'equal))
+  (setq tired--size-cache (make-hash-table :test #'equal))
   (puthash (directory-file-name tired--directory)
            (tired--read-entries tired--directory)
            tired--tables)
@@ -2324,6 +2334,7 @@ The directory contents come from `directory-files' and
   (setq-local tired--watches nil)
   (setq-local tired--revert-timer nil)
   (setq-local tired--collapse-cache (make-hash-table :test #'equal))
+  (setq-local tired--size-cache (make-hash-table :test #'equal))
   (setq-local tired--expanded (make-hash-table :test #'equal))
   (setq-local tired--sections (make-hash-table :test #'equal))
   (setq-local tired--folded (make-hash-table :test #'equal))

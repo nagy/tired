@@ -240,11 +240,13 @@ of every regular file under the directory, computed recursively:
 
 Symbolic links stay unfollowed, so a link cycle cannot loop and a
 large tree outside the listing does not inflate a size.  Hidden files
-count.  One redraw memoizes each directory it visits, so a directory
-shown as a parent and as an inserted section costs one read.  The
-cache does not outlive the redraw.  A deep tree makes every refresh
-read every directory below it, so =g= and automatic refresh slow down
-with tree depth.
+count.  One memo table holds every directory the walk visits, so a
+directory shown as a parent and as an inserted section costs one read.
+The table lives one refresh: =g=, automatic refresh and the file
+watches rebuild it, while sort, filter, insert, fold and resize reuse
+it.  A deep tree makes =g= read every directory below it, so that
+refresh slows down with tree depth.  An edit inside a directory that
+carries no watch leaves the size column stale until the next =g=.
 
 * Name colors
 

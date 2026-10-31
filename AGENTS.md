@@ -140,8 +140,9 @@ Data flow:
    the size column.  With `tired-directory-size' on, it calls
    `tired--directory-total', which walks the subtree through
    `tired--subtree-size' and leaves the result in `tired--size-cache'.
-   The binding in `tired--tabulated-entries` covers one redraw, so a
-   nested directory costs one read per redraw.
+   That table is buffer-local and `tired--reload-tables' refills it,
+   so a nested directory costs one read per refresh.  A redraw reuses
+   every total the previous redraw computed.
 6. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
    `tired--selection-set` mirrors it as a hash set for O(1) membership.
@@ -584,8 +585,16 @@ Evil integration:
 - Recursive directory sizes stay off by default, because the option
   makes every refresh read every directory below the shown one.
   `tired--subtree-size` never follows a symbolic link, so a link cycle
-  cannot loop.  Do not hoist `tired--size-cache` above one redraw:
-  nothing invalidates an entry when a file changes.
+  cannot loop.  `tired--size-cache` lives one refresh, not one redraw:
+  `tired--reload-tables` refills it, so filter, sort, insert, fold and
+  resize redraws cost nothing, and a watcher event or `g` rewalks the
+  tree.  A size therefore stays stale until the next refresh when an
+  edit lands in a directory that carries no watch.
+- Key the size memo with `tired--size-key`, never with
+  `file-truename`.  The walk starts on one directory and skips every
+  link, so the absolute name stays unique, and `file-truename` would
+  cost one file round trip per path component.  Removing it halves a
+  cold walk.
 - `tired--ignored-regexp` caches a regexp for
   `completion-ignored-extensions`, an autosave name and a lock file
   name.  `tired--ignored-source` holds the value the cache derives
