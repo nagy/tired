@@ -96,6 +96,29 @@ click on the listing that the window shows."
   "Return the names of the visible entries in display order."
   (mapcar #'tired-entry-name (tired--visible-entries)))
 
+(defun tired-tests--header-string ()
+  "Return the header line of the current listing as one string.
+The printer builds the header from several strings, and the column
+labels carry `tabulated-list-column-name', so scan for that
+property."
+  (or (seq-find (lambda (string)
+                  (and (stringp string)
+                       (> (length string) 0)
+                       (text-property-not-all
+                        0 (length string) 'tabulated-list-column-name
+                        nil string)))
+                (flatten-list header-line-format))
+      ""))
+
+(defun tired-tests--click-header (label)
+  "Run the header click command of the column named LABEL."
+  (let* ((string (tired-tests--header-string))
+         (position (string-match (regexp-quote label) string))
+         (map (and position (get-text-property position 'keymap string))))
+    (unless (keymapp map)
+      (error "No header key map on %s" label))
+    (call-interactively (lookup-key map [header-line mouse-1]))))
+
 (defun tired-tests--goto (name)
   "Move point to the line whose entry is NAME."
   (goto-char (point-min))

@@ -152,6 +152,11 @@ map binds =follow-link= to a predicate that returns nil, because
 =tabulated-list-mode= turns a click on a =mouse-face= row into a click
 on the other button.
 
+Every column header takes a click.  =mouse-1= on =Name=, =Size=,
+=Modified= or =Mode= sorts the listing by that column, and a click on
+the column that already sorts flips the direction, as =s= does.  The
+arrow in the label shows the current column and direction.
+
 * Evil
 
 The package ships evil bindings in a separate file, so the main

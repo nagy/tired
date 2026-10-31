@@ -165,6 +165,29 @@
     (tired-sort 'name)
     (should (equal (car (tired-tests--names)) "sub"))))
 
+(ert-deftest tired-header-click-sorts-by-a-column ()
+  "A click on a header label sorts the listing by its column."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq tired--sort-key 'name))
+    (tired-tests--click-header "Size")
+    (should (eq tired--sort-key 'size))
+    (should (equal (tired-tests--names)
+                   '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
+    (tired-tests--click-header "Size")
+    (should tired--sort-flip)
+    (should (equal (tired-tests--names)
+                   '("sub" "beta.txt" "link" "alpha.txt" ".hidden")))))
+
+(ert-deftest tired-header-click-keeps-the-sort-indicator ()
+  "The label of the sort column carries the arrow and a key map."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (string-match-p "Name \\^" (tired-tests--header-string)))
+    (tired-tests--click-header "Modified")
+    (should (string-match-p "Modified \\^" (tired-tests--header-string)))
+    (should-not (string-match-p "Name \\^" (tired-tests--header-string)))))
+
 (ert-deftest tired-name-column-grows-to-longest-name ()
   "The name column width follows the longest visible entry."
   (tired-tests--with-fixture

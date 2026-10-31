@@ -159,6 +159,11 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   single click would open a row.  `tired-mode-map` binds `follow-link`
   to `tired--click-selects-row`, which returns nil, and `mouse-on-link-p`
   calls that binding as a predicate.  Do not drop the binding.
+- `tired--column-label` propertizes each header label with a key map for
+  `[header-line mouse-1]` and `[header-line mouse-2]`.  Emacs 31 builds
+  the header line from those labels and keeps their text properties, so
+  the clicks reach `tired-sort`.  Bind both buttons: `follow-link` can
+  turn a click into the second one.
 - Evil binds `down-mouse-1` in its motion state map, so a double click
   selects text and never reaches `tired-mouse-toggle`.  Only `mouse-2`
   needs a key in `tired-evil-keys`, and no mouse event goes in

@@ -1146,11 +1146,29 @@ read per `tired-size-cache-ttl' window, not one read per redraw."
             (list (car row) (tired--row (car row) (cdr row))))
           (tired--visible-rows)))
 
+(defun tired--column-sort-keymap (key)
+  "Return a key map that sorts the listing by KEY.
+A click on the header of the column runs `tired-sort', so the
+column that already sorts the listing flips the direction."
+  (let ((map (make-sparse-keymap))
+        (command (lambda () (interactive) (tired-sort key))))
+    (define-key map [header-line mouse-1] command)
+    ;; `follow-link' can turn a click into a drag event.  Bind the
+    ;; second button too, so the header sorts either way.
+    (define-key map [header-line mouse-2] command)
+    map))
+
 (defun tired--column-label (label key)
-  "Return LABEL with a direction indicator when KEY is the sort key."
-  (if (eq key tired--sort-key)
-      (concat label (if tired--sort-flip " v" " ^"))
-    label))
+  "Return LABEL with a direction indicator when KEY is the sort key.
+The label carries a key map, so a click on the header sorts by that
+column.  The indicator stays in the string, and a click on the
+current sort column flips the direction."
+  (propertize (if (eq key tired--sort-key)
+                  (concat label (if tired--sort-flip " v" " ^"))
+                label)
+              'keymap (tired--column-sort-keymap key)
+              'mouse-face 'header-line-highlight
+              'help-echo "mouse-1: sort by this column"))
 
 (defconst tired--fixed-column-width 38
   "Width of the columns that keep their size.
