@@ -100,9 +100,11 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 6. `tired--redraw` walks the tree once into `tired--rows`, sizes the name
    column, prints vector rows, restores point by row key, the mark and
    the window views, repaints the selection, syncs the watches and
-   rebuilds the mode line.  A view change (filter, sort, dotfile,
-   hidden, insert, expand, fold) calls it.  `tired-refresh` re-reads the
-   tables, prunes dead state and then redraws.
+   rebuilds the mode line.  A row that left the listing leaves point on
+   its old line, clamped to the last row, so a removal never sends point
+   to the first line.  A view change (filter, sort, dotfile, hidden,
+   insert, expand, fold) calls it.  `tired-refresh` re-reads the tables,
+   prunes dead state and then redraws.
 7. Selection and region stay apart.  `tired--selection` holds paths and
    `tired--selection-set` mirrors it; `tired--region-entries` reads the
    region.  `tired--selection-targets` takes the selection first, then
@@ -219,7 +221,13 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   mark, the window point and the display start on line one.
   `tired--redraw` repairs all three and sets the window point before the
   window start.  Use `set-marker`, not `push-mark`, or every redraw grows
-  the mark ring.
+  the mark ring.  The print also moves point to the first line when the
+  row at point is gone, so `tired--redraw` calls `tired--goto-line` with
+  the line it captured first.  That line clamps to the last row through
+  `tired--last-row-position`, because the printer closes the last row
+  with a newline and a plain `forward-line` would stop below every row.
+  `tired--apply-to-targets` still prefers the next surviving row, so a
+  delete goes down when a row stays below and up otherwise.
 - The section read passes VISIT to `insert-file-contents`, so the buffer
   carries `buffer-file-name` and no modified flag; without it every
   expand raises a kill question.  A handler selects its own major mode

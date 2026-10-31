@@ -1692,6 +1692,7 @@ window.  Its width limits the name column.  The redraw keeps the
 point and the scroll position of every window that shows the listing."
   (let* ((window (or window (selected-window)))
          (point-entry (tired--point-row window))
+         (point-line (line-number-at-pos))
          (mark-entry (tired--row-at (mark t)))
          (views (tired--window-views)))
     (setq tired--hidden-total (tired--count-hidden))
@@ -1713,7 +1714,12 @@ point and the scroll position of every window that shows the listing."
           (tabulated-list-print t)
           (tired--paint-row-help))
       (setq tired--rows nil))
-    (tired--goto-entry point-entry)
+    (unless (tired--goto-entry point-entry)
+      ;; The printed row is gone, and the print left point on the first
+      ;; line.  Hold the line instead, so a removal of the last row
+      ;; stops on the row that remains above it.
+      (when point-entry
+        (tired--goto-line point-line)))
     (tired--restore-window-views views)
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
@@ -1914,6 +1920,18 @@ The listing goes through `tired-other-window-action'."
       (forward-line -1))
     (when (tired--row-at-point)
       (point))))
+
+(defun tired--goto-line (line)
+  "Move point to the start of line LINE, clamped to the last row.
+`tabulated-list-print' moves point to the first line when the row it
+showed is gone, so a redraw puts that line back.  A listing that grew
+shorter stops on its last row, and an empty listing keeps point on
+the first line."
+  (goto-char (point-min))
+  (forward-line (1- (max 1 line)))
+  (when (eobp)
+    (when-let* ((last (tired--last-row-position)))
+      (goto-char last))))
 
 (defun tired-goto-last-entry (&optional count)
   "Move point to the last row of the listing.

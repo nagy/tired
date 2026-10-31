@@ -392,6 +392,43 @@ carries the process id.  A set option wins."
       (tired-delete)
       (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt")))))
 
+(ert-deftest tired-delete-of-the-last-entry-keeps-the-row-above ()
+  "Delete of the last row leaves point on the last row that stays."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-goto-last-entry)
+      (should (equal (tired-entry-name (tired--row-at-point)) "link"))
+      (tired-delete)
+      (should (tired-entry-p (tired--row-at-point)))
+      (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt")))))
+
+(ert-deftest tired-delete-of-the-only-entry-empties-the-listing ()
+  "Delete of the only row leaves an empty listing and no error."
+  (let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
+         (default-directory root)
+         (tired--size-cache (make-hash-table :test #'equal)))
+    (unwind-protect
+        (progn
+          (with-temp-file (expand-file-name "only.txt") (insert "x"))
+          (tired-tests--with-trash
+            (tired root)
+            (tired-goto-last-entry)
+            (tired-delete)
+            (should-not (tired--row-at-point))
+            (should-not (tired--visible-entries))))
+      (delete-directory root t))))
+
+(ert-deftest tired-refresh-after-a-vanished-last-row-keeps-the-line ()
+  "A refresh whose last row left the disk holds the last row."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-goto-last-entry)
+    (should (equal (tired-entry-name (tired--row-at-point)) "link"))
+    (delete-file (expand-file-name "link" root))
+    (tired-refresh)
+    (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))))
+
 (ert-deftest tired-delete-of-a-directory-leaves-point-on-the-next-entry ()
   "Delete of a directory with rows below it moves point past its subtree."
   (tired-tests--with-fixture
@@ -407,12 +444,25 @@ carries the process id.  A set option wins."
   (tired-tests--with-fixture
     (tired-tests--with-trash
       (tired-tests--write "notes.org" "* Intro\n* Body\n")
+      (tired-tests--write "zeta.txt" "z")
       (tired root)
       (tired-tests--goto "notes.org")
       (tired-toggle-subdir)
       (tired-tests--goto-section "Intro")
       (tired-delete)
-      (should (equal (tired-entry-name (tired--row-at-point)) "sub")))))
+      (should (equal (tired-entry-name (tired--row-at-point)) "zeta.txt")))))
+
+(ert-deftest tired-delete-of-the-last-expanded-file-keeps-the-row-above ()
+  "Delete of the last expanded file stops on the row that remains."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired-tests--write "notes.org" "* Intro\n* Body\n")
+      (tired root)
+      (tired-tests--goto "notes.org")
+      (tired-toggle-subdir)
+      (tired-tests--goto-section "Intro")
+      (tired-delete)
+      (should (equal (tired-entry-name (tired--row-at-point)) "link")))))
 
 (ert-deftest tired-delete-reports-partial-failure ()
   "A vanished target does not stop the remaining targets."
