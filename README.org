@@ -110,6 +110,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =+=     | =tired-mkdir=                  | Create a directory                      |
 | =M-t=   | =tired-touch=                  | Create an empty file                    |
 | =U=     | =tired-undo=                   | Undo the last file operation            |
+| =M->=   | =tired-goto-last-entry=        | Move to the last row of the listing     |
 | =q=     | =quit-window=                  | Bury the buffer                         |
 
 The selection is transient.  It belongs to the buffer and it is pruned
@@ -167,9 +168,11 @@ major mode map.  Without the evil bindings, `evil-ret' takes =RET=
 and moves down one line, and the same shadowing hits every Tired
 key.
 
-The bindings leave the evil motions alone.  =j=, =k=, =gg=, =G=,
+The bindings leave the evil motions alone.  =j=, =k=, =gg=,
 =C-d=, =C-u=, =n= and =N= keep their meaning, and every Tired
-command gets a direct key:
+command gets a direct key.  =G= reaches =tired-goto-last-entry=,
+because the plain motion stops on the empty line below the
+listing:
 
 | Key           | Command                         |
 |---------------+---------------------------------|

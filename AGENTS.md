@@ -265,6 +265,20 @@ Browsing:
   has no key.  `browse-url` joins the top-level requires, so
   byte-compile knows `browse-url-of-file`.
 
+Motion:
+
+- `tired-goto-last-entry` moves point to the last row of the listing.
+  `tired--last-row-position` starts at `point-max`, walks up over
+  lines that hold no row and returns the position of the first line
+  that does, so a trailing empty line and a blank line left by a
+  filter cannot stop the motion.  `tired-mode-map` remaps
+  `end-of-buffer` to the command, so `M->` reaches the last row, and
+  `tired-evil.el` remaps `evil-goto-line`, so `G` does too.  A
+  numeric prefix above one keeps the `evil-goto-line` meaning and
+  moves to that line, because a row is one buffer line and the
+  header line lives outside the buffer.  An empty listing raises
+  `user-error`.
+
 File operations:
 
 - `tired--apply-to-targets` runs one function over the targets, deepest
@@ -328,18 +342,21 @@ Evil integration:
   `tired-mode-map`.
 - The visual table is short on purpose: visual state needs its text
   objects, and the region already targets files for every command.
-  The normal table leaves `j`, `k`, `gg`, `G`, `C-d`, `C-u`, `n` and
+  The normal table leaves `j`, `k`, `gg`, `C-d`, `C-u`, `n` and
   `N` to evil, the way `evil-collection-dired` does.  It shadows
   `w`, `W` and `P`, so the four copy commands keep their
   `tired-mode-map` keys in normal state too.  It puts `f` on
   `tired-find-file` and keeps `gf` as the same command.  The table
   remaps `evil-replace` to `revert-buffer-quick`, because a listing
   is read-only and `r` has no other use there.  It remaps
+  `evil-goto-line` to `tired-goto-last-entry`, because the plain
+  motion stops on the empty line that closes the last row.  It remaps
   `evil-ex-search-forward` and `evil-search-forward` to
   `tired-filter`, because a filter narrows the listing and a search
   does not, and because evil binds `/` to one of the two depending on
   `evil-search-module`.  Spell every remap entry
-  `"<remap> <evil-replace>"` and `"<remap> <evil-ex-search-forward>"`,
+  `"<remap> <evil-replace>"`, `"<remap> <evil-goto-line>"` and
+  `"<remap> <evil-ex-search-forward>"`,
   because `key-parse` reads the bracket form as literal characters.
 - The evil tables put the selection on `m`, not on `SPC`, and the move
   command on `R`, not on `m`.  Shadowing `m` costs the evil mark

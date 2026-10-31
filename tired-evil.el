@@ -25,9 +25,11 @@
 ;;; Commentary:
 
 ;; This file is optional.  It gives a Tired buffer evil bindings that
-;; keep the motions: j, k, gg, G, C-d, C-u, n and N keep their
-;; meaning, and every Tired command gets a direct key.  The search
+;; keep the motions: j, k, gg, C-d, C-u, n and N keep their meaning,
+;; and every Tired command gets a direct key.  The search
 ;; key, /, runs `tired-filter' instead of `evil-ex-search-forward'.
+;; G reaches the last row through `tired-goto-last-entry', because the
+;; plain motion stops on the empty line below the listing.
 ;;
 ;;   (require 'tired-evil)
 ;;   (tired-evil-mode 1)
@@ -63,6 +65,7 @@
     ("<remap> <evil-replace>" . revert-buffer-quick)
     ("<remap> <evil-ex-search-forward>" . tired-filter)
     ("<remap> <evil-search-forward>" . tired-filter)
+    ("<remap> <evil-goto-line>" . tired-goto-last-entry)
     ("s" . tired-sort)
     ("F" . tired-clear-filter)
     ("." . tired-toggle-dotfiles)

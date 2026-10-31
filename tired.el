@@ -1607,6 +1607,32 @@ command is the short way to open a listing, in the manner of
     (user-error "Not in a Tired buffer"))
   (tired (file-name-directory (directory-file-name tired--directory))))
 
+(defun tired--last-row-position ()
+  "Return the position of the last row of the listing, or nil."
+  (save-excursion
+    (goto-char (point-max))
+    (beginning-of-line)
+    (while (and (not (bobp)) (null (tired--row-at-point)))
+      (forward-line -1))
+    (when (tired--row-at-point)
+      (point))))
+
+(defun tired-goto-last-entry (&optional count)
+  "Move point to the last row of the listing.
+The buffer ends with an empty line, because the printer closes the
+last row with a newline, so the plain motion to the last line lands
+below every row.  With COUNT above one, move to line COUNT instead,
+which keeps the numeric prefix of `evil-goto-line'."
+  (interactive "P")
+  (if (and (integerp count) (> count 1))
+      (progn
+        (goto-char (point-min))
+        (forward-line (1- count)))
+    (let ((position (tired--last-row-position)))
+      (unless position
+        (user-error "The listing holds no row"))
+      (goto-char position))))
+
 (defun tired-insert-subdir (&optional directory)
   "Insert the children of DIRECTORY into the listing.
 DIRECTORY defaults to the directory at point.  Inserted children
@@ -2416,7 +2442,8 @@ takes the file back from the browser."
   "M-t" #'tired-touch
   "U" #'tired-undo
   "q" #'quit-window
-  "<remap> <dired-jump>" #'tired-jump)
+  "<remap> <dired-jump>" #'tired-jump
+  "<remap> <end-of-buffer>" #'tired-goto-last-entry)
 
 ;;;###autoload
 (define-derived-mode tired-mode tabulated-list-mode "Tired"

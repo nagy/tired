@@ -2224,6 +2224,31 @@ that starts at the first line."
     (tired-tests--goto "alpha.txt")
     (should-error (tired-toggle-subdir) :type 'user-error)))
 
+(ert-deftest tired-goto-last-entry-lands-on-the-last-row ()
+  "The last command lands on the last row, not on the empty line below."
+  (tired-tests--with-fixture
+    (tired root)
+    (goto-char (point-min))
+    (tired-goto-last-entry)
+    (should (tired-entry-p (tired--row-at-point)))
+    (should (equal (tired-entry-name (tired--row-at-point))
+                   (car (last (tired-tests--names)))))))
+
+(ert-deftest tired-goto-last-entry-keeps-a-numeric-prefix ()
+  "A count above one moves to that line, as the evil motion does."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-goto-last-entry 2)
+    (should (= 2 (line-number-at-pos)))
+    (should (tired-entry-p (tired--row-at-point)))))
+
+(ert-deftest tired-goto-last-entry-remaps-end-of-buffer ()
+  "M-> reaches the last row too."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq (key-binding (key-parse "M->"))
+                #'tired-goto-last-entry))))
+
 (ert-deftest tired-evil-mode-binds-the-tired-commands ()
   "The global evil mode gives a Tired buffer dired-style keys."
   (skip-unless (require 'evil nil t))
@@ -2259,7 +2284,10 @@ that starts at the first line."
           ;; Motion stays evil, so a Tired buffer is still navigable.
           (should (eq (key-binding (key-parse "j")) #'evil-next-line))
           (should (eq (key-binding (key-parse "gg"))
-                      #'evil-goto-first-line)))
+                      #'evil-goto-first-line))
+          ;; G skips the empty line below the listing.
+          (should (eq (key-binding (key-parse "G"))
+                      #'tired-goto-last-entry)))
       (tired-evil-mode -1)
       (evil-local-mode -1))
     (should-not (bound-and-true-p tired-evil-local-mode))))
