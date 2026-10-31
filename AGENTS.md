@@ -272,6 +272,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 - Batch Emacs dispatches no file notification event during `sit-for`, so
   the tests stub `file-notify-add-watch`.  Batch Emacs also has no window
   layout, so a test asserts buffer state, not window state.
+- A test never reaches the network.  `tired-tests--with-remote` stubs
+  `file-remote-p` for a real temporary directory, so the remote guards
+  run without a TRAMP handler.  `tired-remote-listing-stays-offline`
+  covers the watch, the collapse walk and the size walk at once.
 - Batch Emacs sends no mouse event, so a test builds one with
   `tired-tests--click`: a posn of `(WINDOW POINT)` is enough for
   `event-start`, `posn-window` and `posn-point`, and `mouse-set-point`

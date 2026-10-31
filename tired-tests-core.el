@@ -1594,6 +1594,28 @@ The same substitution rules apply to the header line."
           (tired-toggle-auto-revert)
           (should (tired--auto-revert-enabled-p)))))))
 
+(ert-deftest tired-remote-listing-stays-offline ()
+  "A mocked remote directory costs no watch, no collapse and no size walk.
+The test stubs `file-remote-p', so no TRAMP handler runs and nothing
+reaches the network."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/inner" root) t)
+    (with-temp-file (expand-file-name "chain/inner/only.txt") (insert "x"))
+    (let ((tired-auto-revert t)
+          (tired-auto-revert-remote nil)
+          (tired-directory-size t)
+          (added nil)
+          (walked nil))
+      (tired-tests--with-remote root added
+        (cl-letf (((symbol-function 'tired--subtree-size)
+                   (lambda (&rest _) (setq walked t) 0)))
+          (tired root)
+          (should-not added)
+          (let ((entry (tired--entry-for-path (expand-file-name "chain" root))))
+            (should-not (tired--collapsed-display-entry root entry)))
+          (should (equal "" (tired--size-cell (tired-tests--entry "chain"))))
+          (should-not walked))))))
+
 (ert-deftest tired-file-change-coalesces-into-one-timer ()
   "A second event keeps the pending timer instead of adding another."
   (tired-tests--with-fixture
