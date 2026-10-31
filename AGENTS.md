@@ -350,6 +350,13 @@ Evil integration:
   `package-menu--print-info-simple` does.  `face` covers a buffer with
   font-lock off.  `font-lock-face` survives
   `font-lock-unfontify-region`, which removes `face`.
+  The modification time cell carries both properties too, with
+  `tired-date`.  That face inherits `org-date`, so a theme colors the
+  stamp like an Org date.  Org may stay unloaded: an unloaded inherit
+  face resolves to nothing, and the inherit appears when org loads.
+  Do not require org for the face.  The stamp column is the only place
+  that prints a date or a time.  The trash name uses a timestamp, but
+  it stays invisible as a path component.
 - `tired-mode` does not set `font-lock-defaults`.  No upstream
   tabulated-list mode does: the printer already built the row strings,
   so colorization belongs in the entry data.  `proced` uses font-lock

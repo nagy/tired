@@ -9,6 +9,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 * Features
 
 - Column listing with name, size, modification time and permission mode
+- Modification time column colored by `tired-date', which inherits
+  `org-date'
 - Name column fits the longest entry, clamped to the window width
 - Directories first, then sort by name, size, modification time or mode
 - Insert subdirectories as nested, indented sections
@@ -302,6 +304,10 @@ when a Font Lock pass refontifies the buffer, which removes =face=.
 =tired-mode= does not enable Font Lock mode.  A Font Lock keyword set
 matches text in a buffer, but a Tired row holds its columns apart, so
 a suffix rule anchored at the end of a line cannot match.
+
+The modification time column takes the =tired-date= face.  That face
+inherits =org-date=, so a theme colors the stamp the way it colors a
+date inside an Org file.  No other column prints a date or a time.
 
 * Single-child collapse
 

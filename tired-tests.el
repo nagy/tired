@@ -1079,6 +1079,17 @@ a symlink, and removes every Tired buffer it opened."
       (should (eq 'tired-directory-face
                   (get-text-property 0 'font-lock-face cell))))))
 
+(ert-deftest tired-date-cell-carries-the-date-face ()
+  "The modification time column takes `tired-date'."
+  (tired-tests--with-fixture
+    (tired root)
+    (let* ((entry (tired-tests--entry "alpha.txt"))
+           (cell (aref (tired--row entry 0) 2)))
+      (should (eq 'tired-date (get-text-property 0 'face cell)))
+      (should (eq 'tired-date (get-text-property 0 'font-lock-face cell)))
+      (should (string= cell (format-time-string tired-date-format
+                                                (tired-entry-mtime entry)))))))
+
 (ert-deftest tired-name-face-survives-font-lock ()
   "Font-lock refontification does not strip the directory face."
   (tired-tests--with-fixture

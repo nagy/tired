@@ -246,6 +246,12 @@ takes effect on the next open without a re-parse."
   '((t :inherit bold))
   "Face for a section row whose kind is `heading'.")
 
+(defface tired-date
+  '((t :inherit org-date))
+  "Face for the modification time column.
+The column takes the Org date face, so a theme colors the stamp the
+way it colors a date in an Org file.")
+
 (cl-defstruct (tired-entry (:constructor tired--entry-create))
   "One entry of a directory listing.
 NAME is the file name without its directory.  PATH is the absolute
@@ -981,7 +987,10 @@ Emacs 31 requires a vector of column descriptors here; a list makes
     (vector (concat (make-string (* 2 depth) ?\s)
                     (tired--name-cell row))
             (tired--size-cell row)
-            (format-time-string tired-date-format (tired-entry-mtime row))
+            (propertize (format-time-string tired-date-format
+                                            (tired-entry-mtime row))
+                        'face 'tired-date
+                        'font-lock-face 'tired-date)
             (tired-entry-mode row))))
 
 (defun tired--tabulated-entries ()
