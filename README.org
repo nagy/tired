@@ -76,6 +76,11 @@ reaches =tired-jump= in a Tired buffer and =dired-jump= elsewhere.
 =tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=
 records a directory buffer and =M-x bookmark-jump= restores it.
 
+While =recentf-mode= holds, a Tired buffer also reaches the recent
+list.  The buffer visits a directory, so the directory counts as an
+opened file and =recentf-open-files= offers it.  A session without
+=recentf-mode= leaves the list alone.
+
 * Key bindings
 
 The same commands sit in a =Tired= menu on the menu bar, so a reader

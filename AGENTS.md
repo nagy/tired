@@ -228,7 +228,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   collections and the table would empty itself.  The time window in
   `tired-size-cache-ttl` is the one freshness rule.
 - `tired-noselect` owns `default-directory`.  `tired-mode` runs before
-  the directory is known, so it must not set the variable.
+  the directory is known, so it must not set the variable.  The
+  function also feeds `recentf-add-file` while `recentf-mode` holds,
+  because a Tired buffer visits a directory and no file name reaches
+  `recentf-track-opened-file`.
 - The buffer name keys the directory, so `tired-noselect` reuses the
   buffer.  A renamed buffer would make a second one.
 - A nil `tired-trash-directory` means the per-process directory under

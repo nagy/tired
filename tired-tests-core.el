@@ -31,6 +31,13 @@
 
 (require 'tired-tests-fixtures)
 
+;; The suite byte-compiles, so a `let' binding of a recentf variable
+;; needs a declaration.  Without one the compiler makes the binding
+;; lexical, and `recentf-add-file' writes the global value instead.
+(defvar recentf-list)
+
+(defvar recentf-mode)
+
 (ert-deftest tired-mode-is-derived-from-tabulated-list-mode ()
   "The major mode must inherit from `tabulated-list-mode'."
   (tired-tests--with-fixture
@@ -1056,6 +1063,31 @@ key map alone."
       (tired-bookmark-jump record)
       (should (derived-mode-p 'tired-mode))
       (should (equal tired--directory root)))))
+
+(ert-deftest tired-records-the-directory-in-recentf ()
+  "Opening a listing records the directory while recentf holds."
+  (skip-unless (require 'recentf nil t))
+  (tired-tests--with-fixture
+    (let ((recentf-list nil)
+          (recentf-mode t))
+      (tired root)
+      ;; `recentf-add-file' abbreviates the name with the home
+      ;; directory, and a check build puts the home directory above
+      ;; the temporary tree.  Compare the names without a trailing
+      ;; slash in both forms.
+      (cl-labels ((normalize (file)
+                    (directory-file-name (abbreviate-file-name file))))
+        (should (member (normalize root)
+                        (mapcar #'normalize recentf-list)))))))
+
+(ert-deftest tired-skips-recentf-when-the-mode-is-off ()
+  "A session without recentf keeps an untouched list."
+  (skip-unless (require 'recentf nil t))
+  (tired-tests--with-fixture
+    (let ((recentf-list nil)
+          (recentf-mode nil))
+      (tired root)
+      (should-not recentf-list))))
 
 (ert-deftest tired-insert-subdir-adds-indented-children ()
   "Inserting a directory shows its children below it, indented by depth."

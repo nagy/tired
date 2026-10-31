@@ -50,6 +50,7 @@
 (declare-function tired-rename "tired-file-ops" (name))
 (declare-function tired-touch "tired-file-ops" (file))
 (declare-function tired-undo "tired-file-ops" nil)
+(declare-function recentf-add-file "recentf" (filename))
 
 (defgroup tired nil
   "Tabulated list directory editor."
@@ -1783,7 +1784,11 @@ same buffer.  The buffer gets DIRECTORY as `default-directory'."
           (tired--set-selection nil))
         (setq tired--directory directory)
         (setq default-directory directory)
-        (tired-refresh))
+        (tired-refresh)
+        ;; `recentf-mode' records files that a buffer visits, and a
+        ;; Tired buffer visits a directory.
+        (when (bound-and-true-p recentf-mode)
+          (recentf-add-file directory)))
       buffer)))
 
 ;;;###autoload
