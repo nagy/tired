@@ -2375,10 +2375,7 @@ takes the file back from the browser."
           (browse-url-default-handlers nil))
       (dolist (entry targets)
         (browse-url-of-file (tired-entry-path entry))))
-    (deactivate-mark)
-    (message "Browsing %d file%s"
-             (length targets)
-             (if (= (length targets) 1) "" "s"))))
+    (deactivate-mark)))
 
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
