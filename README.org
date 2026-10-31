@@ -264,9 +264,12 @@ empty file.  None of these commands asks for a confirmation.  None
 of them calls a shell.  =!= is the one command that runs a shell, and
 the next section covers it.
 
-A command that removes the row at point leaves point on the next row.
-When no row stays below it, point stops on the last row that stays,
-and a refresh keeps the line when a file leaves the disk.
+A command that removes the row at point keeps point in place.  A
+collapsed chain row that still shows a path under the removed leaf
+keeps its line.  Otherwise point takes the row below the nearest row
+that stays above it, so a removed block above point does not push it
+down.  When no row above stays, point stops on the first row, and a
+refresh keeps the line when a file leaves the disk.
 
 =m= reads its destination from a second window.  When another window
 of the frame shows a Tired buffer for another directory, the command

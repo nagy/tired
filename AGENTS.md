@@ -146,10 +146,13 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 9. `tired-filter` reads the minibuffer and schedules a redraw through
    `tired-filter-delay`; the exit and quit paths flush at once.
 10. `tired--apply-to-targets` runs one function over the targets, deepest
-    path first, then clears the selection, refreshes and reports.  Each
-    command pushes one undo function.  `tired-rename` stays outside that
-    helper: it reads the row at point alone, so the selection and the
-    region stay untouched.
+    path first, then clears the selection, refreshes, repairs point and
+    reports.  A row that leaves the listing under point keeps its line.
+    Otherwise point takes the row below the nearest row that stays
+    above point, so a removed block above point does not push it down.
+    Each command pushes one undo function.  `tired-rename` stays outside
+    that helper: it reads the row at point alone, so the selection and
+    the region stay untouched.
 11. `tired-evil.el` is a second library.  `tired.el` installs its hook
     after `provide`, so both load orders work.
 12. `tired--paint-row-help` runs after `tabulated-list-print` and gives
@@ -314,12 +317,14 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   the line it captured first.  That line clamps to the last row through
   `tired--last-row-position`, because the printer closes the last row
   with a newline and a plain `forward-line` would stop below every row.
-  `tired--apply-to-targets` still prefers the next surviving row, so a
-  delete goes down when a row stays below and up otherwise.  That row
-  is the first one below point whose path lies under no target, so a
-  run that covers point and the rows under it moves past the whole
-  run.  When no row below survives, point stops on the last row, never
-  on the first line.
+  `tired--apply-to-targets` repairs point too, because the print moved
+  it: a row that leaves the listing under point keeps its line, so a
+  collapsed chain row that still shows a path under a removed leaf
+  keeps focus.  A point row that really left moves to the row below the
+  nearest row that stays above it, so a removed block above point does
+  not push point down.  When no row above stays, point stops on the
+  first line, and a shorter listing clamps to the last row, never to
+  the first line.
 - The section read passes VISIT to `insert-file-contents`, so the buffer
   carries `buffer-file-name` and no modified flag; without it every
   expand raises a kill question.  A handler selects its own major mode

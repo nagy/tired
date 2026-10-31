@@ -120,6 +120,21 @@
         (should (file-regular-p (expand-file-name "alpha.txt" root)))
         (should-not (file-exists-p destination))))))
 
+(ert-deftest tired-move-of-a-collapsed-leaf-keeps-the-chain-row ()
+  "Move of a collapsed leaf keeps the chain row on the same line.
+The destination keeps its own row, so point follows that row even
+though the moved leaf sits inside the destination directory now."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (make-directory (expand-file-name "foo/a/b/c" root) t)
+      (make-directory (expand-file-name "dest" root) t)
+      (tired-tests--write "dest/keep.txt" "k")
+      (tired root)
+      (tired-tests--goto "foo/a/b/c")
+      (tired-move (expand-file-name "dest" root))
+      (should (file-directory-p (expand-file-name "dest/c" root)))
+      (should (equal (tired-entry-name (tired--row-at-point)) "foo/a/b")))))
+
 (ert-deftest tired-rename-file ()
   "Rename changes the name at point and undo returns the old name."
   (tired-tests--with-fixture
@@ -451,6 +466,34 @@ carries the process id.  A set option wins."
       (tired-tests--goto-section "Intro")
       (tired-delete)
       (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt")))))
+
+(ert-deftest tired-delete-of-a-collapsed-leaf-keeps-the-chain-row ()
+  "Delete of a collapsed leaf keeps the chain row on the same line.
+A single-entry chain shows one row for `foo/a/b/c'.  The delete of
+the empty directory `c' leaves `foo/a/b' on that line, so point
+must stay there instead of moving down to the row below."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (make-directory (expand-file-name "foo/a/b/c" root) t)
+      (tired root)
+      (tired-tests--goto "foo/a/b/c")
+      (tired-delete)
+      (should (equal (tired-entry-name (tired--row-at-point)) "foo/a/b")))))
+
+(ert-deftest tired-delete-of-a-nested-collapsed-leaf-keeps-the-chain-row ()
+  "A nested collapsed row keeps its line when its leaf leaves.
+The row above it stays, so point follows that row and not the row
+far below."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (make-directory (expand-file-name "sub/one/two/three" root) t)
+      (tired root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-tests--goto "one/two/three")
+      (tired-delete)
+      (should (equal (tired-entry-name (tired--row-at-point))
+                     "one/two")))))
 
 (ert-deftest tired-delete-of-the-last-expanded-file-keeps-the-row-above ()
   "Delete of the last expanded file stops on the row that remains.
