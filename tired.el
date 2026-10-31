@@ -1725,6 +1725,15 @@ An empty FILTER removes the current filter."
   (setq tired--filter (unless (or (null filter) (string-empty-p filter)) filter))
   (tired--redraw))
 
+(defun tired--filter-changed (origin)
+  "Apply the current minibuffer text as the filter of ORIGIN.
+Read the minibuffer before the switch, because
+`minibuffer-contents' returns the text of the current buffer when
+that buffer is not a minibuffer."
+  (let ((text (minibuffer-contents)))
+    (with-current-buffer origin
+      (tired--apply-filter text))))
+
 (defun tired-filter ()
   "Narrow the listing while typing a filter.
 Every change updates the listing immediately.  \[exit-minibuffer]
@@ -1741,9 +1750,7 @@ empty filter removes it."
                    (lambda ()
                      (add-hook 'after-change-functions
                                (lambda (&rest _)
-                                 (with-current-buffer origin
-                                   (tired--apply-filter
-                                    (minibuffer-contents))))
+                                 (tired--filter-changed origin))
                                nil t))
                  (read-string "Filter: " original))))
           (with-current-buffer origin

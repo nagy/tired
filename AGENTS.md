@@ -184,7 +184,9 @@ Data flow:
     `tired--stop-watching`.
 12. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
-   value, C-g restores the previous filter.
+   value, C-g restores the previous filter.  `tired--filter-changed`
+   reads `minibuffer-contents` before it switches to the listed
+   buffer.
 13. `tired-noselect` returns the buffer for a directory and never shows
    it.  It sets `tired--directory` and `default-directory`, then
    refreshes.  Loading the library changes nothing global.  The
@@ -439,6 +441,11 @@ Evil integration:
   that fails the filter stays visible when one of its labels matches,
   and then only the matching sections show.  Narrow does not use the
   label: a narrowed-out file hides all of its sections.
+- `minibuffer-contents` returns the text of the current buffer when
+  that buffer is not a minibuffer.  Read it before
+  `with-current-buffer`, or the filter becomes the whole listing and
+  the header line prints every row.  `tired--filter-changed` holds
+  that order.
 - `tired--call-handler` catches every error and reports through
   `display-warning`.  One broken handler must not break the listing.
 - A section without an action visits its file through

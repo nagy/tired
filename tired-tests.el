@@ -303,6 +303,17 @@ a symlink, and removes every Tired buffer it opened."
     (should (equal tired--filter "beta"))
     (should (equal (tired-tests--names) '("beta.txt")))))
 
+(ert-deftest tired-filter-command-applies-minibuffer-text ()
+  "A keystroke applies the minibuffer text, not the buffer body."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((origin (current-buffer)))
+      (cl-letf (((symbol-function 'minibuffer-contents)
+                 (lambda () "BETA")))
+        (tired--filter-changed origin))
+      (should (equal tired--filter "BETA"))
+      (should (equal (tired-tests--names) '("beta.txt"))))))
+
 (ert-deftest tired-selection-drives-targets ()
   "Selecting an entry makes it the target of file commands."
   (tired-tests--with-fixture
