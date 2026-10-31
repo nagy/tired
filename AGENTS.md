@@ -184,7 +184,15 @@ Data flow:
    expand, fold) call `tired--redraw`, not `tired-refresh`.
 10. `tired--window-size-changed` runs from `window-size-change-functions`
     and redraws every visited Tired buffer with the width of its own
-    window, so a resize refits the name column.
+    window, so a resize refits the name column.  The hook also fires
+    when the echo area grows, for example on `M-x`, and the selected
+    window then holds the minibuffer.  `tired--redraw` therefore reads
+    the point row through `tired--point-row`, which takes the window
+    point of a window that lost the selection, and
+    `tired--restore-window-rows` puts every window point marker back
+    after the print.  A marker needs that repair, because
+    `tabulated-list-print` erases the buffer and the erase collapses
+    each window point marker to the first line.
 11. `tired--sync-watches` keeps one file notification watch per path in
     `tired--watch-paths`: the root, every inserted directory and every
     expanded file.  A file needs its own watch because a directory watch
@@ -533,7 +541,10 @@ Evil integration:
   before the print and `tired--restore-mark` sets the mark marker back
   on that entry's row.  Set the mark marker with `set-marker`, not
   `push-mark`, or every redraw grows the mark ring.  A deleted row
-  leaves the mark where the reprint put it.
+  leaves the mark where the reprint put it.  A window point marker
+  collapses the same way, and `tired--restore-window-rows` repairs it
+  with `set-window-point`, because the display copies that marker back
+  into the buffer point when the window regains the selection.
 - `tired--region-entries` keeps the row on which the region ends out,
   because the region ends at that line's start.  Without the test the
   shift-down gesture would cover one row too many.  The region needs

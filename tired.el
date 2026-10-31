@@ -1386,12 +1386,50 @@ listing refreshes once."
   (force-mode-line-update)
   (message "Auto-revert %s" (if tired-auto-revert "on" "off")))
 
+(defun tired--point-row (window)
+  "Return the row at the point of WINDOW.
+The window point wins when WINDOW is not the selected window, because
+the buffer point of a window that lost the selection lags behind."
+  (if (and (window-live-p window)
+           (not (eq window (selected-window)))
+           (eq (window-buffer window) (current-buffer)))
+      (tired--row-at (window-point window))
+    (tired--row-at-point)))
+
+(defun tired--window-rows ()
+  "Return one (WINDOW . ROW) pair per window that shows the listing.
+ROW is the row at that window's point, or nil when the window sits on
+a line without a row."
+  (let (pairs)
+    (dolist (window (get-buffer-window-list nil t))
+      (push (cons window (tired--row-at (window-point window))) pairs))
+    (nreverse pairs)))
+
+(defun tired--restore-window-rows (pairs)
+  "Move each window in PAIRS back to the row it showed before a reprint.
+`tabulated-list-print' erases the buffer, and that erase collapses the
+point marker of every window that shows the listing, so a window that
+lost the selection would return to the first line.  A window whose row
+vanished keeps its own point."
+  (dolist (pair pairs)
+    (let ((window (car pair))
+          (row (cdr pair)))
+      (when (and (window-live-p window)
+                 (eq (window-buffer window) (current-buffer))
+                 row)
+        (save-excursion
+          (when (tired--goto-row row)
+            (set-window-point window (point))))))))
+
 (defun tired--redraw (&optional window)
   "Redraw the listing from the cached entries.
 WINDOW is the window that shows the buffer, or nil for the selected
-window.  Its width limits the name column."
-  (let* ((point-entry (tired--row-at-point))
-         (mark-entry (tired--row-at (mark t))))
+window.  Its width limits the name column.  The redraw keeps the
+point of every window that shows the listing."
+  (let* ((window (or window (selected-window)))
+         (point-entry (tired--point-row window))
+         (mark-entry (tired--row-at (mark t)))
+         (window-rows (tired--window-rows)))
     (setq tabulated-list-format
           (tired--format (tired--name-column-width window)))
     (tabulated-list-init-header)
@@ -1402,6 +1440,7 @@ window.  Its width limits the name column."
                 tired--header-base))
     (tabulated-list-print t)
     (tired--goto-entry point-entry)
+    (tired--restore-window-rows window-rows)
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--sync-watches)

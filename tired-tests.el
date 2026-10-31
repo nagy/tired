@@ -1433,6 +1433,29 @@ joins the range."
     (should (equal (tired-entry-name (tired--row-at (mark t)))
                    "beta.txt"))))
 
+(ert-deftest tired-redraw-keeps-point-in-a-window-that-lost-selection ()
+  "A redraw of a background window keeps its point.
+The window size hook redraws a listing while another window holds the
+selection, so the redraw reads the window point, not the buffer point,
+and it puts that window point back after the reprint."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "beta.txt")
+    (let* ((listing (selected-window))
+           (other (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer other (get-buffer-create " *tired-tests-other*"))
+            (select-window other)
+            (with-current-buffer (window-buffer listing)
+              (tired--redraw listing)
+              (should (equal "beta.txt"
+                             (tired-entry-name
+                              (tired--row-at (window-point listing)))))))
+        (delete-window other)
+        (when (get-buffer " *tired-tests-other*")
+          (kill-buffer " *tired-tests-other*"))))))
+
 (ert-deftest tired-mode-line-is-empty-without-state ()
   "A plain listing shows no bracket group in the mode line."
   (tired-tests--with-fixture
