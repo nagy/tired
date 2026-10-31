@@ -438,6 +438,15 @@ tie-breaker."
        (gethash (directory-file-name (expand-file-name directory))
                 tired--inserted)))
 
+(defun tired--directory-entry-p (entry)
+  "Return non-nil when ENTRY can hold children.
+A symbolic link counts when it resolves to a directory.  The row
+keeps its symlink name and face either way."
+  (and (tired-entry-p entry)
+       (or (tired-entry-dirp entry)
+           (and (eq (tired-entry-type entry) 'symlink)
+                (file-directory-p (tired-entry-path entry))))))
+
 (defun tired--sorted-directory-entries (directory visible-only)
   "Return the entries of DIRECTORY in display order.
 When VISIBLE-ONLY is non-nil, drop entries hidden by the filter and
@@ -705,7 +714,7 @@ keeping the directory's sort position."
                          (tired--collapsed-display-entry directory entry))
                         (display (or collapsed entry))
                         (sections (and (not collapsed)
-                                       (not (tired-entry-dirp entry))
+                                       (not (tired--directory-entry-p entry))
                                        (tired--expanded-p
                                         (tired-entry-path entry))
                                        (tired--section-rows display depth)))
@@ -725,7 +734,7 @@ keeping the directory's sort position."
                    (dolist (row shown)
                      (push row rows))
                    (when (and (not collapsed)
-                              (tired-entry-dirp entry)
+                              (tired--directory-entry-p entry)
                               (tired--inserted-p
                                (tired-entry-path entry)))
                      (walk (tired-entry-path entry) (1+ depth)))))))))

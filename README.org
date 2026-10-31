@@ -341,8 +341,11 @@ sections nested inside it.  Every insert is explicit: =i= adds one
 level, and =i= inside a section goes deeper.
 
 Sorting applies inside each directory, so sections never interleave.
-Directories still sort before files.  The listing never descends
-through a symlink twice, so a link back to an ancestor cannot loop.
+Directories still sort before files.  A symbolic link to a directory
+expands the same way and keeps its symlink face and its = -> target=
+suffix, so the children rows appear below a symlink row.  The listing
+never descends through a symlink twice, so a link back to a directory
+that already appears in the listing shows no children.
 
 * File sections
 

@@ -1203,6 +1203,21 @@ a symlink, and removes every Tired buffer it opened."
     (should (member "new.txt" (tired-tests--names)))
     (should (tired--inserted-p (expand-file-name "sub" root)))))
 
+(ert-deftest tired-insert-subdir-expands-symlink-directory ()
+  "An inserted symlink to a directory shows its children."
+  (tired-tests--with-fixture
+    (let ((link (expand-file-name "dirlink" root)))
+      (make-symbolic-link (expand-file-name "sub" root) link)
+      (tired root)
+      (tired-tests--goto "dirlink")
+      (should (eq 'symlink (tired-entry-type (tired--row-at-point))))
+      (tired-toggle-subdir)
+      (should (member "inner.txt" (tired-tests--names)))
+      (should (member "deep/leaf.txt" (tired-tests--names)))
+      (should (tired--inserted-p link))
+      (tired-toggle-subdir)
+      (should-not (member "inner.txt" (tired-tests--names))))))
+
 (ert-deftest tired-insert-subdir-guards-symlink-cycles ()
   "A symlink back to an ancestor does not recurse."
   (tired-tests--with-fixture

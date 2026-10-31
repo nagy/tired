@@ -102,9 +102,13 @@ Data flow:
    always come first.
 4. `tired--display-rows` walks the tree depth-first and returns
    `(ROW . DEPTH)` conses, where ROW is an entry or a section.  Children
-   of inserted directories follow their parent row.  The sections of an
-   expanded file follow the file row.  A `file-truename` set stops
-   symlink cycles.  `tired--collapsed-display-entry` replaces a
+   of inserted directories follow their parent row.
+   `tired--directory-entry-p` decides whether a row can hold children,
+   and it counts a symbolic link that resolves to a directory, so an
+   inserted symlink shows its children while the row keeps its symlink
+   name and face.  The sections of an expanded file follow the file row.  A `file-truename` set stops
+   symlink cycles, so a link to a directory that already appears in the
+   walk shows no children.  `tired--collapsed-display-entry` replaces a
    directory entry
    with a clone of the file at the end of a single-entry chain.  Collapse
    runs after sorting, so the row keeps the directory's position.
@@ -529,7 +533,14 @@ Evil integration:
   rows.  Every row stays selectable and every ID is a real `tired-entry'.
   Do not add nil-ID header rows for dired parity.
 - `tired--display-rows` guards recursion with `file-truename`.  Without
-  it, a symlink back to an ancestor loops forever.
+  it, a symlink back to an ancestor loops forever.  The same set makes a
+  link to an already shown directory print its row and no children.
+- Use `tired--directory-entry-p`, not `tired-entry-dirp`, to decide
+  whether a row can hold children.  `DIRP` covers real directories only,
+  because `tired--sort-key`, the size column and the directory face read
+  it.  A symbolic link that resolves to a directory therefore expands
+  while it keeps its symlink face, its ` -> target` suffix, its file
+  sort position and its own link size.
 - Single-child collapse inspects every listed directory on refresh, so a
   root with many subdirectories costs one `directory-files` call each.
   The cache lives only until the next refresh.  Chain inspection stops at
