@@ -21,12 +21,12 @@ directory gives roughly the same text, so the user switches to the
 buffer instead of collecting copies.  A partial export is a different
 question, so it gets its own buffer.
 
-The name column of the text export holds the absolute path.  Tired
-indents a leaf under its parent, which reads well on screen and badly
-in `grep`.  A full path on every line survives a grep, a sort and a
-copy into another tool.  The CSV path and the JSON `Path` stay
-relative to the shown directory, because the rclone shape is relative
-and a CSV row then works from the listing root.
+The name column of the text export holds the path relative to the
+shown directory.  Tired indents a leaf under its parent, which reads
+well on screen and badly in `grep`.  The relative path on every line
+survives a grep, a sort and a copy into another tool, and it matches
+the CSV path and the JSON `Path`, so every format names a file the
+same way from the listing root.
 
 Section rows stay out.  A section is a heading or a form inside a
 file, and the three formats describe files.  The rclone schema has no

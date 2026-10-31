@@ -23,8 +23,8 @@
 
 ;; Three commands write the current view to a read-only buffer:
 ;; `tired-export-csv' writes the four listing columns,
-;; `tired-export-text' writes the view with a full path on every line,
-;; and `tired-export-json' writes the array that `rclone lsjson'
+;; `tired-export-text' writes the view with a relative path on every
+;; line, and `tired-export-json' writes the array that `rclone lsjson'
 ;; prints.  Each command reads the transient selection first, then the
 ;; active region, then every visible entry.  Section rows stay out,
 ;; because a section is not a file.
@@ -63,12 +63,13 @@ TIME reports the epoch."
     (format-time-string "%Y-%m-%dT%H:%M:%S%:z" (or time 0))))
 
 (defun tired--export-text (entries)
-  "Return ENTRIES as aligned text with a full path on every line.
-The other three columns follow the path in the order of the
-listing.  The path column grows to the longest path, so no path
-wraps and a later grep finds the whole path on one line."
+  "Return ENTRIES as aligned text with a relative path on every line.
+The path is relative to the shown directory.  The other three
+columns follow the path in the order of the listing.  The path
+column grows to the longest path, so no path wraps and a later grep
+finds the whole path on one line."
   (let* ((rows (mapcar (lambda (entry)
-                         (list (tired-entry-path entry)
+                         (list (tired--export-relative-path entry)
                                (tired--size-cell entry)
                                (format-time-string
                                 tired-date-format
@@ -233,7 +234,8 @@ listing columns.  A path is relative to the shown directory."
 (defun tired-export-text ()
   "Export the targets or the whole view as aligned plain text.
 The text mirrors the listing columns, but every line starts with
-the full path of its entry instead of an indented name."
+the path of its entry relative to the shown directory instead of
+an indented name."
   (interactive)
   (tired--export 'text))
 

@@ -81,7 +81,7 @@
 ;; Export commands:
 ;;
 ;;   M-x tired-export-csv   the four listing columns as CSV
-;;   M-x tired-export-text  the view with a full path on every line
+;;   M-x tired-export-text  the view with a relative path on every line
 ;;   M-x tired-export-json  the array that `rclone lsjson' prints
 ;;
 ;; An export reads the selection, then the active region, then the

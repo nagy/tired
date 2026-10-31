@@ -673,12 +673,13 @@ sub/inner.txt,5,2026-10-31T19:08:14+00:00,-rw-r--r--
 alpha.txt,3,2026-10-31T19:08:14+00:00,-rw-r--r--
 #+end_src
 
-The text export keeps the listing columns and prints the full path of
-every entry in the name column.  A grep finds a path on one line and
-takes it anywhere:
+The text export keeps the listing columns and prints the path of
+every entry relative to the shown directory in the name column.  The
+column starts at the listing root, as the CSV and the JSON do.  A
+grep finds a path on one line:
 
 #+begin_src text
-/home/user/notes/sub/inner.txt   5 2026-10-31 19:08 -rw-r--r--
+sub/inner.txt   5 2026-10-31 19:08 -rw-r--r--
 #+end_src
 
 The JSON export follows the =rclone lsjson= shape, so a script that

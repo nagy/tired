@@ -59,8 +59,8 @@
   (should (equal (tired--export-csv-field "a,b") "\"a,b\""))
   (should (equal (tired--export-csv-field "a\"b") "\"a\"\"b\"")))
 
-(ert-deftest tired-export-text-prints-full-paths ()
-  "The text export replaces indentation with the full path."
+(ert-deftest tired-export-text-prints-relative-paths ()
+  "The text export replaces indentation with the relative path."
   (tired-tests--with-fixture
     (let ((tired (tired-noselect root))
           count)
@@ -72,13 +72,14 @@
         (with-current-buffer buffer
           (let ((lines (split-string (buffer-string) "\n" t)))
             (should (= (length lines) count))
-            (should (seq-every-p (lambda (line) (string-prefix-p root line))
-                                 lines))
-            (should (seq-some
-                     (lambda (line)
-                       (string-prefix-p (expand-file-name "sub/inner.txt" root)
-                                        line))
-                     lines))))))))
+            (should-not (seq-some (lambda (line) (string-prefix-p root line))
+                                  lines))
+            (should (seq-some (lambda (line)
+                                (string-prefix-p "sub/inner.txt" line))
+                              lines))
+            (should (seq-some (lambda (line)
+                                (string-prefix-p "alpha.txt" line))
+                              lines))))))))
 
 (ert-deftest tired-export-json-matches-the-rclone-shape ()
   "The JSON export holds the six rclone lsjson keys per object."
