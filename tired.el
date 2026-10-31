@@ -111,7 +111,6 @@
 (require 'cl-lib)
 (require 'dired)
 (require 'filenotify)
-(require 'hl-line)
 (require 'project)
 (require 'seq)
 (require 'subr-x)
@@ -130,10 +129,6 @@
   "Format string for the modification time column.
 See `format-time-string' for the available conversions."
   :type 'string)
-
-(defcustom tired-highlight-line t
-  "When non-nil, highlight the line at point with `hl-line-mode'."
-  :type 'boolean)
 
 (defcustom tired-auto-revert t
   "When non-nil, refresh the listing when a watched directory changes."
@@ -2267,9 +2262,7 @@ The directory contents come from `directory-files' and
   (setq-local bookmark-make-record-function #'tired-bookmark-make-record)
   (setq-local mode-line-format
               (append (default-value 'mode-line-format)
-                      '((:eval (tired--mode-line)))))
-  (when tired-highlight-line
-    (hl-line-mode 1)))
+                      '((:eval (tired--mode-line))))))
 
 ;;; Section handlers
 
