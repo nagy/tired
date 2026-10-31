@@ -82,10 +82,12 @@
 ;; records a Tired buffer and `bookmark-jump' restores it.
 ;;
 ;; The selection is transient.  It lives only in the buffer, it is
-;; pruned when entries disappear, and commands that act on it clear
-;; it afterwards.  An active region is a second target source: mark a
-;; row, move with S-<down> or the mouse, and every row in between
-;; becomes a target.  A non-empty selection wins over the region.
+;; pruned when entries disappear, and a command that acts on files
+;; clears it afterwards.  An active region joins it: mark a row, move
+;; with S-<down> or the mouse, and every row in between becomes a
+;; selection before the command acts, so one source feeds copy,
+;; delete, move, the shell command and the view commands.  A
+;; non-empty selection wins over the region, and `u' clears both.
 ;;
 ;; A file row opens into sections when a handler claims the file.
 ;; `tired-file-handlers' maps a regexp on the absolute file name to a

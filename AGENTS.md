@@ -105,10 +105,17 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
    to the first line.  A view change (filter, sort, dotfile, hidden,
    insert, expand, fold) calls it.  `tired-refresh` re-reads the tables,
    prunes dead state and then redraws.
-7. Selection and region stay apart.  `tired--selection` holds paths and
-   `tired--selection-set` mirrors it; `tired--region-entries` reads the
-   region.  `tired--selection-targets` takes the selection first, then
-   the region, then the row at point.
+7. Selection and region share one target path.  `tired--selection`
+   holds paths and `tired--selection-set` mirrors it.
+   `tired--targets` commits an active region into the selection, then
+   reads the selection, the region and the row at point.  Every command
+   body reads `tired--targets`.  `tired--selection-targets` reads the
+   same rows and changes nothing, so a menu `:active` form and an
+   interactive spec call it and a canceled prompt leaves no selection.
+   A section row stands for its file, and one file joins once.
+   `tired--apply-to-rows` runs one view function over the targets and
+   keeps the selection, because a user selects a directory, inserts it
+   and then adds a child row.  A file command clears both sources.
 8. `tired--sync-watches` watches the root, every inserted directory,
    every expanded file and every skipped chain level.  `tired--file-changed`
    debounces into `tired--auto-revert-now`, and `kill-buffer-hook` stops
@@ -207,7 +214,19 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 - A section row is not selectable.  Do not add one to
   `tired--selection`: the selection and the narrow snapshot key by path
   alone, so change them only through `tired--set-selection` and
-  `tired--set-narrowed`.
+  `tired--set-narrowed`.  A region over a section row reaches that
+  row's file instead, through `tired--display-entry-table`, because a
+  collapsed chain hides the file row from its parent table.
+- A command body reads `tired--targets`, never `tired--selection-targets`,
+  or the region never becomes a selection and `tired-select-none`
+  leaves it in place.  A menu `:active` form and an interactive spec
+  read `tired--selection-targets`, so a canceled prompt changes no
+  state.
+- Evil shadows `i` (text objects), `e` and `E` (word motion) and `TAB`
+  (jump forward) in visual state.  Do not add `tired-insert-subdir`,
+  `tired-expand-file`, `tired-collapse-file` or `tired-toggle-subdir`
+  to `tired-evil-visual-keys`, or a visual selection loses its text
+  objects and its motion.
 - `tired-entry-path` reads an entry struct.  Test `tired-entry-p` before
   the call, or a section row signals `wrong-type-argument`.
 - Evil remaps `evil-replace` to `tired-rename`, so `r` renames a row and

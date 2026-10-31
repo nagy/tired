@@ -25,12 +25,13 @@ _Avoid_: Sort column, order
 
 **Selection**:
 The transient set of entry paths that commands act on in a directory
-buffer.
+buffer.  An active region joins it before a command acts.
 _Avoid_: Marks, region, highlight
 
 **Target**:
-The entries a command acts on.  The target is the selection when it is
-non-empty, else the active region, else the entry at point.
+The entries a command acts on: the selection when it is non-empty,
+else the active region, else the entry at point.  A command commits
+the region into the selection first, so its body reads one source.
 _Avoid_: Operand, subject
 
 **Shell command**:
@@ -42,7 +43,7 @@ _Avoid_: Job, process, filter
 **Region**:
 The Emacs region between mark and point, used as a target source.
 Every row between the two positions joins, except the row on which the
-region ends.
+region ends, and a section row stands for the file that holds it.
 _Avoid_: Range, block, span
 
 **Filter**:

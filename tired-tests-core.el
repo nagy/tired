@@ -1315,6 +1315,93 @@ key map alone."
                            (expand-file-name "beta.txt" root))))
     (should-not (use-region-p))))
 
+(ert-deftest tired-region-over-sections-targets-the-file ()
+  "A region over the headings of a file reaches that file once.
+The file row may lie inside the same region, and it joins once."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* one\n** one-a\n* two\n")
+    (tired root)
+    (transient-mark-mode 1)
+    (tired-expand-file "notes.org")
+    (tired-tests--goto-section "one")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (tired-tests--goto-section "two")
+    (forward-line 1)
+    (beginning-of-line)
+    (should (equal (tired-tests--target-names) '("notes.org")))
+    (deactivate-mark)
+    (tired-tests--goto "notes.org")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (tired-tests--goto-section "two")
+    (forward-line 1)
+    (beginning-of-line)
+    (should (equal (tired-tests--target-names) '("notes.org")))))
+
+(ert-deftest tired-region-drives-insert-subdir ()
+  "Insert acts on every directory that the region holds."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "extra/zeta" root) t)
+    (let ((tired-collapse-single-child nil))
+      (tired root)
+      (tired-tests--mark-row-range "extra" "sub")
+      (tired-insert-subdir)
+      (should (tired--inserted-p (expand-file-name "extra" root)))
+      (should (tired--inserted-p (expand-file-name "sub" root)))
+      (should (member "zeta" (tired-tests--names)))
+      (should (= 2 (length tired--selection))))))
+
+(ert-deftest tired-region-drives-expand-file ()
+  "Expand acts on every file with a handler in the region."
+  (tired-tests--with-fixture
+    (tired-tests--write "one.org" "* a\n* b\n")
+    (tired-tests--write "two.org" "* c\n* d\n")
+    (tired root)
+    (tired-tests--mark-row-range "one.org" "two.org")
+    (tired-expand-file)
+    (should (tired--expanded-p (expand-file-name "one.org" root)))
+    (should (tired--expanded-p (expand-file-name "two.org" root)))
+    (should (member "a" (mapcar #'car (tired-tests--sections))))))
+
+(ert-deftest tired-region-drives-toggle-subdir ()
+  "Toggle expands every handled file in the region."
+  (tired-tests--with-fixture
+    (tired-tests--write "one.org" "* a\n* b\n")
+    (tired-tests--write "two.org" "* c\n* d\n")
+    (tired root)
+    (tired-tests--mark-row-range "one.org" "two.org")
+    (tired-toggle-subdir)
+    (should (tired--expanded-p (expand-file-name "one.org" root)))
+    (should (tired--expanded-p (expand-file-name "two.org" root)))))
+
+(ert-deftest tired-select-none-clears-the-region ()
+  "Clear drops both target sources, so a region never survives it."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (should (use-region-p))
+    (tired-select-none)
+    (should-not (use-region-p))
+    (should-not tired--selection)
+    (should (equal (tired-tests--target-names) '("link")))))
+
+(ert-deftest tired-narrow-to-selection-accepts-a-region ()
+  "Narrow reads the region when the selection stays empty."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-narrow-to-selection)
+    (should (equal (tired-tests--names) '("alpha.txt" "beta.txt")))))
+
+(ert-deftest tired-mode-line-reports-the-region-size ()
+  "The mode line gives the region the count and the size of a selection."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired--update-mode-line)
+    (should (string-match-p "2 in region, 43" (tired--mode-line)))))
+
 (ert-deftest tired-redraw-restores-the-mark-by-path ()
   "Refresh and sort keep the mark on the same entry."
   (tired-tests--with-fixture

@@ -112,23 +112,28 @@ describe-keymap RET tired-mode-map RET=, to read every key with its
 command name and docstring.  =C-h k= explains one key.
 
 The selection is transient.  It belongs to the buffer and it is pruned
-when entries disappear.  Commands that act on it clear it afterwards.
-=t= toggles every visible entry.  With an empty selection it selects
-them all, with a full selection it clears them, and with a partial
-selection it inverts the visible part.  A selected entry that a filter
-or a narrow snapshot hides stays selected, so =u= remains the way to
-clear the whole selection.
+when entries disappear.  A command that acts on files clears it
+afterwards, and a view command keeps it.  =t= toggles every visible
+entry.  With an empty selection it selects them all, with a full
+selection it clears them, and with a partial selection it inverts the
+visible part.  A selected entry that a filter or a narrow snapshot
+hides stays selected, so =u= remains the way to clear the whole
+selection.
 
-The active region is a second target source.  Move with =S-<down>=
-and =S-<up>=, drag with the mouse, or set a mark with =C-SPC= and
-move.  Every row between the mark and point becomes a target, so a run
-costs one motion instead of one =SPC= per row.  A non-empty selection
-wins over the region.  The row on which the region ends stays out,
-because the region ends at the beginning of that line.  A command that
-acts on the region deactivates it, in the same way it clears the
-selection.  The mode line shows the region count.  The mode line
-bracket group appears only while the listing holds optional state, so
-a plain listing shows no group at all.
+The active region is the second way to make a selection.  Move with
+=S-<down>= and =S-<up>=, drag with the mouse, or set a mark with
+=C-SPC= and move.  Every row between the mark and point becomes a
+target, so a run costs one motion instead of one =SPC= per row.  A
+command turns the region into a selection before it acts, so =D=,
+=c=, =m=, =y=, =w=, =!=, =i=, =M-i=, =TAB=, =e= and =E= read the
+same rows that =SPC= on each row would select.  The mode line reports
+the region count and size, as it does for a selection.  =u= clears
+both sources.  A non-empty selection wins over the region.  The row on which the
+region ends stays out, because the region ends at the beginning of
+that line.  A section row stands for the file that holds it, so a
+region over headings reaches the file, the way point on a heading
+does.  The mode line bracket group appears only while the listing
+holds optional state, so a plain listing shows no group at all.
 
 The filter is live.  =f= opens a minibuffer and a keystroke updates
 the listing after =tired-filter-delay= seconds, which is 0.15 by
@@ -150,9 +155,10 @@ region, then on the row at point, and a section row browses its
 file.  It has no key of its own.
 
 =N= narrows the listing to a snapshot of the selection plus the
-directories that contain the selected entries.  =N= again widens it.
-The mode line shows the total size of the selected non-directory
-entries next to the selection count.
+directories that contain the selected entries.  An active region
+joins the selection first.  =N= again widens it.  The mode line shows
+the total size of the selected non-directory entries next to the
+selection count.
 
 * Mouse
 
@@ -239,8 +245,8 @@ target, =m= reads the destination as a new full path, so a rename
 works.  With several targets, =m= reads a destination directory.
 =R= renames the row at point.  The minibuffer starts with the
 current name, and an existing destination goes to the trash first.
-The command reads the row at point alone, so a selection stays
-untouched.
+The command reads the row at point alone, so a selection and a
+region stay untouched.
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
 empty file.  None of these commands asks for a confirmation.  None
 of them calls a shell.  =!= is the one command that runs a shell, and

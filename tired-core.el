@@ -1314,7 +1314,11 @@ an ordinary listing shows no bracket group at all."
                     (file-size-human-readable (tired--selection-size)))
             parts))
     (when (and (null tired--selection) (use-region-p))
-      (push (format "%d in region" (length (tired--region-entries))) parts))
+      (let ((entries (tired--region-entries)))
+        (push (format "%d in region, %s"
+                      (length entries)
+                      (file-size-human-readable (tired--entries-size entries)))
+              parts)))
     (when tired--narrowed
       (push "narrowed" parts))
     (when (and (hash-table-p tired--inserted)
@@ -1399,17 +1403,23 @@ The row is a `tired-entry' or a `tired-section'."
                     (and (tired--selected-p entry) entry)))
                 (tired--display-rows nil))))
 
-(defun tired--selection-size ()
-  "Return the total size of the selected non-directory entries in bytes."
+(defun tired--entries-size (entries)
+  "Return the total size of the non-directory ENTRIES in bytes."
   (let ((total 0))
-    (dolist (entry (tired--selected-entries) total)
+    (dolist (entry entries total)
       (unless (tired-entry-dirp entry)
         (setq total (+ total (or (tired-entry-size entry) 0)))))))
+
+(defun tired--selection-size ()
+  "Return the total size of the selected non-directory entries in bytes."
+  (tired--entries-size (tired--selected-entries)))
 
 (defun tired--selection-targets ()
   "Return the entries a command acts on.
 The transient selection comes first, then the active region, then
-the row at point.  A section row stands for the file that holds it."
+the row at point.  A section row stands for the file that holds it.
+This function changes nothing, so a menu `:active' form can call it.
+`tired--targets' reads the same rows for a command."
   (or (tired--selected-entries)
       (tired--region-entries)
       (let ((row (tired--row-at-point)))
@@ -1420,21 +1430,65 @@ the row at point.  A section row stands for the file that holds it."
                         (tired-section-path row))))
             (when entry (list entry))))))))
 
+(defun tired--targets ()
+  "Return the entries a command acts on, and commit an active region.
+The region joins the transient selection first, so every command
+reads one source and the region needs no branch of its own.  A
+non-empty selection wins over the region, and a region that holds
+no entry changes nothing."
+  (tired--commit-region)
+  (tired--selection-targets))
+
+(defun tired--commit-region ()
+  "Turn the active region into the transient selection.
+Keep a non-empty selection, because it wins over the region.  Change
+nothing when the region holds no entry."
+  (when (and (use-region-p) (null tired--selection))
+    (let ((entries (tired--region-entries)))
+      (when entries
+        (tired--set-selection (mapcar #'tired-entry-path entries))
+        (tired--apply-selection-overlays)
+        (tired--update-mode-line)))))
+
+(defun tired--display-entry-table ()
+  "Return a hash table that maps each listed entry path to its entry.
+A collapsed row shows the leaf of a chain, so the table of its
+parent directory holds no such name."
+  (let ((table (make-hash-table :test #'equal)))
+    (dolist (row (tired--display-rows t) table)
+      (let ((entry (car row)))
+        (when (tired-entry-p entry)
+          (puthash (tired-entry-path entry) entry table))))))
+
 (defun tired--region-entries ()
   "Return the entries inside the active region, or nil.
 The row on which the region ends does not join, because the region
-ends at the beginning of that line.  A section row does not join,
-because a region targets files."
+ends at the beginning of that line.  A section row stands for the
+file that holds it, and one file joins once, so a region over the
+headings of a file reaches that file alone."
   (when (use-region-p)
     (let ((end (region-end))
+          (table nil)
+          (seen (make-hash-table :test #'equal))
           entries)
       (save-excursion
         (goto-char (region-beginning))
         (beginning-of-line)
         (while (and (not (eobp))
                     (< (line-beginning-position) end))
-          (let ((row (tired--row-at-point)))
-            (when (tired-entry-p row) (push row entries)))
+          (let* ((row (tired--row-at-point))
+                 (entry
+                  (cond
+                   ((tired-entry-p row) row)
+                   ((tired-section-p row)
+                    (setq table (or table (tired--display-entry-table)))
+                    (let ((path (tired-section-path row)))
+                      (or (gethash path table)
+                          (tired--entry-for-path path)))))))
+            (when (and entry
+                       (not (gethash (tired-entry-path entry) seen)))
+              (puthash (tired-entry-path entry) t seen)
+              (push entry entries)))
           (forward-line 1)))
       (nreverse entries))))
 
@@ -1949,72 +2003,115 @@ which keeps the numeric prefix of `evil-goto-line'."
         (user-error "The listing holds no row"))
       (goto-char position))))
 
-(defun tired-insert-subdir (&optional directory)
-  "Insert the children of DIRECTORY into the listing.
-DIRECTORY defaults to the directory at point.  Inserted children
-follow their parent row and indent by one level.  Inserting an
-already inserted directory changes nothing."
-  (interactive)
-  (let* ((entry (tired--row-at-point))
-         (directory (or directory
-                        (and (tired-entry-p entry)
-                             (tired-entry-path entry))
-                        (user-error "No directory at point"))))
+(defun tired--apply-to-rows (function)
+  "Run FUNCTION on every target entry, then redraw once.
+FUNCTION receives one `tired-entry'.  A failure on one entry does
+not stop the rest.  When every entry fails, signal the first error,
+so a one-row command keeps its message.  An active region becomes
+the selection, so a view command acts on a run and keeps it for the
+next command."
+  (let ((entries (tired--targets)))
+    (unless entries
+      (user-error "No entry at point"))
+    (let ((done 0)
+          (failures 0)
+          (first-error nil))
+      (dolist (entry entries)
+        (condition-case err
+            (progn (funcall function entry) (setq done (1+ done)))
+          (error
+           (setq failures (1+ failures))
+           (unless first-error (setq first-error err)))))
+      (deactivate-mark)
+      (tired--redraw)
+      (cond
+       ((zerop done)
+        (signal (car first-error) (cdr first-error)))
+       ((> failures 0)
+        (message "%d of %d rows skipped" failures (+ done failures))))
+      done)))
+
+(defun tired--insert-directory (entry)
+  "Insert the children of the directory ENTRY into the listing.
+Read the children and leave the redraw to the caller."
+  (let ((directory (tired-entry-path entry)))
     (unless (file-directory-p directory)
       (user-error "Not a directory: %s" directory))
     (setq directory (directory-file-name (expand-file-name directory)))
     (puthash directory t tired--inserted)
-    (puthash directory (tired--read-entries directory) tired--tables)
-    (tired--redraw)))
+    (puthash directory (tired--read-entries directory) tired--tables)))
+
+(defun tired--expand-path (path)
+  "Record PATH as expanded, so its sections show.
+Signal a user error when no handler claims PATH, or when the handler
+found no section."
+  (unless (tired-file-handler path)
+    (user-error "No section handler for %s"
+                (file-name-nondirectory path)))
+  (unless (tired-file-sections path)
+    (user-error "No sections in %s" (file-name-nondirectory path)))
+  (tired--set-expanded path t))
+
+(defun tired--collapse-path (path)
+  "Record PATH as collapsed, so its sections hide.
+Signal a user error when PATH is not expanded."
+  (unless (tired--expanded-p path)
+    (user-error "%s is not expanded" (file-name-nondirectory path)))
+  (tired--set-expanded path nil))
+
+(defun tired-insert-subdir (&optional directory)
+  "Insert the children of every target directory into the listing.
+DIRECTORY names one directory and skips the target read.  Inserted
+children follow their parent row and indent by one level.  Inserting
+an already inserted directory changes nothing."
+  (interactive)
+  (if directory
+      (progn
+        (unless (file-directory-p directory)
+          (user-error "Not a directory: %s" directory))
+        (setq directory (directory-file-name (expand-file-name directory)))
+        (puthash directory t tired--inserted)
+        (puthash directory (tired--read-entries directory) tired--tables)
+        (tired--redraw))
+    (tired--apply-to-rows #'tired--insert-directory)))
 
 (defun tired-remove-subdir ()
-  "Remove the inserted children of the directory at point."
+  "Remove the inserted children of every target directory."
   (interactive)
-  (let ((entry (tired--row-at-point)))
-    (unless (and (tired-entry-p entry)
-                 (tired--inserted-p (tired-entry-path entry)))
-      (user-error "No inserted directory at point"))
-    (tired--forget-inserted (tired-entry-path entry))
-    (tired--redraw)))
+  (tired--apply-to-rows
+   (lambda (entry)
+     (unless (and (tired--directory-entry-p entry)
+                  (tired--inserted-p (tired-entry-path entry)))
+       (user-error "No inserted directory: %s" (tired-entry-path entry)))
+     (tired--forget-inserted (tired-entry-path entry)))))
 
 (defun tired-expand-file (&optional path)
-  "Show the sections of the file at point under its row.
-PATH defaults to the file at point.  Signal a user error when no
-handler claims the file, or when the handler found no section."
+  "Show the sections of every target file under its row.
+PATH names one file and skips the target read.  Signal a user error
+when no handler claims a file, or when the handler found no section."
   (interactive)
-  (let* ((row (tired--row-at-point))
-         (path (or path
-                   (and (tired-entry-p row) (tired-entry-path row))
-                   (user-error "No entry at point"))))
-    (unless (tired-file-handler path)
-      (user-error "No section handler for %s"
-                  (file-name-nondirectory path)))
-    (unless (tired-file-sections path)
-      (user-error "No sections in %s" (file-name-nondirectory path)))
-    (tired--set-expanded path t)
-    (tired--redraw)
-    (message "Expanded %s" (file-name-nondirectory path))))
+  (if path
+      (progn
+        (tired--expand-path path)
+        (tired--redraw)
+        (message "Expanded %s" (file-name-nondirectory path)))
+    (tired--apply-to-rows
+     (lambda (entry)
+       (let ((path (tired-entry-path entry)))
+         (tired--expand-path path)
+         (message "Expanded %s" (file-name-nondirectory path)))))))
 
 (defun tired-collapse-file (&optional path)
-  "Hide the sections of the file at point.
-PATH defaults to the file at point.  Signal a user error when the
-file is not expanded."
+  "Hide the sections of every target file.
+PATH names one file and skips the target read.  Signal a user error
+when a file is not expanded."
   (interactive)
-  (let* ((row (tired--row-at-point))
-         (path (or path
-                   (and (tired-entry-p row) (tired-entry-path row))
-                   (and (tired-section-p row) (tired-section-path row))
-                   (user-error "No entry at point"))))
-    (unless (tired--expanded-p path)
-      (user-error "%s is not expanded" (file-name-nondirectory path)))
-    (tired--set-expanded path nil)
-    (tired--redraw)))
-
-(defun tired--toggle-expand (path)
-  "Expand the file PATH, or collapse it when it is expanded."
-  (if (tired--expanded-p path)
-      (tired-collapse-file path)
-    (tired-expand-file path)))
+  (if path
+      (progn
+        (tired--collapse-path path)
+        (tired--redraw))
+    (tired--apply-to-rows
+     (lambda (entry) (tired--collapse-path (tired-entry-path entry))))))
 
 (defun tired--toggle-fold (section)
   "Fold SECTION, or unfold it when it is folded."
@@ -2023,23 +2120,37 @@ file is not expanded."
     (tired--set-folded section t))
   (tired--redraw))
 
-(defun tired-toggle-subdir ()
-  "Insert, expand or fold the subtree at point.
+(defun tired--toggle-tree (entry)
+  "Toggle the subtree of ENTRY, one row.
 A directory row inserts or removes its children.  A file row with a
-section handler expands or collapses its sections.  A section row
-folds or unfolds its own children."
+section handler expands or collapses its sections.  Leave the redraw
+to the caller."
+  (let ((path (tired-entry-path entry)))
+    (cond
+     ((tired--directory-entry-p entry)
+      (let ((directory (directory-file-name (expand-file-name path))))
+        (if (tired--inserted-p directory)
+            (tired--forget-inserted directory)
+          (tired--insert-directory entry))))
+     ((tired-file-handler path)
+      (if (tired--expanded-p path)
+          (tired--collapse-path path)
+        (tired--expand-path path)))
+     (t (user-error "No subtree at point")))))
+
+(defun tired-toggle-subdir ()
+  "Insert, expand or fold the target rows.
+A directory row inserts or removes its children.  A file row with a
+section handler expands or collapses its sections.  A section row at
+point folds or unfolds its own children, because a fold belongs to
+one section alone."
   (interactive)
   (let ((row (tired--row-at-point)))
-    (cond
-     ((tired-section-p row) (tired--toggle-fold row))
-     ((not (tired-entry-p row)) (user-error "No entry at point"))
-     ((file-directory-p (tired-entry-path row))
-      (if (tired--inserted-p (tired-entry-path row))
-          (tired-remove-subdir)
-        (tired-insert-subdir)))
-     ((tired-file-handler (tired-entry-path row))
-      (tired--toggle-expand (tired-entry-path row)))
-     (t (user-error "No subtree at point")))))
+    (if (and (tired-section-p row)
+             (null tired--selection)
+             (not (use-region-p)))
+        (tired--toggle-fold row)
+      (tired--apply-to-rows #'tired--toggle-tree))))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)
@@ -2124,10 +2235,12 @@ it.  A selected entry that the listing hides stays selected."
    (mapcar #'tired-entry-path (tired--visible-entries))))
 
 (defun tired-select-none ()
-  "Clear the transient selection."
+  "Clear the transient selection and the active region.
+Both sources feed one target list, so a clear drops both."
   (interactive)
   (tired--set-selection nil)
   (tired--apply-selection-overlays)
+  (deactivate-mark)
   (tired--update-mode-line))
 
 (defun tired-select-invert ()
@@ -2155,8 +2268,10 @@ Selected entries outside the visible listing drop out."
     (delete-dups result)))
 
 (defun tired-narrow-to-selection ()
-  "Show only the selected entries and the directories that contain them."
+  "Show only the selected entries and the directories that contain them.
+An active region joins the selection first."
   (interactive)
+  (tired--commit-region)
   (unless tired--selection
     (user-error "No selection"))
   (tired--set-narrowed (tired--narrow-ancestors tired--selection))
@@ -2296,7 +2411,7 @@ removes it."
 (defun tired-copy-name ()
   "Copy the names of the targets to the kill ring."
   (interactive)
-  (let ((targets (tired--selection-targets)))
+  (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
     (kill-new (mapconcat #'tired-entry-name targets "\n"))
@@ -2308,7 +2423,7 @@ removes it."
 (defun tired--copy-targets (function description)
   "Copy FUNCTION of each target path to the kill ring.
 DESCRIPTION names the copied form in the echo area."
-  (let ((targets (tired--selection-targets)))
+  (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
     (kill-new
@@ -2407,7 +2522,7 @@ selection is cleared afterwards."
          (section-p (and (tired-section-p row)
                          (null tired--selection)
                          (not (use-region-p))))
-         (targets (unless section-p (tired--selection-targets)))
+         (targets (unless section-p (tired--targets)))
          (origin (current-buffer)))
     (cond
      (section-p (tired--open-entry row other-window))
@@ -2486,7 +2601,7 @@ target reaches the browser as a file URL, the way
 leaves `browse-url-default-handlers' empty, so no Emacs handler
 takes the file back from the browser."
   (interactive "P")
-  (let ((targets (tired--selection-targets)))
+  (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
     (let ((browse-url-browser-function

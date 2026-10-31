@@ -186,7 +186,7 @@ children first.  A failure does not stop the remaining targets.
 A command that removed the row at point leaves point on the next
 row that survives, not on the first line.  Report the failures and
 refresh the listing."
-  (let ((targets (tired--selection-targets)))
+  (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
     (setq targets
@@ -311,7 +311,7 @@ move never calls a shell."
               (file-name-nondirectory
                (directory-file-name (tired-entry-path (car targets)))))))
       (t (list (read-directory-name "Move targets to: " tired--directory))))))
-  (let* ((targets (tired--selection-targets))
+  (let* ((targets (tired--targets))
          (single (null (cdr targets)))
          (destination (expand-file-name destination))
          (full-path (and single
@@ -667,7 +667,7 @@ every other command that acts on targets."
      (list (read-shell-command
             (format "! on %s: " (tired--shell-target-label targets))
             nil 'tired-shell-command-history))))
-  (let ((targets (tired--selection-targets)))
+  (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
     (cl-destructuring-bind (body background sequential)

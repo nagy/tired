@@ -34,9 +34,9 @@
 ;;   (require 'tired-evil)
 ;;   (tired-evil-mode 1)
 ;;
-;; A command acts on the transient selection first, then on the Emacs
-;; region, then on the row at point, so a visual range feeds delete,
-;; copy and move without an extra step.
+;; A command acts on the transient selection, and an active region
+;; joins it first, so a visual range feeds delete, copy, move and the
+;; view commands without an extra step.
 ;;
 ;; Evil keeps its state maps in `emulation-mode-map-alists', and Emacs
 ;; checks that list before the major mode map, so `evil-ret' on RET
@@ -113,8 +113,8 @@
     ("P" . tired-copy-project-path))
   "Keys that `tired-evil-mode' binds in normal state.
 Each entry is a key description and the command it runs.  The
-listing reads the selection, the region and then the row at point,
-so a visual range reaches every file command.")
+listing commits the region into the selection first, so a visual
+range reaches every file command and every view command.")
 
 (defvar tired-evil-visual-keys
   '(("D" . tired-delete)
