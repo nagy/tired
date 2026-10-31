@@ -28,10 +28,10 @@
       }-${builtins.substring 6 2 lastModifiedDate}";
       version = "0.1.0-unstable-${commitDate}";
 
-      # checkdoc and package-lint catch style and packaging problems that
-      # byte-compilation does not.  Keep this in `checks', not in the
-      # package: lint findings must not block an otherwise buildable
-      # package forever.
+      # checkdoc, package-lint and relint catch style, packaging and
+      # regexp problems that byte-compilation does not.  Keep this in
+      # `checks', not in the package: lint findings must not block an
+      # otherwise buildable package forever.
       mkLint =
         { pkgs, src }:
         pkgs.runCommand "tired-lint"
@@ -39,10 +39,11 @@
             nativeBuildInputs = [
               (pkgs.emacsPackages.emacsWithPackages (epkgs: [
                 epkgs.package-lint
+                epkgs.relint
               ]))
             ];
             inherit src;
-            meta.description = "tired checkdoc and package-lint checks";
+            meta.description = "tired checkdoc, package-lint and relint checks";
           }
           ''
             export HOME=$TMPDIR
@@ -57,15 +58,27 @@
             # goes through checkdoc alone.
             emacs --batch -l package-lint -f package-lint-batch-and-exit tired.el
 
-            # checkdoc exits 0 even when it reports problems; gate on
-            # output.  The ERT files stay out: a test docstring is a
-            # sentence, not a checkdoc argument list.
+            # checkdoc and relint exit 0 even when they report
+            # problems; gate on output.  The ERT files stay out: a test
+            # docstring is a sentence, not a checkdoc argument list.
             for file in tired.el tired-core.el tired-sections.el \
               tired-file-ops.el tired-evil.el; do
               doc=$(emacs --batch -l checkdoc \
                 --eval "(checkdoc-file \"$file\")" 2>&1)
               if [ -n "$doc" ]; then
                 printf '%s\n' "$doc"
+                exit 1
+              fi
+            done
+
+            # relint reads a Lisp form and a file, so give it one file
+            # per run.  A regexp finding prints a line for each problem.
+            for file in tired.el tired-core.el tired-sections.el \
+              tired-file-ops.el tired-evil.el; do
+              report=$(emacs --batch -l relint \
+                --eval "(relint-file \"$file\")" 2>&1)
+              if [ -n "$report" ]; then
+                printf '%s\n' "$report"
                 exit 1
               fi
             done
