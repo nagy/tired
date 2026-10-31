@@ -194,6 +194,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired-evil-visual-keys` when it reads the region.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
   shadows it.
+- The mode map remaps `csv-mode`, `text-mode` and `js-json-mode` to the
+  three export commands.  The JSON mode reads `js-json-mode`; no
+  `json-js-mode` exists.  A remap reaches a key that runs the major
+  mode command, not `M-x`.
 - `tired` goes through `tired--show-buffer`: it hands
   `tired-display-buffer-action` to `display-buffer` and then selects
   the returned window, because `tired-jump` moves point in the listing

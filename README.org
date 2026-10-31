@@ -647,7 +647,10 @@ tired-export-json=.  The commands read the transient selection first,
 then the active region, then the whole visible view, so a filter, a
 collapse or an inserted directory shows in the result.  Section rows
 stay out of every format, because a section is not a file.  The =Export=
-submenu on the menu bar runs the same three commands.
+submenu on the menu bar runs the same three commands.  The mode map
+remaps =csv-mode=, =text-mode= and =js-json-mode= to the export
+commands, so a key that a user assigns to a major mode reaches the
+export buffer.
 
 The buffer takes the directory of the listing as =default-directory=
 and stays unmodified, so =C-x C-w= picks the file name.  A whole-view

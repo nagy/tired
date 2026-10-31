@@ -190,6 +190,14 @@
       (should-not (eq whole partial))
       (should (string-match-p "(1 selected)" (buffer-name partial))))))
 
+(ert-deftest tired-export-commands-remap-their-major-modes ()
+  "A key that runs a major mode reaches the matching export."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq (command-remapping 'csv-mode) #'tired-export-csv))
+    (should (eq (command-remapping 'text-mode) #'tired-export-text))
+    (should (eq (command-remapping 'js-json-mode) #'tired-export-json))))
+
 (ert-deftest tired-export-relative-path-reaches-an-inserted-entry ()
   "The CSV path of an inserted entry keeps its subdirectory."
   (tired-tests--with-fixture

@@ -2708,7 +2708,10 @@ into `context-menu-functions' locally."
   "M-t" #'tired-touch
   "q" #'quit-window
   "<remap> <dired-jump>" #'tired-jump
-  "<remap> <end-of-buffer>" #'tired-goto-last-entry)
+  "<remap> <end-of-buffer>" #'tired-goto-last-entry
+  "<remap> <csv-mode>" #'tired-export-csv
+  "<remap> <text-mode>" #'tired-export-text
+  "<remap> <js-json-mode>" #'tired-export-json)
 
 (easy-menu-define tired-mode-menu tired-mode-map
   "Menu for `tired-mode'.
