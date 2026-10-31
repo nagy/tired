@@ -309,6 +309,20 @@ The redraw counts them, so the mode line reads one number.")
 (defvar-local tired--header-base nil
   "Header line string built by `tabulated-list-init-header'.")
 
+(defvar-local tired--mode-line-base nil
+  "Mode line format without the Tired part.
+`tired--update-mode-line' appends the Tired string to this list.")
+
+(defvar-local tired--mode-line-cache ""
+  "Tired part of the mode line, as `tired--update-mode-line' left it.
+Redisplay reads this string, so it costs no tree walk.  Do not
+compute it from a `:eval' element.")
+
+(defvar-local tired--mode-line-region nil
+  "Region state that `tired--mode-line-cache' was built from.
+`tired--mode-line-maybe-update' compares it against the current
+region and rebuilds the cache when the two differ.")
+
 (defvar-local tired--rows nil
   "Visible rows of the current redraw, as (ROW . DEPTH) conses.
 `tired--redraw' walks the tree once and leaves the result here, so
@@ -1159,6 +1173,38 @@ an ordinary listing shows no bracket group at all."
         (concat " [" (string-join (nreverse parts) ", ") "]")
       "")))
 
+(defun tired--update-mode-line ()
+  "Rebuild the Tired part of the mode line and install it.
+The redraw calls this, so redisplay reads one string instead of
+calling `tired--mode-line' for every visible frame.  That function
+walks the tree to sum the selection size, and a redisplay must not
+pay for it.  A region change runs the function too, because the
+region count changes with no redraw."
+  (setq tired--mode-line-region (tired--region-signature))
+  (let ((text (tired--mode-line)))
+    (unless (equal text tired--mode-line-cache)
+      (setq tired--mode-line-cache text)
+      (setq mode-line-format
+            (if (string-empty-p text)
+                tired--mode-line-base
+              (append tired--mode-line-base (list text))))))
+  (force-mode-line-update))
+
+(defun tired--region-signature ()
+  "Return a value that changes when the active region changes.
+The mode line reports the number of rows in the region, and point
+motion inside an active region changes that number with no redraw
+and no mark hook, so the cache keys on this signature."
+  (when (region-active-p)
+    (list (region-beginning) (region-end))))
+
+(defun tired--mode-line-maybe-update ()
+  "Rebuild the mode line when the active region changed.
+`tired-mode' runs this from `post-command-hook', so a moved point
+inside an active region reaches the mode line without a redraw."
+  (unless (equal (tired--region-signature) tired--mode-line-region)
+    (tired--update-mode-line)))
+
 (defun tired--row-at-point ()
   "Return the row at point, or nil when there is none.
 The row is a `tired-entry' or a `tired-section'."
@@ -1394,7 +1440,7 @@ listing refreshes once."
   (interactive)
   (setq-local tired-auto-revert (not tired-auto-revert))
   (tired--sync-watches)
-  (force-mode-line-update)
+  (tired--update-mode-line)
   (message "Auto-revert %s" (if tired-auto-revert "on" "off")))
 
 (defun tired--point-row (window)
@@ -1475,7 +1521,7 @@ point and the scroll position of every window that shows the listing."
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--sync-watches)
-    (force-mode-line-update)))
+    (tired--update-mode-line)))
 
 (defun tired--width-changed-p (window)
   "Return non-nil when WINDOW needs a different name column width.
@@ -1794,7 +1840,7 @@ it.  Update the overlays and the mode line afterwards."
              toggled)
     (tired--set-selection selection))
   (tired--apply-selection-overlays)
-  (force-mode-line-update))
+  (tired--update-mode-line))
 
 (defun tired-select-toggle ()
   "Toggle the entry at point in the selection.
@@ -1828,7 +1874,7 @@ it.  A selected entry that the listing hides stays selected."
   (interactive)
   (tired--set-selection nil)
   (tired--apply-selection-overlays)
-  (force-mode-line-update))
+  (tired--update-mode-line))
 
 (defun tired-select-invert ()
   "Invert the selection over the visible entries.
@@ -1838,7 +1884,7 @@ Selected entries outside the visible listing drop out."
    (mapcar #'tired-entry-path
            (seq-remove #'tired--selected-p (tired--visible-entries))))
   (tired--apply-selection-overlays)
-  (force-mode-line-update))
+  (tired--update-mode-line))
 
 (defun tired--narrow-ancestors (paths)
   "Return PATHS plus the directories needed to reach them."
@@ -2188,9 +2234,10 @@ The directory contents come from `directory-files' and
   (setq-local tabulated-list-sort-key nil)
   (setq-local revert-buffer-function #'tired--revert)
   (setq-local bookmark-make-record-function #'tired-bookmark-make-record)
-  (setq-local mode-line-format
-              (append (default-value 'mode-line-format)
-                      '((:eval (tired--mode-line))))))
+  (setq-local tired--mode-line-base (default-value 'mode-line-format))
+  (setq-local tired--mode-line-cache "")
+  (setq-local mode-line-format tired--mode-line-base)
+  (add-hook 'post-command-hook #'tired--mode-line-maybe-update nil t))
 
 (provide 'tired-core)
 

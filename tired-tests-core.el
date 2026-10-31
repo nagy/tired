@@ -1160,6 +1160,32 @@ printer walked it again, so a redraw cost two walks."
     (tired-select-toggle)
     (should-not (string-match-p "in region" (tired--mode-line)))))
 
+(ert-deftest tired-mode-line-is-a-plain-string ()
+  "The mode line data holds a string, not a `:eval' form.
+Redisplay therefore formats no string and walks no tree, which the
+old `:eval' element did on every frame refresh."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-select-all)
+    (should (stringp (car (last mode-line-format))))
+    (should (equal (car (last mode-line-format)) (tired--mode-line)))
+    (should-not (seq-some (lambda (element)
+                            (and (consp element) (eq (car element) :eval)))
+                          mode-line-format))))
+
+(ert-deftest tired-mode-line-follows-a-region-change ()
+  "A new region updates the cached mode line at once.
+A redraw does not run for a region change, so the buffer-local
+`post-command-hook' must refresh the string."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (should-not (string-match-p "in region" (car (last mode-line-format))))
+    ;; Batch Emacs runs no command loop, so the test runs the hook that
+    ;; the loop would run.
+    (run-hooks 'post-command-hook)
+    (should (string-match-p "2 in region" (car (last mode-line-format))))))
+
 (ert-deftest tired-select-invert-flips-visible-entries ()
   "Inverting selects every visible entry that was not selected."
   (tired-tests--with-fixture

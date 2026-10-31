@@ -172,7 +172,15 @@ Data flow:
    `tired--selection-size` sums the sizes of selected non-directory
    entries for the mode line.  `tired--mode-line` collects one part
    per piece of optional state and wraps them in one bracket group,
-   so a plain listing shows no group at all.
+   so a plain listing shows no group at all.  `tired--redraw` stores
+   that string in `tired--mode-line-cache` and appends it to
+   `tired--mode-line-base`, so redisplay reads one string and runs no
+   code.  A `:eval` element would walk the tree for the selection
+   size on every redisplay.  The region count changes with no redraw,
+   so a buffer-local `post-command-hook' calls
+   `tired--mode-line-maybe-update', which compares
+   `tired--region-signature' against the signature behind the
+   cache.
    `tired--selection-targets` reads the
    selection first, then `tired--region-entries`, then the row at point;
    a command that acts on the region deactivates it.  A section row
