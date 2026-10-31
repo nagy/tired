@@ -240,16 +240,18 @@ question.
 Every command reports the paths that failed and continues with the
 rest of the targets.  The *Warnings* buffer holds the full list.
 
-The commands move a removed path into =tired-trash-directory=, a
-directory under =temporary-file-directory= that the current Emacs
-session owns.  The system removes it on reboot.  A copy or a move
-that replaces a path moves the old path there first, so no bytes get
-lost.  =U= undoes the last operation.  A reversed delete, copy, move,
-mkdir or touch puts the paths back where they were:
+The commands move a removed path into =tired-trash-directory=.  The
+default value is nil, and nil means a directory under
+=temporary-file-directory= whose name carries the user id and the
+Emacs process id, so two Emacs sessions never share one trash.  The
+system removes it on reboot.  A copy or a move that replaces a path
+moves the old path there first, so no bytes get lost.  =U= undoes the
+last operation.  A reversed delete, copy, move, mkdir or touch puts
+the paths back where they were.  Set the option to keep the removed
+paths elsewhere:
 
 #+begin_src elisp
-  (setq tired-trash-directory
-        (expand-file-name "my-trash/" temporary-file-directory))
+  (setq tired-trash-directory "~/.local/state/tired/trash/")
 #+end_src
 
 A global undo system can take these actions.  Add a function to

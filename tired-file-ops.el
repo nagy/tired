@@ -35,16 +35,23 @@
 (defvar tired--trash-counter 0
   "Counter that makes names inside the session trash unique.")
 
-(defvar tired-trash-directory
-  (expand-file-name (format "tired-trash-%d-%d/" (user-uid) (emacs-pid))
-                    temporary-file-directory)
+(defcustom tired-trash-directory nil
   "Directory that holds paths removed during this session.
+A nil value means the session default: a directory under the
+variable `temporary-file-directory' whose name holds the user id and
+the Emacs process id, so two Emacs sessions never share one trash.  Set
+the value to keep the removed paths elsewhere, for example under
+`~/.local/state/tired/trash/'.
+
 `tired-delete' moves its targets here.  A copy or a move that
 replaces a path puts the old path here first.  `tired-undo' moves
-the path back.  The directory lives under the variable
-`temporary-file-directory', so the system clears it when the
-machine reboots.  Emacs copies the path and then deletes it when
-the trash sits on another file system.")
+the path back.  The system clears a temporary directory when the
+machine reboots, so a path removed before a reboot does not come
+back.  Emacs copies the path and then deletes it when the trash sits
+on another file system."
+  :type '(choice (const :tag "Per-session temporary directory" nil)
+                 directory)
+  :group 'tired)
 
 (defcustom tired-undo-push-functions nil
   "Abnormal hook that takes every undoable Tired action.
@@ -59,14 +66,22 @@ action on `tired--undo-actions' for `tired-undo'."
   "Stack of undo actions as (DESCRIPTION . FUNCTION) conses.
 The most recent action comes first.")
 
+(defun tired--trash-root ()
+  "Return the directory that holds this session's removed paths.
+Serve `tired-trash-directory' when the user set it, and the
+per-process temporary directory otherwise."
+  (or tired-trash-directory
+      (expand-file-name (format "tired-trash-%d-%d/" (user-uid) (emacs-pid))
+                        temporary-file-directory)))
+
 (defun tired--path-exists-p (path)
   "Return non-nil when PATH exists, including a dangling symbolic link."
   (or (file-exists-p path) (file-symlink-p path)))
 
 (defun tired--trash-name (path)
-  "Return an unused name for PATH inside `tired-trash-directory'."
+  "Return an unused name for PATH inside the trash directory."
   (let* ((name (file-name-nondirectory (directory-file-name path)))
-         (base (expand-file-name name tired-trash-directory))
+         (base (expand-file-name name (tired--trash-root)))
          (stamp (format-time-string "%Y%m%dT%H%M%S"))
          candidate)
     (while (progn
@@ -76,8 +91,8 @@ The most recent action comes first.")
     candidate))
 
 (defun tired--trash-move (path)
-  "Move PATH into `tired-trash-directory' and return the new path."
-  (make-directory tired-trash-directory t)
+  "Move PATH into the trash directory and return the new path."
+  (make-directory (tired--trash-root) t)
   (let ((target (tired--trash-name path)))
     (rename-file path target)
     target))

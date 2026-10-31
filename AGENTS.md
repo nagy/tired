@@ -697,8 +697,13 @@ Evil integration:
   precedence in `tired--selection-targets`; do not merge the region
   into `tired--selection`, because `tired--redraw` and
   `tired--prune-selection` would then prune rows the region covers.
-- `tired-trash-directory` lives on `temporary-file-directory`, which is
-  usually another file system than the listed directory.  `rename-file`
+- A nil `tired-trash-directory` makes `tired--trash-root` name a
+  per-process directory under `temporary-file-directory`, so the default
+  stays a plain `defcustom` value and two Emacs sessions never share one
+  trash.  Do not compute the default in the `defcustom` form: a user who
+  sets nil must get the session directory and not a captured path.  The
+  trash directory usually sits on another file system than the listed
+  directory.  `rename-file`
   then copies the bytes and deletes the source, so a delete of a large
   tree costs a copy.  A path deleted before a reboot does not come back.
 - Undo of an overwriting copy leaves the replaced copy in the trash.

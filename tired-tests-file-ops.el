@@ -249,6 +249,23 @@
                                (expand-file-name "alpha.txt" other))))))
           (delete-directory other t))))))
 
+(ert-deftest tired-trash-directory-defaults-to-a-session-directory ()
+  "A nil option names a per-process directory under the temp dir.
+Two Emacs sessions must not share one trash, so the default name
+carries the process id.  A set option wins."
+  (let ((tired-trash-directory nil))
+    (should (equal (tired--trash-root)
+                   (expand-file-name
+                    (format "tired-trash-%d-%d/" (user-uid) (emacs-pid))
+                    temporary-file-directory))))
+  (let ((tired-trash-directory "/tmp/my-trash/"))
+    (should (equal (tired--trash-root) "/tmp/my-trash/"))))
+
+(ert-deftest tired-trash-directory-is-a-user-option ()
+  "A user can set the trash location through Custom."
+  (should (custom-variable-p 'tired-trash-directory))
+  (should (eq (car (get 'tired-trash-directory 'custom-type)) 'choice)))
+
 (ert-deftest tired-delete-moves-target-to-trash ()
   "Delete removes the target from the listing and keeps it in the trash."
   (tired-tests--with-fixture
