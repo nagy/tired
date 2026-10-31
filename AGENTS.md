@@ -55,7 +55,8 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
   `TREESIT_EXTRA_LOAD_PATH`; a missing grammar skips its test instead of
   failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el`, `checkdoc` on
-  the five libraries.
+  the five libraries, and `relint` on the same five.  `checkdoc` and
+  `relint` exit 0 while they report, so the check gates on output.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix`.
 - `nix fmt` formats the repo through `treefmt-nix` (nixfmt only).
