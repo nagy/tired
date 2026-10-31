@@ -143,9 +143,10 @@ Data flow:
    `tabulated-list-print` draws the buffer.  `tired--size-cell` fills
    the size column.  With `tired-directory-size' on, it calls
    `tired--directory-total', which walks the subtree through
-   `tired--subtree-size' and leaves the result in `tired--size-cache'.
-   That table is buffer-local and `tired--reload-tables' refills it,
-   so a nested directory costs one read per refresh.  A redraw reuses
+   `tired--subtree-size' and leaves `(TOTAL . STAMP)' in `tired--size-cache'.
+   That table is global, so every Tired buffer shares one total, and
+   `tired--reload-tables' prunes the expired totals.
+   A nested directory costs one read per cache window.  A redraw reuses
    every total the previous redraw computed.
 6. `tired--apply-selection-overlays` highlights paths listed in
    `tired--selection`.  The selection is buffer-local and transient.
@@ -615,16 +616,28 @@ Evil integration:
   no span, for the same reason it takes no whole-name rule, and a
   collapsed row takes a span on the base name only, never on the
   directory chain.
-- Recursive directory sizes stay off by default, because the option
-  makes every refresh read every directory below the shown one.
+- Recursive directory sizes stay off by default, because the first
+  walk reads every directory below the shown one.
   `tired--subtree-size` never follows a symbolic link, so a link cycle
   cannot loop.  `tired--size-cell` keeps the column empty for a remote
   directory, because the walk would cost one network round trip per
-  file.  `tired--size-cache` lives one refresh, not one redraw:
-  `tired--reload-tables` refills it, so filter, sort, insert, fold and
-  resize redraws cost nothing, and a watcher event or `g` rewalks the
-  tree.  A size therefore stays stale until the next refresh when an
-  edit lands in a directory that carries no watch.
+  file.  `tired--size-cache` is a global `equal` table of
+  `(TOTAL . STAMP)` pairs, so filter, sort, insert, fold and resize
+  redraws reuse a total, and so does a refresh inside the window.
+  `tired--size-cache-valid-p` reads `tired-size-cache-ttl`, which makes
+  an edit deep in the tree show up at most one window late.
+  `tired--reload-tables` calls `tired--size-cache-prune`, so the table
+  never holds more than one window of totals.
+- Do not put `tired--size-cache` on `post-gc-hook`, and do not give it
+  weak keys.  One walk of a large tree triggers several garbage
+  collections itself: measured 5 collections in a 0.3s walk over 35k
+  files.  A `post-gc-hook` clear therefore empties the table inside
+  the very walk that fills it, and the next refresh walks again.  Weak
+  keys fail the same way, because `tired--size-key` conses a fresh
+  string for every walk, so the table drops to zero entries at the
+  first collection.  Key the table by a string that a buffer keeps
+  instead, and an entry never expires.  The countdown in
+  `tired--size-cache-valid-p` stays the one freshness rule.
 - Key the size memo with `tired--size-key`, never with
   `file-truename`.  The walk starts on one directory and skips every
   link, so the absolute name stays unique, and `file-truename` would

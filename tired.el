@@ -164,10 +164,22 @@ one network round trip per link."
   "When non-nil, show the recursive size of each directory.
 The size column then sums the bytes of every regular file under the
 directory.  Symbolic links stay unfollowed.  A deep tree costs one
-directory read per directory on every refresh, so the option stays
-nil by default.  A remote directory never shows a total, because the
-walk would cost one network round trip per file."
+directory read per directory on the first walk, so the option stays
+nil by default.  `tired-size-cache-ttl' then serves every later
+refresh from a global memo table.  A remote directory never shows a
+total, because the walk would cost one network round trip per file."
   :type 'boolean)
+
+(defcustom tired-size-cache-ttl 60
+  "Seconds a computed directory size stays valid.
+A total sums a whole subtree, so an edit deep in the tree can change
+a size that a listing already shows.  A cached total serves every
+refresh inside this window, and a stale total stays on screen until
+the window ends.  Set the value to 0 to sum the subtree on every
+refresh.  A garbage collection hook cannot replace this window:
+Emacs collects garbage several times during one walk of a large
+tree, so such a hook would empty the table faster than it fills."
+  :type 'natnum)
 
 (defcustom tired-name-faces nil
   "Alist of rules that colorize entry names.
@@ -915,12 +927,19 @@ its target arrow."
                    (tired--symlink-suffix entry)))
           (_ (tired--propertize-name name face spans)))))))
 
-(defvar-local tired--size-cache nil
-  "Memo table for `tired--subtree-size' in the current buffer.
-Each key holds the absolute name of a directory, so the walk needs
-no `file-truename' call to build one.  `tired--reload-tables'
-refills the table, so a redraw reuses every total that the previous
-redraw already computed.")
+(defvar tired--size-cache (make-hash-table :test #'equal)
+  "Global memo table for `tired--subtree-size'.
+Every Tired buffer shares the table.  A key holds the absolute name
+of a directory, so a walk needs no `file-truename' call to build
+one.  A value holds `(TOTAL . STAMP)', where STAMP is the
+`float-time' at which the walk that produced TOTAL started.
+`tired-size-cache-ttl' bounds the age of a total and
+`tired--size-cache-prune' drops the totals that expire.")
+
+(defvar tired--size-stamp nil
+  "Stamp that the running size walk stores in `tired--size-cache'.
+A walk binds one timestamp, so every directory that the walk
+reaches carries the same age.")
 
 (defun tired--size-key (directory)
   "Return the `tired--size-cache' key for DIRECTORY.
@@ -930,15 +949,37 @@ absolute name stays unique.  `file-truename' would cost one file
 round trip per path component."
   (directory-file-name (expand-file-name directory)))
 
+(defun tired--size-cache-valid-p (value)
+  "Return non-nil when VALUE holds a total young enough to reuse."
+  (and (consp value)
+       (<= (- (float-time) (cdr value)) tired-size-cache-ttl)))
+
+(defun tired--size-cache-clear ()
+  "Drop every cached directory size."
+  (clrhash tired--size-cache))
+
+(defun tired--size-cache-prune ()
+  "Drop every cached total that `tired-size-cache-ttl' expired.
+Call it on refresh, so the table holds no more than the directories
+that one cache window can reach."
+  (let (stale)
+    (maphash (lambda (key value)
+               (unless (tired--size-cache-valid-p value)
+                 (push key stale)))
+             tired--size-cache)
+    (dolist (key stale)
+      (remhash key tired--size-cache))))
+
 (defun tired--subtree-size (directory)
   "Return the number of bytes in every regular file under DIRECTORY.
 Skip symbolic links, so a link cycle cannot loop.  Store each
 visited directory in `tired--size-cache', so one calculation reads a
-nested directory once.  An unreadable directory counts as zero."
+nested directory once and a later walk inside the cache window
+reads nothing.  An unreadable directory counts as zero."
   (let* ((key (tired--size-key directory))
-         (hit (gethash key tired--size-cache 'tired--miss)))
-    (if (not (eq hit 'tired--miss))
-        hit
+         (hit (gethash key tired--size-cache)))
+    (if (tired--size-cache-valid-p hit)
+        (car hit)
       (let ((total 0))
         (dolist (pair (ignore-errors
                        (directory-files-and-attributes directory nil nil t)))
@@ -953,16 +994,16 @@ nested directory once.  An unreadable directory counts as zero."
                ((stringp type) nil)
                (t (setq total (+ total
                                  (or (file-attribute-size attributes) 0))))))))
-        (puthash key total tired--size-cache)
+        (puthash key (cons total (or tired--size-stamp (float-time)))
+                 tired--size-cache)
         total))))
 
 (defun tired--directory-total (directory)
   "Return the number of bytes in every regular file under DIRECTORY.
-Reuse `tired--size-cache', or make a temporary table when the
-buffer has none.  `tired--reload-tables' clears the table, so the
-value stays until the next refresh."
-  (let ((tired--size-cache (or tired--size-cache
-                               (make-hash-table :test #'equal))))
+Serve the value from `tired--size-cache' when it stays young enough
+and sum the subtree otherwise.  One walk stamps every directory it
+reaches with the same start time."
+  (let ((tired--size-stamp (float-time)))
     (tired--subtree-size directory)))
 
 (defun tired--size-cell (entry)
@@ -1011,9 +1052,9 @@ Emacs 31 requires a vector of column descriptors here; a list makes
 
 (defun tired--tabulated-entries ()
   "Return `tabulated-list-entries' for the current listing.
-When `tired-directory-size' is non-nil, the memo table of the
-buffer serves every row of every redraw, so a nested directory costs
-one read per refresh, not one read per redraw."
+When `tired-directory-size' is non-nil, the global memo table
+serves every row of every redraw, so a nested directory costs one
+read per `tired-size-cache-ttl' window, not one read per redraw."
   (mapcar (lambda (row)
             (list (car row) (tired--row (car row) (cdr row))))
           (tired--display-rows t)))
@@ -1386,10 +1427,11 @@ A resize changes the space available to the name column."
 (defun tired--reload-tables ()
   "Read the root directory and every inserted directory.
 Drop inserted directories that no longer exist.  Drop expanded
-files that vanished."
+files that vanished.  Keep `tired--size-cache', so a refresh inside
+one `tired-size-cache-ttl' window reads no directory twice."
   (setq tired--tables (make-hash-table :test #'equal))
   (setq tired--collapse-cache (make-hash-table :test #'equal))
-  (setq tired--size-cache (make-hash-table :test #'equal))
+  (tired--size-cache-prune)
   (puthash (directory-file-name tired--directory)
            (tired--read-entries tired--directory)
            tired--tables)
@@ -2376,7 +2418,6 @@ The directory contents come from `directory-files' and
   (setq-local tired--watches nil)
   (setq-local tired--revert-timer nil)
   (setq-local tired--collapse-cache (make-hash-table :test #'equal))
-  (setq-local tired--size-cache (make-hash-table :test #'equal))
   (setq-local tired--expanded (make-hash-table :test #'equal))
   (setq-local tired--sections (make-hash-table :test #'equal))
   (setq-local tired--folded (make-hash-table :test #'equal))

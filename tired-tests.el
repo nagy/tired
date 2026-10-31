@@ -55,7 +55,10 @@ fixture contains a subdirectory, regular files, a hidden file and
 a symlink, and removes every Tired buffer it opened."
   (declare (indent 0) (debug t))
   `(let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
-          (default-directory root))
+          (default-directory root)
+          ;; The size table is global.  Bind a private one, so a test
+          ;; never sees a total that another test computed.
+          (tired--size-cache (make-hash-table :test #'equal)))
      (unwind-protect
          (progn
            (with-temp-file (expand-file-name "alpha.txt") (insert "abc"))
@@ -899,8 +902,7 @@ a symlink, and removes every Tired buffer it opened."
 (ert-deftest tired--subtree-size-memoizes-each-directory ()
   "One calculation reads each nested directory once, and links stay unfollowed."
   (tired-tests--with-fixture
-    (let ((tired--size-cache (make-hash-table :test #'equal))
-          (calls 0)
+    (let ((calls 0)
           (original (symbol-function 'directory-files-and-attributes)))
       (cl-letf (((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
@@ -921,8 +923,7 @@ a symlink, and removes every Tired buffer it opened."
     (let ((resolved 0))
       (cl-letf (((symbol-function 'file-truename)
                  (lambda (&rest _) (setq resolved (1+ resolved)) 'never)))
-        (let ((tired--size-cache (make-hash-table :test #'equal)))
-          (should (equal 53 (tired--subtree-size root)))))
+        (should (equal 53 (tired--subtree-size root))))
       (should (= 0 resolved)))))
 
 (ert-deftest tired-redraw-reuses-the-size-memo ()
@@ -942,8 +943,8 @@ a symlink, and removes every Tired buffer it opened."
           (tired--redraw)
           (should (= first calls)))))))
 
-(ert-deftest tired-refresh-rebuilds-the-size-memo ()
-  "A refresh sees a changed file, and the redraw after it reuses it."
+(ert-deftest tired-refresh-keeps-a-young-size-total ()
+  "A refresh inside `tired-size-cache-ttl' reuses the cached total."
   (tired-tests--with-fixture
     (let ((tired-directory-size t))
       (tired root)
@@ -951,11 +952,60 @@ a symlink, and removes every Tired buffer it opened."
                      (tired--size-cell (tired-tests--entry "sub"))))
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
+      (tired-refresh)
       (should (equal (file-size-human-readable 9)
                      (tired--size-cell (tired-tests--entry "sub"))))
+      (tired--size-cache-clear)
       (tired-refresh)
       (should (equal (file-size-human-readable 104)
                      (tired--size-cell (tired-tests--entry "sub")))))))
+
+(ert-deftest tired-size-cache-ttl-zero-sums-every-refresh ()
+  "A zero `tired-size-cache-ttl' makes each refresh read the subtree."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (tired-size-cache-ttl 0))
+      (tired root)
+      (with-temp-file (expand-file-name "sub/inner.txt")
+        (insert (make-string 100 ?y)))
+      (tired-refresh)
+      (should (equal (file-size-human-readable 104)
+                     (tired--size-cell (tired-tests--entry "sub")))))))
+
+(ert-deftest tired--size-cache-valid-p-follows-the-ttl ()
+  "A total expires when its stamp falls outside the window."
+  (let ((tired-size-cache-ttl 60))
+    (should (tired--size-cache-valid-p (cons 1 (float-time))))
+    (should-not (tired--size-cache-valid-p (cons 1 (- (float-time) 61))))
+    (should-not (tired--size-cache-valid-p nil))
+    (should-not (tired--size-cache-valid-p 7))))
+
+(ert-deftest tired--size-cache-prune-drops-expired-totals ()
+  "Pruning keeps the young totals and drops the expired ones."
+  (let ((tired-size-cache-ttl 60))
+    (puthash "/expired" (cons 5 (- (float-time) 61)) tired--size-cache)
+    (puthash "/young" (cons 5 (float-time)) tired--size-cache)
+    (tired--size-cache-prune)
+    (should-not (gethash "/expired" tired--size-cache))
+    (should (gethash "/young" tired--size-cache))))
+
+(ert-deftest tired--size-cache-clear-drops-every-total ()
+  "Clearing the table makes the next row read the subtree again."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (sub-reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (directory &rest args)
+                   (when (equal (directory-file-name directory)
+                                (expand-file-name "sub" root))
+                     (setq sub-reads (1+ sub-reads)))
+                   (apply original directory args))))
+        (tired root)
+        (should (= 1 sub-reads))
+        (tired--size-cache-clear)
+        (tired--redraw)
+        (should (= 2 sub-reads))))))
 
 (ert-deftest tired-name-cell-fontifies-broken-symlink ()
   "A link that does not resolve gets the broken symlink face."

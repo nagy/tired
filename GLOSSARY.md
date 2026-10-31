@@ -53,6 +53,13 @@ A file notification registration for one shown directory, used by
 automatic refresh.
 _Avoid_: Monitor, poll
 
+**Size cache**:
+The global table `tired--size-cache` that holds one recursive directory
+total with the stamp of the walk that computed it.  All Tired buffers
+share it.  `tired-size-cache-ttl` bounds the age of a total, and a
+refresh drops the expired ones.
+_Avoid_: Du cache, memo, total table
+
 **Collapse**:
 One row that represents a directory chain whose subtree holds exactly
 one file.

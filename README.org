@@ -247,13 +247,23 @@ of every regular file under the directory, computed recursively:
 Symbolic links stay unfollowed, so a link cycle cannot loop and a
 large tree outside the listing does not inflate a size.  A remote
 directory keeps the column empty, because the walk would cost one
-network round trip per file.  Hidden files count.  One memo table holds every directory the walk visits, so a
-directory shown as a parent and as an inserted section costs one read.
-The table lives one refresh: =g=, automatic refresh and the file
-watches rebuild it, while sort, filter, insert, fold and resize reuse
-it.  A deep tree makes =g= read every directory below it, so that
-refresh slows down with tree depth.  An edit inside a directory that
-carries no watch leaves the size column stale until the next =g=.
+network round trip per file.  Hidden files count.
+
+One global memo table holds every directory the walk visits, so all
+Tired buffers share a total, and a directory that shows as a parent
+and as an inserted section costs one read.  A total stays valid for
+=tired-size-cache-ttl= seconds:
+
+#+begin_src elisp
+  (setq tired-size-cache-ttl 60)
+#+end_src
+
+Sort, filter, insert, fold, resize and =g= reuse a total inside that
+window, so a refresh after the first read costs nothing.  A refresh
+drops the expired totals, so the table holds no more than one window
+can reach.  An edit deep in the tree reaches the column at most one
+window later, and so does an edit in a directory that carries no
+watch.  Set the value to 0 to sum the subtree on every refresh.
 
 * Name colors
 
