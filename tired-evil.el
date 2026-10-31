@@ -69,6 +69,7 @@
     ("s" . tired-sort)
     ("F" . tired-clear-filter)
     ("." . tired-toggle-dotfiles)
+    ("~" . tired-toggle-hidden)
     ("N" . tired-toggle-narrow)
     ("A" . tired-toggle-auto-revert)
     ;; Selection.
@@ -76,7 +77,6 @@
     ("M-SPC" . tired-select-toggle)
     ("t" . tired-select-all)
     ("u" . tired-select-none)
-    ("~" . tired-select-invert)
     ;; Files.
     ("D" . tired-delete)
     ("!" . tired-do-shell-command)

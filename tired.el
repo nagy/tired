@@ -55,7 +55,7 @@
 ;;   M-SPC   toggle selection of the entry at point
 ;;   t       select every visible entry
 ;;   u       clear the selection
-;;   ~       invert the selection over the visible entries
+;;   ~       show or hide the entries that a regexp hides
 ;;   N       narrow to the selection, or widen again
 ;;   A       toggle automatic refresh on directory changes
 ;;   C       toggle single-child directory collapse
@@ -132,7 +132,8 @@
 Each regexp matches the entry name, and case does not matter.  A
 matching entry leaves the listing, and the sections of a matching
 file leave it too.  A matching directory hides its inserted children
-as well.  The mode line reports how many entries the rules hide."
+as well.  The mode line reports how many entries the rules hide.
+`tired-toggle-hidden' shows the entries that the rules hide."
   :type '(repeat regexp))
 
 (defcustom tired-date-format "%Y-%m-%d %H:%M"
@@ -355,8 +356,11 @@ One of `name', `size', `modified' or `mode'.")
   "When non-nil, hide entries whose name starts with a dot.")
 
 (defvar-local tired--hidden-total 0
-  "Number of entries that `tired-hidden-regexps' hides.
+  "Number of entries that `tired-hidden-regexps' matches.
 The redraw counts them, so the mode line reads one number.")
+
+(defvar-local tired--show-hidden nil
+  "When non-nil, show the entries that `tired-hidden-regexps' hides.")
 
 (defvar-local tired--selection nil
   "List of absolute file names in the transient selection.")
@@ -448,8 +452,9 @@ A circular link counts as broken.  The user option
               tired-hidden-regexps)))
 
 (defun tired--hidden-p (entry)
-  "Return non-nil when `tired-hidden-regexps' hides ENTRY."
-  (tired--hidden-name-p (tired-entry-name entry)))
+  "Return non-nil when the listing holds ENTRY back as hidden."
+  (and (not tired--show-hidden)
+       (tired--hidden-name-p (tired-entry-name entry))))
 
 (defun tired--name-visible-p (entry)
   "Return non-nil when ENTRY passes the hidden, dotfile and name filters."
@@ -1158,15 +1163,16 @@ column from the current listing."
             "  [dotfiles hidden]")))
 
 (defun tired--count-hidden ()
-  "Return the number of entries that `tired-hidden-regexps' hides.
+  "Return the number of entries that `tired-hidden-regexps' matches.
 Count the entries of every shown directory, whether or not the
-filter, the narrow snapshot or the dotfile setting also hides one."
+filter, the narrow snapshot or the dotfile setting also hides one,
+and whether or not the buffer shows them at the moment."
   (let ((count 0))
     (when (and tired-hidden-regexps (hash-table-p tired--tables))
       (maphash
        (lambda (_directory table)
          (maphash (lambda (_name entry)
-                    (when (tired--hidden-p entry)
+                    (when (tired--hidden-name-p (tired-entry-name entry))
                       (setq count (1+ count))))
                   table))
        tired--tables))
@@ -1193,7 +1199,11 @@ an ordinary listing shows no bracket group at all."
                (> (hash-table-count tired--expanded) 0))
       (push (format "%d expanded" (hash-table-count tired--expanded)) parts))
     (when (> tired--hidden-total 0)
-      (push (format "%d hidden" tired--hidden-total) parts))
+      (push (format (if tired--show-hidden
+                        "%d hidden shown"
+                      "%d hidden")
+                    tired--hidden-total)
+            parts))
     (when tired--filter
       (push (format "filter: %s" tired--filter) parts))
     (unless tired-collapse-single-child
@@ -1975,6 +1985,12 @@ empty filter removes it."
   (setq tired--hide-dotfiles (not tired--hide-dotfiles))
   (tired--redraw))
 
+(defun tired-toggle-hidden ()
+  "Toggle the display of entries that `tired-hidden-regexps' hides."
+  (interactive)
+  (setq tired--show-hidden (not tired--show-hidden))
+  (tired--redraw))
+
 (defun tired-toggle-collapse ()
   "Toggle collapsing of single-entry directory chains in this buffer."
   (interactive)
@@ -2716,7 +2732,7 @@ every other command that acts on targets."
   "S-SPC" #'tired-select-toggle
   "t" #'tired-select-all
   "u" #'tired-select-none
-  "~" #'tired-select-invert
+  "~" #'tired-toggle-hidden
   "N" #'tired-toggle-narrow
   "A" #'tired-toggle-auto-revert
   "C" #'tired-toggle-collapse

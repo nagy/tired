@@ -28,7 +28,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Range selection through the Emacs region, with shift motion and mouse drag
 - Copy, move, delete, mkdir and touch without a confirmation question
 - Delete and replaced targets go to a session trash, so undo restores them
-- Live name filter and hidden file toggle
+- Live name filter, dotfile toggle and regexp-hidden toggle
 - Regexp rules that hide entries, with a mode line count
 - Automatic refresh on directory changes, debounced
 - Single-child directory chains collapse into their one file
@@ -94,7 +94,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =M-SPC= | =tired-select-toggle=          | Toggle selection at point               |
 | =t=     | =tired-select-all=             | Select all visible, or clear them       |
 | =u=     | =tired-select-none=            | Clear the selection                     |
-| =~=     | =tired-select-invert=          | Invert the selection                    |
+| =~=     | =tired-toggle-hidden=         | Show or hide regexp-hidden entries      |
 | =N=     | =tired-toggle-narrow=          | Narrow to the selection, or widen       |
 | =A=     | =tired-toggle-auto-revert=     | Toggle automatic refresh                |
 | =C=     | =tired-toggle-collapse=        | Toggle single-child collapse            |
@@ -196,9 +196,10 @@ listing:
 | =F=           | clear the filter                |
 | =.=           | =tired-toggle-dotfiles=         |
 | =N=           | =tired-toggle-narrow=           |
+| =~=           | =tired-toggle-hidden=           |
 | =A=           | =tired-toggle-auto-revert=      |
 | =m=, =M-SPC=  | toggle the selection next, here |
-| =t=, =u=, =~= | select all, none, invert        |
+| =t=, =u= | select all, none                |
 | =D=, =c=, =R= | delete, copy, move              |
 | =!=           | =tired-do-shell-command=        |
 | =+=, =M-t=    | create a directory, a file      |
@@ -357,7 +358,9 @@ count in its bracket group:
 
 The rules match the entry name, not the full path, and case does not
 matter.  They apply to every shown directory, so one rule hides a name
-at each level.
+at each level.  Press =~=, or run =M-x tired-toggle-hidden=, to show
+the hidden entries and to hide them again.  The mode line then reads
+`[2 hidden shown]'.
 
 * Name colors
 

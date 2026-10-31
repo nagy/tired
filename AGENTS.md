@@ -172,7 +172,9 @@ Data flow:
    `tired--entry-visible-p` apply the narrow snapshot, the dotfile
    setting, the hidden regexps and the name filter.
    `tired--hidden-p` matches `tired-hidden-regexps' against the entry
-   name, and `tired--display-rows' drops a hidden row before it reads
+   name and holds the result nil while `tired--show-hidden' is set, so
+   `tired-toggle-hidden' on `~` shows the hidden entries again.
+   `tired--display-rows' drops a hidden row before it reads
    the sections, so a hidden file takes its sections with it and a
    hidden directory skips its inserted children.
    `tired--narrow-ancestors` adds the
@@ -190,8 +192,8 @@ Data flow:
    minus the fixed columns.  It rebuilds the header line, prints the
    rows, restores point by row key (`tired--row-key`: path for an entry,
    path and line for a section) and reapplies the selection overlays.
-   Commands that only change the view (filter, sort, dotfiles, insert,
-   expand, fold) call `tired--redraw`, not `tired-refresh`.
+   Commands that only change the view (filter, sort, dotfiles, hidden,
+   insert, expand, fold) call `tired--redraw`, not `tired-refresh`.
 10. `tired--window-size-changed` runs from `window-size-change-functions`
     and redraws every visited Tired buffer with the width of its own
     window, so a resize refits the name column.  The hook fires once
@@ -789,11 +791,17 @@ Evil integration:
 - `tired--count-hidden` scans every table in `tired--tables` and
   `tired--redraw` stores the result in `tired--hidden-total`, because
   the mode line renders on every redisplay.  Do not scan the tables
-  from `tired--mode-line`.  The count includes an entry that the
-  dotfile setting or the filter also hides, and it includes the
-  children of a hidden directory while that directory stays inserted.
-  The count follows a redraw, so a change to the option needs a redraw
-  before the mode line updates.
+  from `tired--mode-line`.  The count uses `tired--hidden-name-p`, not
+  `tired--hidden-p`, so it ignores `tired--show-hidden` and the mode
+  line prints `N hidden` or `N hidden shown`.  The count includes an
+  entry that the dotfile setting or the filter also hides, and it
+  includes the children of a hidden directory while that directory
+  stays inserted.  The count follows a redraw, so a change to the
+  option needs a redraw before the mode line updates.
+- `~` carries `tired-toggle-hidden`, not `tired-select-invert`, in
+  both `tired-mode-map` and `tired-evil-keys`.  `tired-select-invert`
+  stays callable by name and keeps no key.  Replacing the key costs
+  nothing, because the region already selects a run of entries.
 - Rows must be vectors, not lists.  Emacs 31 `tabulated-list-print-entry`
   calls `aref` on them.  Do not "simplify" `tired--row` back to `list`.
 - `tired-mode` sets `tabulated-list-padding` to 0, so no blank column

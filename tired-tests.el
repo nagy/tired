@@ -245,6 +245,21 @@ a symlink, and removes every Tired buffer it opened."
       (should-not (member "sub" (tired-tests--names)))
       (should-not (member "inner.txt" (tired-tests--names))))))
 
+(ert-deftest tired-toggle-hidden-shows-and-hides-entries ()
+  "The toggle inverts the display of entries that a regexp hides."
+  (tired-tests--with-fixture
+    (let ((tired-hidden-regexps '("\\.txt\\'")))
+      (tired root)
+      (should (eq (key-binding (key-parse "~")) #'tired-toggle-hidden))
+      (should-not (member "alpha.txt" (tired-tests--names)))
+      (should (string-match-p "2 hidden" (tired--mode-line)))
+      (tired-toggle-hidden)
+      (should (member "alpha.txt" (tired-tests--names)))
+      (should (string-match-p "2 hidden shown" (tired--mode-line)))
+      (tired-toggle-hidden)
+      (should-not (member "alpha.txt" (tired-tests--names)))
+      (should (string-match-p "2 hidden" (tired--mode-line))))))
+
 (ert-deftest tired-sort-by-size-toggles-direction ()
   "Sorting by size orders files by size and flips on repetition."
   (tired-tests--with-fixture
@@ -2591,6 +2606,9 @@ that starts at the first line."
                       #'revert-buffer-quick))
           (should (eq (key-binding (key-parse "m"))
                       #'tired-select-toggle-next))
+          ;; The toggle key replaces the selection invert on the evil map.
+          (should (eq (key-binding (key-parse "~"))
+                      #'tired-toggle-hidden))
           ;; The move command takes shift-R, so the evil replace state
           ;; stays out of a read-only listing.
           (should (eq (key-binding (key-parse "R")) #'tired-move))
