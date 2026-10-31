@@ -575,7 +575,7 @@ Without Nix:
 
 #+begin_src sh
   emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-    -f batch-byte-compile tired.el tired-evil.el
+    -f batch-byte-compile *.el
   emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 #+end_src
 
@@ -590,6 +590,10 @@ The Rust section test skips itself when no grammar is present.  Point
 
 * Design notes
 
+- =tired.el= is the entry point.  It requires =tired-core.el=, which
+  holds the listing, =tired-sections.el=, which holds the section
+  handlers, and =tired-file-ops.el=, which holds the file commands.
+  Loading =tired= loads all three in that order.
 - Directory entries are =tired-entry= structs in a hash table.  The
   listing table is rebuilt on refresh, so the displayed data never goes
   stale.

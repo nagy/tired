@@ -46,7 +46,8 @@
           }
           ''
             export HOME=$TMPDIR
-            for file in tired.el tired-evil.el; do
+            for file in tired.el tired-core.el tired-sections.el \
+              tired-file-ops.el tired-evil.el; do
               cp "$src/$file" .
             done
 
@@ -57,8 +58,10 @@
             emacs --batch -l package-lint -f package-lint-batch-and-exit tired.el
 
             # checkdoc exits 0 even when it reports problems; gate on
-            # output.
-            for file in tired.el tired-evil.el; do
+            # output.  The ERT files stay out: a test docstring is a
+            # sentence, not a checkdoc argument list.
+            for file in tired.el tired-core.el tired-sections.el \
+              tired-file-ops.el tired-evil.el; do
               doc=$(emacs --batch -l checkdoc \
                 --eval "(checkdoc-file \"$file\")" 2>&1)
               if [ -n "$doc" ]; then
@@ -155,7 +158,7 @@
                   export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
                 ''}
                 emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-                  -f batch-byte-compile tired.el tired-evil.el tired-tests.el
+                  -f batch-byte-compile *.el
                 emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
                 runHook postCheck
               '';

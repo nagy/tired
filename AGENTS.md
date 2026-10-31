@@ -2,9 +2,11 @@
 
 ## Overview
 
-Single-file Emacs package (`tired.el`) that shows a directory as a
-`tabulated-list-mode` buffer.  Entries come from `directory-files` and
-`file-attributes`.  The package never parses `ls -l` output.  Entry
+Emacs package that shows a directory as a `tabulated-list-mode`
+buffer.  `tired.el` is the entry point and requires three libraries:
+`tired-core.el` (listing and display), `tired-sections.el` (section
+handlers) and `tired-file-ops.el` (file and shell commands).
+Entries come from `directory-files` and `file-attributes`.  The package never parses `ls -l` output.  Entry
 points are `M-x tired`, `M-x tired-other-window` and
 `tired-noselect`.  A file row can
 also expand into the sections that a handler extracts from that file,
@@ -28,7 +30,7 @@ nix build                       # package
 nix flake check                 # package + ERT suite + lint check
 nix develop                     # Emacs with evil, git and treefmt
 emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-  -f batch-byte-compile tired.el tired-evil.el tired-tests.el
+  -f batch-byte-compile *.el
 emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 ```
 
@@ -78,9 +80,20 @@ ELPA package version from the build argument.
 
 Files:
 
-- `tired.el` — the whole package
+- `tired.el` — the entry point: the user commentary, the requires of
+  the three libraries and the evil hook
+- `tired-core.el` — entries, sorting, section framework, rows,
+  selection, redraw, watches and `tired-mode`
+- `tired-sections.el` — the section handlers (Org, Emacs Lisp, Rust,
+  Markdown, Cargo, SQLite)
+- `tired-file-ops.el` — copy, move, delete, undo, mkdir, touch and the
+  shell command
 - `tired-evil.el` — optional evil bindings, a separate library
-- `tired-tests.el` — ERT suite
+- `tired-tests.el` — the ERT loader
+- `tired-tests-fixtures.el` — shared fixtures, helpers and setup
+- `tired-tests-core.el`, `tired-tests-sections.el`,
+  `tired-tests-file-ops.el`, `tired-tests-evil.el` — the suites, one
+  per library
 - `flake.nix` — flake outputs, the inline overridable `melpaBuild`
   expression and the checkdoc + package-lint check (`mkLint`)
 - `README.org` — user documentation
@@ -438,6 +451,13 @@ Evil integration:
 ## Conventions
 
 - Package prefix is `tired-`.  Private helpers use `tired--`.
+- The library dependencies point one way: `tired-core` requires
+  nothing of this package, `tired-sections` and `tired-file-ops`
+  require `tired-core`, and `tired` requires all three.  A cycle
+  breaks the load, so never require a sibling back.  When
+  `tired-core` names a command from another library, as
+  `tired-mode-map` does, add a `declare-function` for it.  A test
+  file requires `tired-tests-fixtures` and no sibling suite.
 - `tired-evil.el` follows the same prefix.  Its key tables map a key
   description string to a command symbol, and `tired-evil--bind` calls
   `key-parse` before `evil-define-minor-mode-key`, because `define-key`
@@ -567,7 +587,7 @@ Evil integration:
   buffer therefore needs no `evil-normalize-keymaps` call.
 - The evil tests call `evil-local-mode` and then read `key-binding`, so
   they test what the keyboard sees, not the keymap directly.  They
-  `skip-unless` on `(require 'evil nil t)`, and `tired-tests.el`
+  `skip-unless` on `(require 'evil nil t)`, and `tired-tests-evil.el`
   declares every evil function it calls, so a checkout without evil
   still byte-compiles.
 
