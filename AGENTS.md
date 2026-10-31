@@ -549,13 +549,26 @@ Evil integration:
   remote directory costs one round trip per link.
 - `tired-name-faces` colors a name from a regexp.  `tired--name-face`
   applies a fixed order: directory, broken link, user rule, ignored
-  suffix, symlink, special file.  The first rule that matches wins.
-  A directory never takes a user rule, because the directory face marks
-  the tree structure.  A rule value goes straight into the `face'
-  property, so it may also hold a list of faces and anonymous faces.
-  Such a rule adds an attribute to a color, and an earlier element has
-  higher priority, so an underline rule names the color first and
-  `(:underline t)' second.
+  suffix, symlink, special file.  The first whole-name rule that matches
+  wins.  A directory never takes a user rule, because the directory
+  face marks the tree structure.  A rule value goes straight into the
+  `face' property, so it may also hold a list of faces and anonymous
+  faces.  Such a rule adds an attribute to a color, and an earlier
+  element has higher priority, so an underline rule names the color
+  first and `(:underline t)' second.
+- A rule whose third element is an integer paints one submatch and no
+  whole name.  `tired--rule-subexp` reads that element, and the value
+  must pass `integerp', because a face list also fills the third
+  position.  `tired--user-name-spans` collects one (START END FACE)
+  span per matching partial rule in list order, so a later rule paints
+  over an earlier one.  `tired--paint-name-spans` copies the plain
+  string before it puts a property, because a struct name must not
+  change.  A span combines its face with the face already on the text
+  and puts the new value first, so the span wins an attribute clash
+  and the base face still adds its own attributes.  A directory takes
+  no span, for the same reason it takes no whole-name rule, and a
+  collapsed row takes a span on the base name only, never on the
+  directory chain.
 - Recursive directory sizes stay off by default, because the option
   makes every refresh read every directory below the shown one.
   `tired--subtree-size` never follows a symbolic link, so a link cycle

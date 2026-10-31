@@ -58,6 +58,16 @@ One row that represents a directory chain whose subtree holds exactly
 one file.
 _Avoid_: Flatten, fold, compress
 
+**Name rule**:
+One element of `tired-name-faces' that colors an entry name.  A rule
+paints the whole name, or only the text of one submatch when its third
+element holds an integer.
+_Avoid_: Highlight, font-lock keyword
+
+**Name span**:
+The text of one submatch that a partial name rule paints.
+_Avoid_: Highlight range, overlay
+
 **Section**:
 One item that a handler extracted from a file, such as a heading, a
 declaration or a PDF bookmark.  A section row follows the row of its

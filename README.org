@@ -252,9 +252,10 @@ A name takes its face from the matching Dired face: `dired-directory',
 `dired-ignored'.  A Dired theme setting therefore reaches a Tired row
 without further work.
 
-Set =tired-name-faces= to colorize more names.  Each rule is a pair of
-a regexp and a face.  The first rule that matches the name wins, and a
-directory keeps its own face:
+Set =tired-name-faces= to colorize more names.  Each rule starts with
+a regexp that matches the entry name.  A rule that holds a bare face
+paints the whole name.  The first such rule wins, and a directory
+keeps its own face:
 
 #+begin_src elisp
   (setq tired-name-faces
@@ -272,6 +273,22 @@ because an earlier face has higher priority:
           ("\\(?:default\\|flake\\)\\.nix\\'"
            font-lock-keyword-face (:underline t))))
 #+end_src
+
+A rule whose third element is an integer paints only that submatch, so
+the extension can take a color and the rest of the name stays plain,
+the way a Dired Font Lock rule works:
+
+#+begin_src elisp
+  (setq tired-name-faces
+        '(("\\(\\.[jt]s\\)\\'" font-lock-function-name-face 1)
+          ("\\(\\.nix\\)\\'" font-lock-keyword-face 1)))
+#+end_src
+
+A partial rule contributes no whole-name face, and partial rules run
+in list order.  A later rule therefore paints over an earlier one on
+text that both rules cover.  When a partial rule paints text that
+already holds a face, the two faces join into a list, so an attribute
+of the base face stays.
 
 A name cell carries both the =face= and the =font-lock-face= property.
 The first one shows when Font Lock mode is off.  The second one stays

@@ -912,6 +912,62 @@ a symlink, and removes every Tired buffer it opened."
                       0 'font-lock-face
                       (tired--name-cell (tired-tests--entry "alpha.txt"))))))))
 
+(ert-deftest tired-name-faces-paints-only-a-submatch ()
+  "An integer third element paints the submatch and leaves the name plain."
+  (tired-tests--with-fixture
+    (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
+      (tired root)
+      (let ((cell (tired--name-cell (tired-tests--entry "alpha.txt"))))
+        (should (equal "alpha.txt" (substring-no-properties cell)))
+        ;; "alpha" stays plain.
+        (should-not (get-text-property 0 'face cell))
+        ;; The extension takes the color, with both name properties.
+        (should (eq 'bold (get-text-property 5 'face cell)))
+        (should (eq 'bold (get-text-property 5 'font-lock-face cell)))
+        ;; A partial rule never paints the whole name.
+        (should-not (tired--name-face (tired-tests--entry "alpha.txt")))))))
+
+(ert-deftest tired-name-faces-later-partial-rule-wins ()
+  "A later partial rule paints over an earlier one on the same text."
+  (tired-tests--with-fixture
+    (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0)
+                              ("\\(?:txt\\)\\'" italic 0))))
+      (tired root)
+      (let ((cell (tired--name-cell (tired-tests--entry "alpha.txt"))))
+        (should (eq 'bold (get-text-property 5 'face cell)))
+        (should (equal '(italic bold) (get-text-property 6 'face cell)))))))
+
+(ert-deftest tired-name-faces-partial-rule-skips-a-directory ()
+  "A directory keeps its own face and no partial span."
+  (tired-tests--with-fixture
+    (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
+      (make-directory (expand-file-name "name.txt") t)
+      (tired root)
+      (let ((cell (tired--name-cell (tired-tests--entry "name.txt"))))
+        (should (eq 'tired-directory-face (get-text-property 0 'face cell)))
+        (should (eq 'tired-directory-face (get-text-property 4 'face cell)))))))
+
+(ert-deftest tired-name-faces-paint-the-extension-of-a-collapsed-row ()
+  "A collapsed row paints the base name, never the directory chain."
+  (tired-tests--with-fixture
+    (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
+      (make-directory (expand-file-name "chain/a" root) t)
+      (with-temp-file (expand-file-name "chain/a/leaf.txt" root)
+        (insert "leaf"))
+      (tired root)
+      (let* ((row (seq-find
+                   (lambda (row)
+                     (equal (tired-entry-name (car row))
+                            "chain/a/leaf.txt"))
+                   (tired--display-rows t)))
+             (entry (car row))
+             (cell (tired--name-cell entry)))
+        (should (tired-entry-collapsed entry))
+        ;; "chain/a/" keeps the directory face.
+        (should (eq 'tired-directory-face (get-text-property 0 'face cell)))
+        ;; ".txt" takes the color.
+        (should (eq 'bold (get-text-property 15 'face cell)))))))
+
 (ert-deftest tired-name-face-defaults-to-nil ()
   "With no rule and no Dired face, a plain file keeps no face."
   (tired-tests--with-fixture

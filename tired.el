@@ -169,14 +169,21 @@ nil by default."
   :type 'boolean)
 
 (defcustom tired-name-faces nil
-  "Alist of (REGEXP . FACE) that colorizes entry names.
-The first rule whose REGEXP matches the entry name wins.  A rule
-reaches files, symbolic links and special files.  A directory keeps
-its own face.  FACE holds a face name, or a list of face names and
-anonymous faces, so a rule can add an attribute to a color.  An
-earlier list element has higher priority.  The default is nil, so
-only the Dired faces colorize a name."
-  :type '(alist :key-type regexp :value-type face))
+  "Alist of rules that colorize entry names.
+Each rule starts with a REGEXP that matches the entry name.  A rule
+whose third element is an integer paints only that submatch, so the
+rest of the name keeps its own face.  Any other rule paints the whole
+name, and the first such rule wins.  The integer form costs one group
+in the regexp and paints the text of that group.
+
+A rule reaches files, symbolic links and special files.  A directory
+keeps its own face.  FACE holds a face name, or a list of face names
+and anonymous faces, so a rule can add an attribute to a color.  An
+earlier list element has higher priority.  Partial rules apply in
+list order, so a later rule paints over an earlier one on text both
+rules cover.  The default is nil, so only the Dired faces colorize a
+name."
+  :type '(alist :key-type regexp :value-type sexp))
 
 (defcustom tired-file-handlers
   '(("\\.org\\'" . tired-file-sections-org)
@@ -754,17 +761,69 @@ and a lock file name.  The cache follows the variable."
   "Return non-nil when NAME matches `completion-ignored-extensions'."
   (string-match-p (tired--ignored-regexp) name))
 
+(defun tired--rule-subexp (rule)
+  "Return the submatch index that RULE names, or nil.
+Only an integer third element names a submatch.  Any other value
+belongs to a face list."
+  (let ((third (and (proper-list-p rule) (nth 2 rule))))
+    (and (integerp third) third)))
+
 (defun tired--user-name-face (name)
-  "Return the face from the first `tired-name-faces' rule that matches NAME."
+  "Return the whole-name face for NAME from `tired-name-faces'.
+The first rule that matches NAME wins.  A rule with an integer third
+element paints a submatch only, so it stays out of this search."
   (seq-some (lambda (rule)
-              (and (string-match-p (car rule) name) (cdr rule)))
+              (and (not (tired--rule-subexp rule))
+                   (string-match-p (car rule) name)
+                   (cdr rule)))
             tired-name-faces))
+
+(defun tired--user-name-spans (name)
+  "Return the (START END FACE) spans that `tired-name-faces' paints on NAME.
+A rule with an integer third element contributes the text of that
+submatch.  Rules run in list order, so a later span follows an
+earlier one that covers the same text."
+  (let (spans)
+    (dolist (rule tired-name-faces)
+      (let ((subexp (tired--rule-subexp rule)))
+        (when (and subexp
+                   (string-match (car rule) name))
+          (let ((start (match-beginning subexp))
+                (end (match-end subexp)))
+            (when (and start end (< start end))
+              (push (list start end (nth 1 rule)) spans))))))
+    (nreverse spans)))
+
+(defun tired--entry-name-spans (entry name)
+  "Return the `tired-name-faces' spans for NAME of ENTRY.
+A directory returns no span, because the directory face marks the
+tree structure."
+  (unless (tired-entry-dirp entry)
+    (tired--user-name-spans name)))
+
+(defun tired--paint-name-spans (name spans)
+  "Paint SPANS over NAME and return the result.
+Each span is (START END FACE).  A span combines its face with a face
+the text already holds, so a span inherits an attribute of the base
+face.  NAME itself stays unchanged."
+  (let ((string (copy-sequence name)))
+    (dolist (span spans)
+      (let* ((start (nth 0 span))
+             (end (nth 1 span))
+             (face (nth 2 span))
+             (base (get-text-property start 'face string))
+             (value (if base (list face base) face)))
+        (put-text-property start end 'face value string)
+        (put-text-property start end 'font-lock-face value string)))
+    string))
 
 (defun tired--name-face (entry &optional name)
   "Return the face for the name of ENTRY, or nil for a plain name.
-NAME defaults to the name of ENTRY.  The fixed order runs directory,
-broken link, user rule, ignored suffix, symbolic link, special file.
-The order otherwise follows `dired-font-lock-keywords'."
+NAME defaults to the name of ENTRY.  The value covers the whole name,
+and a partial rule contributes no value here.  The fixed order runs
+directory, broken link, user rule, ignored suffix, symbolic link,
+special file.  The order otherwise follows
+`dired-font-lock-keywords'."
   (let ((name (or name (tired-entry-name entry))))
     (cond
      ((tired-entry-dirp entry) 'tired-directory-face)
@@ -784,11 +843,15 @@ The order otherwise follows `dired-font-lock-keywords'."
 carries both, as `package-menu--print-info-simple' does."
   (list 'face face 'font-lock-face face))
 
-(defun tired--propertize-name (name face)
-  "Return NAME with FACE applied, or NAME alone when FACE is nil."
-  (if face
-      (apply #'propertize name (tired--face-properties face))
-    name))
+(defun tired--propertize-name (name face &optional spans)
+  "Return NAME with FACE applied, or NAME alone when FACE is nil.
+Paint SPANS over the result when SPANS holds entries."
+  (let ((string (if face
+                    (apply #'propertize name (tired--face-properties face))
+                  name)))
+    (if spans
+        (tired--paint-name-spans string spans)
+      string)))
 
 (defun tired--symlink-suffix (entry)
   "Return the arrow and the target text for the symbolic link ENTRY."
@@ -810,23 +873,25 @@ its target arrow."
          (file (file-name-nondirectory name))
          (head (string-remove-suffix file name)))
     (concat (tired--propertize-name head 'tired-directory-face)
-            (tired--propertize-name file (tired--name-face entry file))
+            (tired--propertize-name file (tired--name-face entry file)
+                                    (tired--entry-name-spans entry file))
             (when (eq (tired-entry-type entry) 'symlink)
               (tired--symlink-suffix entry)))))
 
 (defun tired--name-cell (entry)
   "Return the name column string for ENTRY."
-  (let ((name (tired-entry-name entry))
-        (face (tired--name-face entry)))
+  (let* ((name (tired-entry-name entry))
+         (face (tired--name-face entry))
+         (spans (tired--entry-name-spans entry name)))
     (cond
      ((tired-entry-collapsed entry) (tired--collapsed-name-cell entry))
      (t (pcase (tired-entry-type entry)
           ('directory
            (concat (tired--propertize-name name face) "/"))
           ('symlink
-           (concat (tired--propertize-name name face)
+           (concat (tired--propertize-name name face spans)
                    (tired--symlink-suffix entry)))
-          (_ (tired--propertize-name name face)))))))
+          (_ (tired--propertize-name name face spans)))))))
 
 (defvar tired--size-cache nil
   "Hash table that maps a truename to the size of a directory subtree.
