@@ -56,6 +56,10 @@ The two commands hand their window choice to `display-buffer'.
 =tired-other-window-action= holds the action for
 =tired-other-window=.  Each value takes the form that
 `display-buffer' accepts, so a user decides where the listing lands.
+Keep the value a list.  A bare function symbol does not work:
+`display-buffer' reads a value that is not a cons cell as the old
+request for another window, so the listing lands in the wrong
+window.
 
 #+begin_src elisp
   ;; Reuse a window, and pop up a new one when no window fits.

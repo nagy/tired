@@ -64,7 +64,7 @@
   "Each command hands its own action to `display-buffer'."
   (tired-tests--with-fixture
     (let ((seen nil)
-          (tired-display-buffer-action 'display-buffer-same-window)
+          (tired-display-buffer-action '(display-buffer-same-window))
           (tired-other-window-action '(display-buffer-use-some-window
                                        (inhibit-same-window . t))))
       (cl-letf (((symbol-function 'display-buffer)
@@ -74,10 +74,42 @@
         (tired root)
         (tired-other-window root))
       (setq seen (nreverse seen))
-      (should (equal (nth 1 (nth 0 seen)) 'display-buffer-same-window))
+      (should (equal (nth 1 (nth 0 seen)) '(display-buffer-same-window)))
       (should (equal (nth 1 (nth 1 seen))
                      '(display-buffer-use-some-window
                        (inhibit-same-window . t)))))))
+
+(ert-deftest tired-wrap-a-bare-action-function-in-a-list ()
+  "A bare function symbol reaches `display-buffer' as a list.
+`display-buffer' reads a value that is not a cons cell as a request
+for another window, so a bare symbol would drop the action and add
+`inhibit-same-window'."
+  (tired-tests--with-fixture
+    (let ((seen nil)
+          (tired-display-buffer-action 'display-buffer-same-window))
+      (cl-letf (((symbol-function 'display-buffer)
+                 (lambda (_buffer action)
+                   (push action seen)
+                   (selected-window))))
+        (tired root))
+      (should (equal (car seen) '(display-buffer-same-window))))))
+
+(ert-deftest tired-display-buffer-actions-start-as-lists ()
+  "Both display options hold a cons cell."
+  (dolist (variable '(tired-display-buffer-action
+                      tired-other-window-action))
+    (should (consp (default-value variable)))))
+
+(ert-deftest tired-default-action-reaches-display-buffer-as-a-list ()
+  "The default action must reach `display-buffer' as a cons cell."
+  (tired-tests--with-fixture
+    (let (seen)
+      (cl-letf (((symbol-function 'display-buffer)
+                 (lambda (_buffer action)
+                   (setq seen action)
+                   (selected-window))))
+        (tired root))
+      (should (consp seen)))))
 
 (ert-deftest tired-display-buffer-action-is-a-user-option ()
   "Both display options carry a docstring and start set."

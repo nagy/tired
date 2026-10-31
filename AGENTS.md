@@ -154,10 +154,17 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   `tired-evil-visual-keys` when it reads the region.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
   shadows it.
-- `tired` and `tired-other-window` go through `tired--display`: it
+- `tired` and `tired-other-window` go through `tired--show-buffer`: it
   hands `tired-display-buffer-action` or `tired-other-window-action` to
   `display-buffer` and then selects the returned window, because
-  `tired-jump` moves point in the listing after the call.
+  `tired-jump` moves point in the listing after the call.  Keep both
+  action values cons cells: `display-buffer` reads any value that is
+  not a cons cell as the old request for another window, drops the
+  action function and adds `inhibit-same-window`, so a bare symbol
+  puts the listing in the wrong window and defeats a
+  `display-buffer-alist' rule that asks for the selected window.
+  `tired--show-buffer` wraps such a value in a list, but neither
+  defcustom offers one.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.  A section
   label follows the same rule through `tired--section-cell`.

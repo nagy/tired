@@ -95,29 +95,28 @@ A delay coalesces bursts of events, such as a build writing many
 files, into one refresh."
   :type 'number)
 
-(defcustom tired-display-buffer-action 'display-buffer-same-window
+(defcustom tired-display-buffer-action
+  '(display-buffer-same-window (inhibit-same-window . nil))
   "Display action that `tired' uses for the listing.
-The value takes the form that `display-buffer' accepts: one action
-function or a list of a function and an alist.  The default replaces
-the current buffer, like `dired'.  Set it to a pop-up action to give
+The value takes the form that `display-buffer' accepts: a list of
+action functions and an action alist.  The default replaces the
+current buffer, like `dired'.  Set it to a pop-up action to give
 the listing its own window, and add a `display-buffer-alist' entry
-for a rule that depends on the buffer name."
-  :type '(choice (function-item display-buffer-same-window)
-                 (function-item display-buffer-pop-up-window)
-                 (function-item display-buffer-reuse-window)
-                 (function :tag "Action function")
-                 (repeat :tag "Action list" (sexp :tag "Action"))))
+for a rule that depends on the buffer name.
+
+Keep the list.  `display-buffer' reads a value that is any other
+than a cons cell as the old request for another window, drops the
+action function and adds `inhibit-same-window', so a bare function
+symbol puts the listing in the wrong window."
+  :type 'display-buffer--action-custom-type)
 
 (defcustom tired-other-window-action
   '(display-buffer-use-some-window (inhibit-same-window . t))
   "Display action that `tired-other-window' uses for the listing.
 The default reuses another window of the frame and never the
 selected one.  The value takes the form that `display-buffer'
-accepts."
-  :type '(choice (function-item display-buffer-pop-up-window)
-                 (function-item display-buffer-reuse-window)
-                 (function :tag "Action function")
-                 (repeat :tag "Action list" (sexp :tag "Action"))))
+accepts: a list of action functions and an action alist."
+  :type 'display-buffer--action-custom-type)
 
 (defcustom tired-filter-delay 0.15
   "Seconds to wait before a typed filter redraws the listing.
@@ -1867,8 +1866,14 @@ no command changes without the user's consent."
   "Show BUFFER through ACTION, select its window and return BUFFER.
 Select the window that `display-buffer' chose, so a caller such as
 `tired-jump' can move point in the listing.  The command returns the
-buffer, as `dired' does, also when ACTION picks no window."
-  (let ((window (display-buffer buffer action)))
+buffer, as `dired' does, also when ACTION picks no window.  A value
+that is not a cons cell becomes a one-element function list, for
+`display-buffer' reads such a value as a request for another
+window."
+  (let ((window (display-buffer buffer
+                                (if (consp action)
+                                    action
+                                  (list action)))))
     (when (window-live-p window)
       (select-window window))
     buffer))
