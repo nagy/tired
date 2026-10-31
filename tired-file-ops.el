@@ -443,6 +443,9 @@ to nil to skip the question."
   :type 'boolean
   :group 'tired)
 
+;; A mark needs whitespace or a string end beside it.  Do not match a
+;; bare `[*?]' class: a glob pattern such as `*.txt' must reach the
+;; shell unchanged.
 (defun tired--shell-regexp ()
   "Return the regexp that matches one substitution mark.
 Group 1 holds the leading whitespace or the start of the string,
@@ -456,8 +459,11 @@ with group 2 alone, so a shell can read it untouched."
   "Return the substitution marks of STRING as a list of strings.
 A mark is `*', `?' or a `?' that backquote signs wrap, where
 whitespace isolates it, at the start or the end of STRING.  The
-scan continues after each mark, so one space between two marks
-hides neither."
+scan resumes at the end of the mark, so the trailing whitespace of
+one match serves as the leading whitespace of the next, and one
+space between two marks hides neither.  A resume at the end of the
+whole match would consume that space once and leave the second mark
+in place."
   (let ((regexp (tired--shell-regexp))
         (start 0)
         (marks nil))

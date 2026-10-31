@@ -37,6 +37,21 @@
 ;; A command acts on the transient selection first, then on the Emacs
 ;; region, then on the row at point, so a visual range feeds delete,
 ;; copy and move without an extra step.
+;;
+;; Evil keeps its state maps in `emulation-mode-map-alists', and Emacs
+;; checks that list before the major mode map, so `evil-ret' on RET
+;; would hide `tired-find-file'.  `evil-define-minor-mode-key' installs
+;; these maps ahead of the state maps and restores every Tired key.
+;; Emacs activates such a map only while the mode symbol holds a value,
+;; so turning `tired-evil-local-mode' on or off needs no
+;; `evil-normalize-keymaps' call.
+;;
+;; The normal table shadows `w', `W' and `P' so the copy commands keep
+;; their keys, and it puts the selection on `m' and the move command on
+;; `R'.  Shadowing `m' costs the evil mark command, and shadowing `R'
+;; keeps the evil replace state out of a read-only listing.  The visual
+;; table uses the same `m' and `R', and it stays short because visual
+;; state needs its text objects.
 
 ;;; Code:
 

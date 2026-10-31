@@ -421,6 +421,11 @@ binds the variable to nil for one parse, and `tired--cargo-measure'
 fills it on first use, so every listed table of a file shares both
 columns.")
 
+;; One key column and one version column span the whole file, so a
+;; feature arrow, a dependency version and a dependency badge each
+;; start at the same place, the way elastic tabstops align a block.
+;; The labels stay plain strings, so the filter, the copy commands and
+;; the tests read them like any other label.
 (defun tired--cargo-measure ()
   "Return the column widths of the four listed tables in this buffer.
 Measure the file once, then reuse the value.  The car is the widest

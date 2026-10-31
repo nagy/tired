@@ -2365,6 +2365,8 @@ The directory contents come from `directory-files' and
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
+  ;; Emacs draws the sort arrow in the padding, and every Tired column
+  ;; stays unsortable, so a blank padding column would carry nothing.
   (setq-local tabulated-list-padding 0)
   (setq-local tabulated-list-sort-key nil)
   (setq-local revert-buffer-function #'tired--revert)
