@@ -371,6 +371,28 @@ the width of the listing untouched."
                          #'string<)
                    '(".hidden" "alpha.txt" "beta.txt" "link" "sub")))))
 
+(ert-deftest tired-select-all-toggles-the-selection-off ()
+  "A second select-all clears a selection that covers every visible entry."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-select-all)
+    (tired-select-all)
+    (should-not tired--selection)
+    (should-not (seq-filter (lambda (overlay)
+                              (overlay-get overlay 'tired-selection))
+                            (overlays-in (point-min) (point-max))))))
+
+(ert-deftest tired-select-all-clears-a-wider-selection ()
+  "A visible selection clears a selection that also holds hidden entries."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-select-all)
+    (tired-tests--goto "alpha.txt")
+    (setq tired--filter "alpha")
+    (tired-refresh)
+    (tired-select-all)
+    (should-not tired--selection)))
+
 (ert-deftest tired-copy-path-joins-targets ()
   "Copying paths puts one path per line on the kill ring."
   (tired-tests--with-fixture

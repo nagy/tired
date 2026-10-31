@@ -163,7 +163,10 @@ Data flow:
    selection first, then `tired--region-entries`, then the row at point;
    a command that acts on the region deactivates it.  A section row
    resolves to the file entry that owns it, and `tired-select-toggle`
-   refuses a section row.
+   refuses a section row.  `tired-select-all` toggles: when every
+   visible entry already belongs to the selection, it clears the whole
+   selection, so a wider selection that holds hidden entries also
+   goes.
 7. `tired--in-narrow-p`, `tired--name-visible-p` and
    `tired--entry-visible-p` apply the narrow snapshot, the dotfile
    setting and the name filter.  `tired--narrow-ancestors` adds the

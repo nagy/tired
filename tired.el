@@ -1794,10 +1794,14 @@ its file and a file row already covers that file."
   (forward-line 1))
 
 (defun tired-select-all ()
-  "Select every visible entry."
+  "Select every visible entry, or clear the whole selection.
+When every visible entry already belongs to the selection, the
+command clears the selection instead, so the key toggles."
   (interactive)
-  (tired--set-selection
-   (mapcar #'tired-entry-path (tired--visible-entries)))
+  (let ((entries (tired--visible-entries)))
+    (if (and entries (seq-every-p #'tired--selected-p entries))
+        (tired--set-selection nil)
+      (tired--set-selection (mapcar #'tired-entry-path entries))))
   (tired--apply-selection-overlays)
   (force-mode-line-update))
 

@@ -91,7 +91,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =s=     | =tired-sort=                   | Sort by a column                        |
 | =SPC=   | =tired-select-toggle-next=     | Toggle selection, move down             |
 | =M-SPC= | =tired-select-toggle=          | Toggle selection at point               |
-| =t=     | =tired-select-all=             | Select every visible entry              |
+| =t=     | =tired-select-all=             | Select all visible, or clear them       |
 | =u=     | =tired-select-none=            | Clear the selection                     |
 | =~=     | =tired-select-invert=          | Invert the selection                    |
 | =N=     | =tired-toggle-narrow=          | Narrow to the selection, or widen       |
@@ -115,6 +115,8 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 
 The selection is transient.  It belongs to the buffer and it is pruned
 when entries disappear.  Commands that act on it clear it afterwards.
+=t= selects every visible entry, and =t= again clears the selection,
+so one key toggles the whole listing.
 
 The active region is a second target source.  Move with =S-<down>=
 and =S-<up>=, drag with the mouse, or set a mark with =C-SPC= and
