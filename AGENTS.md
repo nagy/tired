@@ -18,7 +18,9 @@ README before you document a command.
 
 ## Files
 
-- `tired.el` — entry point: commentary, the three requires, the evil hook
+- `tired.el` — entry point: commentary, the three requires, the public
+  commands (`tired`, `tired-other-window`, `tired-noselect`,
+  `tired-find-file-mode`, `tired-jump`), the evil hook
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, `tired-mode`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Markdown, Cargo and
@@ -70,6 +72,16 @@ Dependencies point one way: `tired-core` requires no sibling,
 `tired-sections` and `tired-file-ops` require `tired-core`, and `tired`
 requires all three.  When `tired-core` names a command from another
 library, as `tired-mode-map` does, it adds a `declare-function`.
+
+Every `;;;###autoload` cookie for a command sits in `tired.el`, because
+the file that holds a cookie names the file that its autoload loads.
+A cookie in `tired-core` would load the core alone, so `M-x tired` from
+a `package.el` install would reach a void `tired-file-sections-elisp`
+and a void `tired-delete`.  A command that other libraries call, such
+as `tired-noselect`, stays in `tired.el` for that reason, and
+`tired-mode` carries no cookie at all: `tired-noselect` runs the mode.
+`tired-evil.el` keeps its own cookie, because the file requires
+`tired`.
 
 1. `tired--read-entries` builds one hash table per shown directory from
    `directory-files-and-attributes`, so a file costs one stat and no
@@ -154,8 +166,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 
 - Package prefix `tired-`, private helpers `tired--`.
 - Public commands carry `;;;###autoload` only as entry points (`tired`,
-  `tired-other-window`, `tired-mode`, `tired-noselect`,
-  `tired-find-file-mode`, `tired-jump`).
+  `tired-other-window`, `tired-noselect`, `tired-find-file-mode`,
+  `tired-jump`).  Keep every cookie in `tired.el`: the autoload of a
+  cookie in `tired-core` would load that library alone, and the section
+  handlers and the file commands would stay unbound.
 - Every function has a docstring, `checkdoc` passes, and byte
   compilation with warnings as errors passes.
 - `tired-mode-menu` mirrors the key map on the menu bar.  Add a command
@@ -353,6 +367,13 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 - Batch Emacs dispatches no file notification event during `sit-for`, so
   the tests stub `file-notify-add-watch`.  Batch Emacs also has no window
   layout, so a test asserts buffer state, not window state.
+- `tired-tests-core` holds
+  `tired-autoload-cookies-stay-in-a-loading-entry-point`, so a cookie
+  in a sub-library fails the suite.  The autoload file names the file
+  that holds the cookie, not the file that holds the command.
+- `tired-mode` carries no `;;;###autoload` cookie.  A package user
+  reaches the mode through `tired-noselect`, which loads the whole
+  package first.
 - A test never reaches the network.  `tired-tests--with-remote` stubs
   `file-remote-p` for a real temporary directory, so the remote guards
   run without a TRAMP handler.  `tired-remote-listing-stays-offline`

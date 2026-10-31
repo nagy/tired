@@ -50,7 +50,13 @@
 (declare-function tired-rename "tired-file-ops" (name))
 (declare-function tired-touch "tired-file-ops" (file))
 (declare-function tired-undo "tired-file-ops" nil)
-(declare-function recentf-add-file "recentf" (filename))
+
+;; The entry points live in `tired', which requires this library.  The
+;; declarations keep the commands below free of a load-time dependency
+;; on the file above this one.
+(declare-function tired "tired" (directory))
+(declare-function tired-jump "tired" (&optional other-window))
+(declare-function tired-other-window "tired" (directory))
 
 (defgroup tired nil
   "Tabulated list directory editor."
@@ -1890,87 +1896,6 @@ one `tired-size-cache-ttl' window reads no directory twice."
 IGNORE-AUTO and NOCONFIRM are accepted for `revert-buffer-function'."
   (tired-refresh))
 
-(defun tired--buffer-name (directory)
-  "Return the Tired buffer name for DIRECTORY."
-  (format "Tired: %s" (abbreviate-file-name directory)))
-
-;;;###autoload
-(defun tired-noselect (directory)
-  "Return a Tired buffer for DIRECTORY, without selecting it.
-The buffer name depends on DIRECTORY, so a second call reuses the
-same buffer.  The buffer gets DIRECTORY as `default-directory'."
-  (let ((directory (file-name-as-directory (expand-file-name directory))))
-    (unless (file-directory-p directory)
-      (user-error "Not a directory: %s" directory))
-    (let ((buffer (get-buffer-create (tired--buffer-name directory))))
-      (with-current-buffer buffer
-        (unless (derived-mode-p 'tired-mode)
-          (tired-mode))
-        (unless (equal tired--directory directory)
-          (setq tired--inserted (make-hash-table :test #'equal))
-          (setq tired--expanded (make-hash-table :test #'equal))
-          (setq tired--sections (make-hash-table :test #'equal))
-          (setq tired--folded (make-hash-table :test #'equal))
-          (tired--set-selection nil))
-        (setq tired--directory directory)
-        (setq default-directory directory)
-        (tired-refresh)
-        ;; `recentf-mode' records files that a buffer visits, and a
-        ;; Tired buffer visits a directory.
-        (when (bound-and-true-p recentf-mode)
-          (recentf-add-file directory)))
-      buffer)))
-
-;;;###autoload
-(define-minor-mode tired-find-file-mode
-  "Let `find-file' visit a directory in a Tired buffer.
-Turning the mode on puts `tired-noselect' into
-`find-directory-functions'.  Turning it off takes that function out
-again, so `find-file' falls back to Dired.  The mode starts off, so
-no command changes without the user's consent."
-  :global t
-  :group 'tired
-  (if tired-find-file-mode
-      (add-to-list 'find-directory-functions #'tired-noselect)
-    (setq find-directory-functions
-          (delq #'tired-noselect find-directory-functions))))
-
-(defun tired--show-buffer (buffer action)
-  "Show BUFFER through ACTION, select its window and return BUFFER.
-Select the window that `display-buffer' chose, so a caller such as
-`tired-jump' can move point in the listing.  The command returns the
-buffer, as `dired' does, also when ACTION picks no window.  A value
-that is not a cons cell becomes a one-element function list, for
-`display-buffer' reads such a value as a request for another
-window."
-  (let ((window (display-buffer buffer
-                                (if (consp action)
-                                    action
-                                  (list action)))))
-    (when (window-live-p window)
-      (select-window window))
-    buffer))
-
-;;;###autoload
-(defun tired (directory)
-  "Show DIRECTORY in a Tired buffer.
-Interactively, offer `default-directory' as the default.  This
-command is the short way to open a listing, in the manner of
-`dired'.  The listing goes through `tired-display-buffer-action'."
-  (interactive
-   (list (read-directory-name "Directory: " nil default-directory t)))
-  (tired--show-buffer (tired-noselect directory)
-                      tired-display-buffer-action))
-
-;;;###autoload
-(defun tired-other-window (directory)
-  "Show DIRECTORY in a Tired buffer in another window.
-The listing goes through `tired-other-window-action'."
-  (interactive
-   (list (read-directory-name "Directory: " nil default-directory t)))
-  (tired--show-buffer (tired-noselect directory)
-                      tired-other-window-action))
-
 (defun tired-up-directory ()
   "Open the parent of the current directory."
   (interactive)
@@ -2164,31 +2089,6 @@ one section alone."
              (not (use-region-p)))
         (tired--toggle-fold row)
       (tired--apply-to-rows #'tired--toggle-tree))))
-
-;;;###autoload
-(defun tired-jump (&optional other-window)
-  "Visit the directory of the current buffer in a Tired buffer.
-In a Tired buffer, visit the parent directory and put point on the
-directory that was shown.  Without a visited file, use
-`default-directory'.  When OTHER-WINDOW is non-nil, show the buffer in
-another window."
-  (interactive "P")
-  (let* ((here (expand-file-name
-                (cond ((derived-mode-p 'tired-mode) tired--directory)
-                      ((buffer-file-name) (buffer-file-name))
-                      (t default-directory))))
-         (directory-p (file-directory-p here))
-         (directory (if (and directory-p (derived-mode-p 'tired-mode))
-                        (file-name-directory (directory-file-name here))
-                      (if directory-p
-                          here
-                        (file-name-directory here))))
-         (anchor (cond ((derived-mode-p 'tired-mode)
-                        (directory-file-name here))
-                       (directory-p nil)
-                       (t (directory-file-name here)))))
-    (if other-window (tired-other-window directory) (tired directory))
-    (tired--goto-path anchor)))
 
 (defun tired-bookmark-make-record ()
   "Return a bookmark record for the current Tired buffer."
@@ -2848,7 +2748,6 @@ command that needs an entry stays insensitive on an empty row."
     ["Single-child collapse" tired-toggle-collapse
      :style toggle :selected tired-collapse-single-child]))
 
-;;;###autoload
 (define-derived-mode tired-mode tabulated-list-mode "Tired"
   "Major mode for editing a directory as a tabulated list.
 The directory contents come from `directory-files' and

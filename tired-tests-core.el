@@ -144,6 +144,26 @@ for another window, so a bare symbol would drop the action and add
             (should (equal root default-directory))))
       (tired-find-file-mode -1))))
 
+(ert-deftest tired-autoload-cookies-stay-in-a-loading-entry-point ()
+  "`tired.el' and `tired-evil.el' carry every `;;;###autoload' cookie.
+A cookie in `tired-core' generates an autoload that loads that file
+alone.  A `package.el' user then runs `tired' from the core, and the
+default `tired-file-handlers' names a void section handler.
+`tired-evil' may keep its cookie, because the file requires `tired'."
+  (let* ((entry (locate-library "tired"))
+         (directory (file-name-directory entry))
+         (files (directory-files directory t "\\`tired.*\\.el\\'"))
+         (allowed '("tired.el" "tired-evil.el")))
+    (should (member (expand-file-name "tired.el" directory) files))
+    (dolist (file files)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (if (member (file-name-nondirectory file) allowed)
+            (when (equal (file-name-nondirectory file) "tired.el")
+              (should (re-search-forward "^;;;###autoload" nil t)))
+          (should-not (re-search-forward "^;;;###autoload" nil t)))))))
+
 (ert-deftest tired-listing-puts-directories-first ()
   "Directories sort before files, and files sort by name."
   (tired-tests--with-fixture
