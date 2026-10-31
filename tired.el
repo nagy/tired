@@ -1743,7 +1743,8 @@ empty filter removes it."
   (unless tired--directory
     (user-error "Not in a Tired buffer"))
   (let ((origin (current-buffer))
-        (original tired--filter))
+        (original tired--filter)
+        (start (tired--row-at-point)))
     (condition-case nil
         (let ((result
                (minibuffer-with-setup-hook
@@ -1757,7 +1758,8 @@ empty filter removes it."
             (tired--apply-filter result)))
       (quit
        (with-current-buffer origin
-         (tired--apply-filter original))))))
+         (tired--apply-filter original)
+         (tired--goto-entry start))))))
 
 (defun tired-clear-filter ()
   "Remove the name filter."

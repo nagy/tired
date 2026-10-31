@@ -303,6 +303,21 @@ a symlink, and removes every Tired buffer it opened."
     (should (equal tired--filter "beta"))
     (should (equal (tired-tests--names) '("beta.txt")))))
 
+(ert-deftest tired-filter-command-restores-point-on-quit ()
+  "C-g puts point back on the row it started from."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "beta.txt")
+    (let ((start (point)))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _)
+                   (tired--apply-filter "sub")
+                   (signal 'quit nil))))
+        (tired-filter))
+      (should-not tired--filter)
+      (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))
+      (should (= start (point))))))
+
 (ert-deftest tired-filter-command-applies-minibuffer-text ()
   "A keystroke applies the minibuffer text, not the buffer body."
   (tired-tests--with-fixture

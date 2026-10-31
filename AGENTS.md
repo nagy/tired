@@ -184,9 +184,10 @@ Data flow:
     `tired--stop-watching`.
 12. `tired-filter` opens a minibuffer, hooks `after-change-functions`,
    and calls `tired--apply-filter` on every keystroke.  RET keeps the
-   value, C-g restores the previous filter.  `tired--filter-changed`
-   reads `minibuffer-contents` before it switches to the listed
-   buffer.
+   value, C-g restores the previous filter and moves point back to the
+   row that held it when `tired-filter` started.
+   `tired--filter-changed` reads `minibuffer-contents` before it
+   switches to the listed buffer.
 13. `tired-noselect` returns the buffer for a directory and never shows
    it.  It sets `tired--directory` and `default-directory`, then
    refreshes.  Loading the library changes nothing global.  The
