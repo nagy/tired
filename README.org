@@ -407,7 +407,9 @@ The Cargo handler reads only the manifest it parses.  Its table rows
 count their entries.  A dependency row holds
 the crate name, its version and the badges =[optional]= and
 =[no-default]=.  A feature row holds the feature name and the members
-it turns on.  A table outside those four stays out, so a
+it turns on.  Every row of the four tables shares one key column and
+one version column, so the feature arrows, the dependency versions
+and the badges line up.  A table outside those four stays out, so a
 =[patch.crates-io]= target or a =[target.'cfg(...)'.dependencies]=
 table shows no section.
 

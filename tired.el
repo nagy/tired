@@ -2813,17 +2813,50 @@ with `default-features = false' earns `[no-default]'."
                              "false")
                   "[no-default]")))))
 
-(defun tired--cargo-padded-key (node key)
-  "Return KEY padded to the widest sibling key of the TOML pair NODE.
-The manifest reads as a table of columns, so the versions line up."
-  (let* ((siblings (seq-filter (lambda (child)
-                                 (equal (treesit-node-type child) "pair"))
-                               (treesit-node-children
-                                (treesit-node-parent node) t)))
-         (width (seq-max (mapcar (lambda (child)
-                                   (length (or (tired--toml-key child) "")))
-                                 siblings))))
-    (concat key (make-string (max 0 (- width (length key))) ?\s))))
+(defvar tired--cargo-columns nil
+  "Column widths of the Cargo manifest in the current buffer.
+The value is a cons `(KEY . VERSION)'.  `tired-file-sections-cargo'
+binds the variable to nil for one parse, and `tired--cargo-measure'
+fills it on first use, so every listed table of a file shares both
+columns.")
+
+(defun tired--cargo-measure ()
+  "Return the column widths of the four listed tables in this buffer.
+Measure the file once, then reuse the value.  The car is the widest
+key length, and the cdr is the widest version length."
+  (or tired--cargo-columns
+      (setq tired--cargo-columns
+            (let ((root (treesit-buffer-root-node 'toml))
+                  (key-width 0)
+                  (version-width 0))
+              (dolist (table (and root (treesit-node-children root t)))
+                (when (member (tired--toml-key table) tired--cargo-tables)
+                  (dolist (pair (treesit-node-children table t))
+                    (when (equal (treesit-node-type pair) "pair")
+                      (setq key-width
+                            (max key-width
+                                 (length (or (tired--toml-key pair) ""))))
+                      (when-let* ((version (tired--cargo-version
+                                            (tired--toml-pair-value pair))))
+                        (setq version-width
+                              (max version-width (length version))))))))
+              (cons key-width version-width)))))
+
+(defun tired--cargo-pad (text width)
+  "Return TEXT padded with spaces to WIDTH characters."
+  (concat text (make-string (max 0 (- width (length text))) ?\s)))
+
+(defun tired--cargo-padded-key (key)
+  "Return KEY padded to the key column of the Cargo manifest.
+The column covers every listed table of the file, so a feature
+arrow and a dependency version start in one place."
+  (tired--cargo-pad key (car (tired--cargo-measure))))
+
+(defun tired--cargo-padded-version (version)
+  "Return VERSION padded to the version column of the manifest.
+The column covers every listed table of the file, so the badges of
+a dependency start in one place."
+  (tired--cargo-pad version (cdr (tired--cargo-measure))))
 
 (defun tired--cargo-table-label (node)
   "Return the label of the Cargo table NODE.
@@ -2836,7 +2869,8 @@ The label names the table and counts its entries."
 (defun tired--cargo-feature-label (node key)
   "Return the label of the feature NODE under the key KEY.
 List the members of the feature, so the row answers what the
-feature turns on."
+feature turns on.  Pad KEY to the key column, so every arrow of
+the manifest sits in one place."
   (let* ((value (tired--toml-pair-value node))
          (members (when (and value (equal (treesit-node-type value) "array"))
                     (mapcar (lambda (child)
@@ -2847,16 +2881,19 @@ feature turns on."
                                                  "string"))
                                         (treesit-node-children value))))))
     (if members
-        (format "%s \u2192 %s" key (string-join members ", "))
+        (format "%s \u2192 %s" (tired--cargo-padded-key key)
+                (string-join members ", "))
       key)))
 
 (defun tired--cargo-dependency-label (node key)
   "Return the label of the dependency NODE under the key KEY.
-The label holds the crate name, its version and its badges."
+The label holds the crate name, its version and its badges.  Pad
+the version to the version column, so the badges line up."
   (let* ((value (tired--toml-pair-value node))
          (version (tired--cargo-version value))
          (badges (tired--cargo-badges value)))
-    (string-trim (concat (tired--cargo-padded-key node key) " " version
+    (string-trim (concat (tired--cargo-padded-key key) " "
+                         (and version (tired--cargo-padded-version version))
                          (when badges (concat " " (string-join badges " ")))))))
 
 (defun tired--cargo-section-label (node _kind)
@@ -2877,8 +2914,11 @@ other listed table holds a dependency."
 The buffer already holds the file, so the handler ignores PATH.
 Read the `features', `dependencies', `dev-dependencies' and
 `build-dependencies' tables through tree-sitter, with their entries
-one level below.  Return nil when the TOML grammar is missing."
-  (tired--treesit-sections tired--cargo-section-spec))
+one level below.  Bind one key column and one version column for
+the whole file, so the feature arrows and the dependency versions
+line up.  Return nil when the TOML grammar is missing."
+  (let ((tired--cargo-columns nil))
+    (tired--treesit-sections tired--cargo-section-spec)))
 
 (defun tired--sqlite-column-label (row)
   "Return the label for the `PRAGMA table_info' ROW of one column.

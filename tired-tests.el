@@ -1841,20 +1841,55 @@ and it puts that window point back after the reprint."
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
                    '(("features (2)" . 1)
-                     ("default \u2192 cache, svg" . 2)
-                     ("cache \u2192 dep:jixel" . 2)
+                     ("default  \u2192 cache, svg" . 2)
+                     ("cache    \u2192 dep:jixel" . 2)
                      ("dependencies (3)" . 1)
-                     ("anyhow 1.0" . 2)
-                     ("image  0.25.10 [no-default]" . 2)
-                     ("xdg    3.0.0 [optional]" . 2)
+                     ("anyhow   1.0" . 2)
+                     ("image    0.25.10 [no-default]" . 2)
+                     ("xdg      3.0.0   [optional]" . 2)
                      ("dev-dependencies (1)" . 1)
                      ("tempfile 3.27.0" . 2)
                      ("build-dependencies (1)" . 1)
-                     ("cc 1.0" . 2))))
+                     ("cc       1.0" . 2))))
     (should (eq (tired-section-kind
                  (car (tired-file-sections
                        (expand-file-name "Cargo.toml" root))))
                 'table))))
+
+(ert-deftest tired-cargo-key-column-covers-every-table ()
+  "Cargo rows share one key column across the four tables."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
+  (tired-tests--with-fixture
+    (tired-tests--write
+     "Cargo.toml"
+     (concat "[features]\nshort = [\"a\"]\n\n"
+             "[dependencies]\na-much-longer-name = \"1.0\"\n"))
+    (tired root)
+    (tired-tests--goto "Cargo.toml")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("features (1)" . 1)
+                     ("short              \u2192 a" . 2)
+                     ("dependencies (1)" . 1)
+                     ("a-much-longer-name 1.0" . 2))))))
+
+(ert-deftest tired-cargo-version-column-aligns-badges ()
+  "Cargo dependency badges start in one version column."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
+  (tired-tests--with-fixture
+    (tired-tests--write
+     "Cargo.toml"
+     (concat "[dependencies]\n"
+             "a = { version = \"1.0\", optional = true }\n"
+             "a-longer = { version = \"0.25.10\", optional = true, "
+             "default-features = false }\n"))
+    (tired root)
+    (tired-tests--goto "Cargo.toml")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("dependencies (2)" . 1)
+                     ("a        1.0     [optional]" . 2)
+                     ("a-longer 0.25.10 [optional] [no-default]" . 2))))))
 
 (ert-deftest tired-cargo-table-folds-its-entries ()
   "Folding a Cargo table section hides the entries below it."

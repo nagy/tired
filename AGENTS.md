@@ -426,11 +426,16 @@ Evil integration:
   the sign as the value.
 - The Cargo handler keeps its own label format in
   `tired--cargo-section-label`.  A pair of `[features]` lists the
-  members of the feature.  A pair of another table pads the crate name
-  to the widest sibling key, then adds the version and the badges
-  `[optional]` and `[no-default]`.  A table row counts its entries.
-  The labels stay plain strings, so the filter, the copy commands and
-  the tests read them.
+  members of the feature after an arrow.  A pair of another table
+  holds the crate name, its version and the badges `[optional]` and
+  `[no-default]`.  Two columns span the whole file:
+  `tired-file-sections-cargo` binds `tired--cargo-columns` to nil,
+  and `tired--cargo-measure` reads the widest key and the widest
+  version of every listed table on first use.  So a feature arrow, a
+  dependency version and a dependency badge each start in one
+  column, the way elastic tabstops align a block.  A table row
+  counts its entries.  The labels stay plain strings, so the filter,
+  the copy commands and the tests read them.
 - A handler with no real line gives every section a distinct synthetic
   `:line`.  The section fold state and the point restore key on
   `(PATH . LINE)`, so two sections that share a line fold together and
