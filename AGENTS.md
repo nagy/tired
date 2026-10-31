@@ -113,8 +113,9 @@ Data flow:
    with a clone of the file at the end of a single-entry chain.  Collapse
    runs after sorting, so the row keeps the directory's position.
    Results cache in `tired--collapse-cache`, keyed by the chain's top
-   directory.  A collapsed row suppresses its inserted children and its
-   sections.
+   directory.  A collapsed row suppresses its inserted children, but it
+   expands its file sections when the user expands that file, so the
+   sections of a deep single file stay reachable.
 5. `tired-file-sections` turns one file into `tired-section` structs.
    `tired-file-handler` matches `tired-file-handlers` against the
    absolute file name, first rule wins.  `tired--call-handler` runs the

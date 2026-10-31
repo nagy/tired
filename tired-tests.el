@@ -1678,6 +1678,23 @@ that starts at the first line."
                    (expand-file-name "chain/a/b/file.txt" root)))
     (kill-buffer (current-buffer))))
 
+(ert-deftest tired-collapse-row-expands-file-sections ()
+  "A collapsed single file still expands its own sections."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (tired-tests--write "chain/a/b/notes.org" "* Intro\n** Detail\n")
+    (tired root)
+    (should (member "chain/a/b/notes.org" (tired-tests--names)))
+    (tired-tests--goto "chain/a/b/notes.org")
+    (tired-toggle-subdir)
+    (should (tired--expanded-p
+             (expand-file-name "chain/a/b/notes.org" root)))
+    (should (equal (tired-tests--sections)
+                   '(("Intro" . 1) ("Detail" . 2))))
+    (tired-tests--goto "chain/a/b/notes.org")
+    (tired-collapse-file)
+    (should-not (tired-tests--sections))))
+
 (ert-deftest tired-collapse-requires-exactly-one-entry ()
   "A branch or an empty directory does not collapse."
   (tired-tests--with-fixture

@@ -733,7 +733,8 @@ sections of an expanded file follow the row of that file.  With
 VISIBLE-ONLY, skip hidden, filtered and narrowed-out entries.  A
 directory seen twice through symlinks appears once.  A directory that
 leads to exactly one file collapses into one row for that file,
-keeping the directory's sort position."
+keeping the directory's sort position.  Such a row still shows the
+sections of its file when the user expands it."
   (let ((rows nil)
         (seen (make-hash-table :test #'equal)))
     (cl-labels
@@ -745,10 +746,9 @@ keeping the directory's sort position."
                  (let* ((collapsed
                          (tired--collapsed-display-entry directory entry))
                         (display (or collapsed entry))
-                        (sections (and (not collapsed)
-                                       (not (tired--directory-entry-p entry))
+                        (sections (and (not (tired--directory-entry-p display))
                                        (tired--expanded-p
-                                        (tired-entry-path entry))
+                                        (tired-entry-path display))
                                        (tired--section-rows display depth)))
                         (name-visible (tired--name-visible-p display))
                         (shown (cond
