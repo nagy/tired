@@ -861,6 +861,30 @@ a symlink, and removes every Tired buffer it opened."
     (should (equal (file-size-human-readable 3)
                    (tired--size-cell (tired-tests--entry "alpha.txt"))))))
 
+(ert-deftest tired-size-cell-skips-a-remote-directory ()
+  "A remote directory shows no total, because the walk would cross the network."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (walked nil)
+          (original (symbol-function 'file-remote-p)))
+      (tired root)
+      (cl-letf (((symbol-function 'file-remote-p)
+                 (lambda (name &rest args)
+                   (if (string-prefix-p "/ssh:" name)
+                       "/ssh:"
+                     (apply original name args))))
+                ((symbol-function 'tired--subtree-size)
+                 (lambda (&rest _) (setq walked t) 0)))
+        (should (equal ""
+                       (tired--size-cell
+                        (tired--entry-create :name "sub"
+                                             :path "/ssh:host:/tmp/sub"
+                                             :type 'directory
+                                             :dirp t))))
+        (should-not walked)
+        (tired--size-cell (tired-tests--entry "sub"))
+        (should walked)))))
+
 (ert-deftest tired-size-cell-sums-a-directory-recursively ()
   "With `tired-directory-size' on, a directory sums its files."
   (tired-tests--with-fixture

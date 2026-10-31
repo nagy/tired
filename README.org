@@ -241,8 +241,9 @@ of every regular file under the directory, computed recursively:
 #+end_src
 
 Symbolic links stay unfollowed, so a link cycle cannot loop and a
-large tree outside the listing does not inflate a size.  Hidden files
-count.  One memo table holds every directory the walk visits, so a
+large tree outside the listing does not inflate a size.  A remote
+directory keeps the column empty, because the walk would cost one
+network round trip per file.  Hidden files count.  One memo table holds every directory the walk visits, so a
 directory shown as a parent and as an inserted section costs one read.
 The table lives one refresh: =g=, automatic refresh and the file
 watches rebuild it, while sort, filter, insert, fold and resize reuse

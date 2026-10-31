@@ -599,7 +599,9 @@ Evil integration:
 - Recursive directory sizes stay off by default, because the option
   makes every refresh read every directory below the shown one.
   `tired--subtree-size` never follows a symbolic link, so a link cycle
-  cannot loop.  `tired--size-cache` lives one refresh, not one redraw:
+  cannot loop.  `tired--size-cell` keeps the column empty for a remote
+  directory, because the walk would cost one network round trip per
+  file.  `tired--size-cache` lives one refresh, not one redraw:
   `tired--reload-tables` refills it, so filter, sort, insert, fold and
   resize redraws cost nothing, and a watcher event or `g` rewalks the
   tree.  A size therefore stays stale until the next refresh when an

@@ -165,7 +165,8 @@ one network round trip per link."
 The size column then sums the bytes of every regular file under the
 directory.  Symbolic links stay unfollowed.  A deep tree costs one
 directory read per directory on every refresh, so the option stays
-nil by default."
+nil by default.  A remote directory never shows a total, because the
+walk would cost one network round trip per file."
   :type 'boolean)
 
 (defcustom tired-name-faces nil
@@ -953,14 +954,17 @@ value stays until the next refresh."
     (tired--subtree-size directory)))
 
 (defun tired--size-cell (entry)
-  "Return the size column string for ENTRY."
+  "Return the size column string for ENTRY.
+A remote directory keeps the column empty, because a walk over the
+network costs one round trip per file."
   (cond
    ((not (tired-entry-dirp entry))
     (file-size-human-readable (tired-entry-size entry)))
-   (tired-directory-size
+   ((not tired-directory-size) "")
+   ((file-remote-p (tired-entry-path entry)) "")
+   (t
     (file-size-human-readable
-     (tired--directory-total (tired-entry-path entry))))
-   (t "")))
+     (tired--directory-total (tired-entry-path entry))))))
 
 (defun tired--row (row depth)
   "Return the tabulated list row for ROW at DEPTH.
