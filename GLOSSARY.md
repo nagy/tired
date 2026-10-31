@@ -85,6 +85,11 @@ One row that represents a directory chain whose subtree holds exactly
 one file.
 _Avoid_: Flatten, fold, compress
 
+**Empty directory**:
+A directory whose subtree holds no byte.  Its name row takes
+`tired-ignored-face', and the slash follows the name.
+_Avoid_: Zero size, blank folder
+
 **Name rule**:
 One element of `tired-name-faces' that colors an entry name.  A rule
 paints the whole name, or only the text of one submatch when its third

@@ -257,7 +257,9 @@ The slash stays a separate run of text, so a theme colors it alone.")
 
 (defface tired-ignored-face
   '((t :inherit dired-ignored))
-  "Face for names that match `completion-ignored-extensions'.")
+  "Face for names that match `completion-ignored-extensions'.
+An empty directory takes the face too, so a row that holds no byte
+dims as one run.")
 
 (defface tired-selected-face
   '((t :inherit highlight :extend t))
@@ -964,15 +966,34 @@ face.  NAME itself stays unchanged."
         (put-text-property start end 'font-lock-face value string)))
     string))
 
+(defun tired--directory-empty-p (directory)
+  "Return non-nil when the subtree of DIRECTORY holds no byte.
+A remote directory counts as non-empty, because its walk costs one
+round trip per file."
+  (and (stringp directory)
+       (not (file-remote-p directory))
+       (zerop (tired--directory-total directory))))
+
+(defun tired--directory-slash-face (face)
+  "Return the face for the slash of a directory whose name takes FACE.
+An empty directory dims as one run, so its slash keeps the ignored
+face.  Every other name takes `tired-directory-suffix-face'."
+  (if (eq face 'tired-ignored-face)
+      face
+    'tired-directory-suffix-face))
+
 (defun tired--name-face (entry &optional name)
   "Return the face for the name of ENTRY, or nil for a plain name.
 NAME defaults to the name of ENTRY.  The value covers the whole name,
 and a partial rule contributes no value here.  The fixed order runs
-directory, broken link, user rule, ignored suffix, symbolic link,
-special file.  The order otherwise follows
+empty directory, directory, broken link, user rule, ignored suffix,
+symbolic link, special file.  The order otherwise follows
 `dired-font-lock-keywords'."
   (let ((name (or name (tired-entry-name entry))))
     (cond
+     ((and (tired-entry-dirp entry)
+           (tired--directory-empty-p (tired-entry-path entry)))
+      'tired-ignored-face)
      ((tired-entry-dirp entry) 'tired-directory-face)
      ((and (eq (tired-entry-type entry) 'symlink)
            (tired-entry-broken entry))
@@ -1043,12 +1064,13 @@ with the face its own row takes, and close a directory leaf with a
 slash.  A symbolic link keeps its target arrow."
   (let* ((name (tired-entry-name entry))
          (file (file-name-nondirectory name))
-         (head (string-remove-suffix file name)))
+         (head (string-remove-suffix file name))
+         (face (tired--name-face entry file)))
     (concat (tired--propertize-name head 'tired-directory-face)
-            (tired--propertize-name file (tired--name-face entry file)
+            (tired--propertize-name file face
                                     (tired--entry-name-spans entry file))
             (when (tired-entry-dirp entry)
-              (tired--propertize-name "/" 'tired-directory-suffix-face))
+              (tired--propertize-name "/" (tired--directory-slash-face face)))
             (when (eq (tired-entry-type entry) 'symlink)
               (tired--symlink-suffix entry)))))
 
@@ -1063,7 +1085,7 @@ slash.  A symbolic link keeps its target arrow."
           ('directory
            (concat (tired--propertize-name name face)
                    (tired--propertize-name
-                    "/" 'tired-directory-suffix-face)))
+                    "/" (tired--directory-slash-face face))))
           ('symlink
            (concat (tired--propertize-name name face spans)
                    (tired--symlink-suffix entry)))

@@ -1014,6 +1014,56 @@ key map alone."
     (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
     (should (equal (tired--ignored-regexp) (tired--ignored-regexp)))))
 
+(ert-deftest tired-name-cell-marks-an-empty-directory ()
+  "A directory whose subtree holds no byte takes `tired-ignored-face'.
+The slash follows the name, so the row dims as one run."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "hollow" root))
+    (tired root)
+    (let* ((entry (tired-tests--entry "hollow"))
+           (cell (tired--name-cell entry)))
+      (should (zerop (tired--directory-total (tired-entry-path entry))))
+      (should (eq 'tired-ignored-face (get-text-property 0 'face cell)))
+      (should (eq 'tired-ignored-face
+                  (get-text-property 0 'font-lock-face cell)))
+      (should (eq 'tired-ignored-face
+                  (get-text-property (1- (length cell)) 'face cell))))
+    (should (eq 'tired-directory-face
+                (tired-tests--cell-face (tired-tests--entry "sub"))))))
+
+(ert-deftest tired-name-cell-marks-a-subtree-of-empty-files ()
+  "A directory that holds only empty files and empty children dims too."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "hollow/deeper" root) t)
+    (with-temp-file (expand-file-name "hollow/blank.txt") nil)
+    (tired root)
+    (should (eq 'tired-ignored-face
+                (tired-tests--cell-face (tired-tests--entry "hollow"))))))
+
+(ert-deftest tired-name-face-marks-an-empty-directory-without-the-column ()
+  "The mark does not wait for `tired-directory-size'."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size nil))
+      (make-directory (expand-file-name "hollow" root))
+      (tired root)
+      (should (eq 'tired-ignored-face
+                  (tired-tests--cell-face (tired-tests--entry "hollow")))))))
+
+(ert-deftest tired-name-face-keeps-a-remote-directory-plain ()
+  "A remote directory keeps the directory face and costs no walk."
+  (let ((walked nil))
+    (cl-letf (((symbol-function 'file-remote-p)
+               (lambda (&rest _) "/ssh:host:"))
+              ((symbol-function 'tired--subtree-size)
+               (lambda (&rest _) (setq walked t) 0)))
+      (should (eq 'tired-directory-face
+                  (tired--name-face
+                   (tired--entry-create :name "sub"
+                                        :path "/ssh:host:/tmp/sub"
+                                        :type 'directory
+                                        :dirp t))))
+      (should-not walked))))
+
 (ert-deftest tired-name-faces-colorizes-a-matching-name ()
   "A `tired-name-faces' rule sets the name face, and a directory keeps its own."
   (tired-tests--with-fixture
@@ -1070,6 +1120,7 @@ key map alone."
   (tired-tests--with-fixture
     (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
       (make-directory (expand-file-name "name.txt") t)
+      (with-temp-file (expand-file-name "name.txt/keep.txt") (insert "x"))
       (tired root)
       (let ((cell (tired--name-cell (tired-tests--entry "name.txt"))))
         (should (eq 'tired-directory-face (get-text-property 0 'face cell)))

@@ -417,6 +417,12 @@ A name takes its face from the matching Dired face: `dired-directory',
 `dired-ignored'.  A Dired theme setting therefore reaches a Tired row
 without further work.
 
+An empty directory takes `dired-ignored' as well.  A directory counts
+as empty when its subtree holds no byte, so a directory that holds
+only empty files dims too.  The slash of the row follows the name.
+The mark needs no =tired-directory-size=, because the name reads the
+size cache, and a remote directory keeps the directory face.
+
 Set =tired-name-faces= to colorize more names.  Each rule starts with
 a regexp that matches the entry name.  A rule that holds a bare face
 paints the whole name.  The first such rule wins, and a directory

@@ -293,6 +293,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - Use `tired--directory-entry-p`, not `tired-entry-dirp`, to decide
   whether a row takes children.  `DIRP` covers real directories only, and
   the sort key, the size column and the directory face read it.
+- An empty directory row takes `tired-ignored-face`, and its slash
+  follows the name through `tired--directory-slash-face`.  Empty means
+  that `tired--directory-total` returns zero, so `tired--name-face`
+  reads the size cache and a redraw walks a subtree even with
+  `tired-directory-size` nil.  That cache bounds the cost.  A remote
+  directory keeps the directory face and costs no walk.
 - `minibuffer-contents` returns the current buffer text outside a
   minibuffer, so read it before `with-current-buffer`.
 - `tabulated-list-print` erases the buffer, and the erase strands the
