@@ -89,7 +89,14 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 5. `tired-file-sections` picks a handler through `tired-file-handlers`,
    runs it in a temporary buffer, and turns the plists into
    `tired-section` structs.  The result caches in `tired--sections` by
-   modification time, so a redraw does not re-parse.
+   modification time, so a redraw does not re-parse.  A handler
+   fontifies its buffer and returns propertized labels, and
+   `tired--section-cell` mirrors each `face` into `font-lock-face`.
+   `tired--paint-missing-face` drops every label property except
+   `face', paints `tired-section-face' or `tired-section-heading-face'
+   on every part of a label that carries no source face, so a plain kind
+   prefix keeps the section color, and mirrors each face into
+   `font-lock-face'.
 6. `tired--redraw` walks the tree once into `tired--rows`, sizes the name
    column, prints vector rows, restores point by row key, the mark and
    the window views, repaints the selection, syncs the watches and
@@ -152,7 +159,8 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   `display-buffer` and then selects the returned window, because
   `tired-jump` moves point in the listing after the call.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
-  with font-lock off and after `font-lock-unfontify-region`.
+  with font-lock off and after `font-lock-unfontify-region`.  A section
+  label follows the same rule through `tired--section-cell`.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the
   strings, so color belongs in the entry data.
 - File commands never ask a confirmation and never call a shell, except
@@ -220,6 +228,27 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   re-parse.
 - The Emacs Lisp handler skips whitespace and comments with
   `forward-comment` before it records a form start.
+- A label takes its faces from the fontified temporary buffer, so the
+  handler calls `font-lock-ensure` after it selects its major mode.
+  Without that call a tree-sitter buffer holds no face and every row
+  falls back to the section face.
+- `treesit-node-text` keeps the buffer text properties unless the
+  second argument is non-nil.  Leave the argument out for a label, and
+  pass t for a key that a comparison or a column measurement reads.
+- A source span may carry more than a face.  An org link brings a
+  `keymap', a `mouse-face' and an `invisible' property, and the last one
+  hides half a row.  `tired--face-only-string` rebuilds the label with
+  `face' alone, so no handler has to filter its own text.
+- A fenced Markdown block names another language, and its grammar may
+  be absent.  `tired--treesit-sections` binds
+  `treesit-auto-install-grammar' to nil around the parse, or
+  `font-lock-ensure' raises an install question while the listing
+  reads a file.
+- The org label span comes from the title text, not from the stars, so
+  a TODO keyword, a priority cookie and a tag list stay out.  Org 31
+  gives `:title` as a string, and an older Org gives a list, so only a
+  string reaches `search-forward`, and a miss falls back to
+  `:raw-value`.
 - A hidden row drops before its sections read, even when VISIBLE-ONLY is
   nil, so the width pass and the selection never see a hidden path.
 - The percent sign needs doubling in the header title and in the cached

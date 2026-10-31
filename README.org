@@ -523,12 +523,12 @@ Six handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
-| Org (=.org=)  | Every heading, indented by its outline level          |
+| Org (=.org=)  | Every heading, indented by its outline level, colored as =org-mode= colors the title |
 | Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source |
-| Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it |
-| Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out |
+| Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it.  A name carries the face of its source |
+| Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper |
-| Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper |
+| Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
 
 =RET= on a section row visits the file at the section line.  A section
 row fills the name column only.  A SQLite section opens the table in
@@ -581,10 +581,18 @@ replaces the default visit.  The org handler uses that hook, so its
 headings narrow the visited buffer.
 
 A =:label= may carry text properties.  A handler that fontifies its
-buffer can return a propertized label, and Tired keeps the faces
-instead of applying the section face.  The Emacs Lisp handler
-fontifies with =emacs-lisp-mode= for this reason, so a =defun= row
-colors its keyword and its function name the way the file does.
+buffer returns a propertized label, and Tired keeps the faces of it and
+drops every other property, so a key map or an =invisible= flag of the
+source never disturbs a row.  A part of the label without a source face
+takes the face of its section kind, so a plain prefix such as a Rust
+item type and the padding of a Cargo row still show the section color.
+Every handler that reads source text fontifies its buffer for this
+reason: =emacs-lisp-mode= for a =defun= row, =org-mode= for a heading,
+and a tree-sitter mode for Rust, Markdown and Cargo.  A database has no
+source text, so its rows stay plain.
+
+The Rust, Markdown and Cargo handlers call =font-lock-ensure= once per
+parse, so the faces come from the same major mode that a visitor uses.
 
 A section is not selectable, because a section stands for its file.
 The path commands, delete and copy act on the file that owns the

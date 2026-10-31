@@ -95,6 +95,13 @@ declaration or a PDF bookmark.  A section row follows the row of its
 file.
 _Avoid_: Subtree, outline item, node, chunk
 
+**Label**:
+The text of one section row in the name column.  A handler builds it
+from the source text and keeps the faces of its major mode, so a row
+colors like its file.  A part of a label without a source face takes
+the face of its section kind.
+_Avoid_: Title, caption, row text
+
 **Expand**:
 Show the sections of a file under its row.  Insert shows the children
 of a directory, and expand shows the sections of a file.

@@ -32,6 +32,11 @@
 (require 'subr-x)
 (require 'tired-core)
 
+;; This user option lives in `treesit', which loads at run time.  A plain
+;; `defvar' marks the variable special, so a binding stays dynamic and
+;; byte compilation stays quiet.
+(defvar treesit-auto-install-grammar)
+
 (declare-function org-element-map "org-element"
                   (data types fun &optional info first-match no-recursion
                         with-affiliated no-footnotes))
@@ -70,19 +75,46 @@ fails leaves the buffer wide."
           (require 'org)
           (ignore-errors (org-narrow-to-subtree)))))))
 
+(defun tired--org-heading-span (headline)
+  "Return the (BEG . END) buffer span of the title of HEADLINE.
+Skip the stars, then search the title text on the heading line, so a
+TODO keyword, a priority cookie and a tag list stay out of the span.
+Return nil when the title does not appear verbatim."
+  (save-excursion
+    (goto-char (org-element-property :begin headline))
+    (when (re-search-forward "^\\*+[ \t]+" (line-end-position) t)
+      (let ((title (org-element-property :title headline)))
+        (when (and (stringp title)
+                   (not (string-empty-p title))
+                   (search-forward title (line-end-position) t))
+          (cons (match-beginning 0) (match-end 0)))))))
+
+(defun tired--org-section-label (headline)
+  "Return the title of HEADLINE with the faces of its source text.
+The faces come from `org-mode' fontification, so a heading keeps the
+color of its level.  Return the plain raw value when the span holds
+no face."
+  (let* ((span (tired--org-heading-span headline))
+         (text (and span (buffer-substring (car span) (cdr span)))))
+    (if (and text (text-property-not-all 0 (length text) 'face nil text))
+        text
+      (or (org-element-property :raw-value headline) ""))))
+
 (defun tired-file-sections-org (_path)
   "Return the headings of the current org buffer as section plists.
 The buffer already holds the file, so the handler ignores PATH.
 Parse with `org-element', so a heading inside a source block or an
 example block stays out of the listing.  The line of a heading is
-the line of its stars.  Every section carries
+the line of its stars.  A label carries the faces that `org-mode'
+fontification gives the title.  Every section carries
 `tired--org-open-heading' as its action."
   (require 'org)
   (require 'org-element)
   (delay-mode-hooks (org-mode))
+  (font-lock-ensure)
   (org-element-map (org-element-parse-buffer 'headline) 'headline
     (lambda (headline)
-      (list :label (or (org-element-property :raw-value headline) "")
+      (list :label (tired--org-section-label headline)
             :line (line-number-at-pos (org-element-property :begin headline))
             :level (org-element-property :level headline)
             :kind 'heading
@@ -213,11 +245,12 @@ source text."
 
 (defun tired--treesit-field-text (node fields)
   "Return the text of the first field of NODE that FIELDS names.
-Return nil when NODE carries none of the fields."
+Return nil when NODE carries none of the fields.  The text keeps the
+faces that the buffer fontification gave it."
   (seq-some (lambda (field)
               (when-let* ((child (treesit-node-child-by-field-name
                                   node field)))
-                (treesit-node-text child t)))
+                (treesit-node-text child)))
             fields))
 
 (defun tired--treesit-kind (node spec)
@@ -281,12 +314,19 @@ optional `:filter', optional `:label' and optional `:level'.  Return
 nil when the grammar is missing, so the caller keeps a plain file
 row."
   (require 'treesit)
-  (let ((language (plist-get spec :language)))
+  (let ((language (plist-get spec :language))
+        ;; A fenced Markdown code block names another language, and a
+        ;; missing grammar there must not raise an install question
+        ;; while the listing parses a file.
+        (treesit-auto-install-grammar nil))
     (when (and (treesit-available-p) (treesit-ready-p language t))
       (when-let* ((library (plist-get spec :require)))
         (require library))
       (when-let* ((mode (plist-get spec :mode)))
         (delay-mode-hooks (funcall mode)))
+      ;; Fontify the whole buffer once, so every label below can copy
+      ;; the faces of its source text.
+      (font-lock-ensure)
       (when-let* ((root (treesit-buffer-root-node language)))
         (tired--treesit-walk root spec 0)))))
 
@@ -304,11 +344,12 @@ level 1 from an `=' underline and level 2 from any other underline."
 
 (defun tired--markdown-section-label (node _kind)
   "Return the text of the Markdown heading NODE without its marker.
-KIND stays unused."
+KIND stays unused.  The text keeps the faces that
+`markdown-ts-mode' gives it."
   (let ((content (or (treesit-node-child-by-field-name
                       node "heading_content")
                      node)))
-    (string-trim (treesit-node-text content t))))
+    (string-trim (treesit-node-text content))))
 
 (defun tired-file-sections-rust (_path)
   "Return the items of the current Rust buffer as section plists.
@@ -352,18 +393,31 @@ A table with any other name stays out, so `[patch.crates-io]' and
       (substring text 1 -1)
     text))
 
+(defun tired--toml-key-node (node)
+  "Return the key node of the TOML pair or table NODE, or nil."
+  (seq-find (lambda (child)
+              (member (treesit-node-type child)
+                      '("bare_key" "quoted_key" "dotted_key")))
+            (treesit-node-children node t)))
+
 (defun tired--toml-key (node)
   "Return the key text of the TOML pair or table NODE.
 Strip the quotes of a quoted key, so a quoted crate name reads like
 a bare one."
-  (when-let* ((child (seq-find (lambda (child)
-                                 (member (treesit-node-type child)
-                                         '("bare_key" "quoted_key"
-                                           "dotted_key")))
-                               (treesit-node-children node t))))
+  (when-let* ((child (tired--toml-key-node node)))
     (if (equal (treesit-node-type child) "quoted_key")
         (tired--toml-unquote (treesit-node-text child t))
       (treesit-node-text child t))))
+
+(defun tired--toml-key-label (node)
+  "Return the key text of the TOML pair or table NODE with its faces.
+Strip the quotes of a quoted key, so a quoted crate name reads like a
+bare one.  The text keeps the faces that the buffer fontification
+gave it."
+  (when-let* ((child (tired--toml-key-node node)))
+    (if (equal (treesit-node-type child) "quoted_key")
+        (tired--toml-unquote (treesit-node-text child))
+      (treesit-node-text child))))
 
 (defun tired--toml-pair-value (node)
   "Return the value node of the TOML pair NODE, or nil."
@@ -373,14 +427,18 @@ a bare one."
                              "comment"))))
             (treesit-node-children node t)))
 
-(defun tired--toml-field-text (table name)
-  "Return the value text of the pair NAME in the TOML inline table TABLE."
+(defun tired--toml-field-node (table name)
+  "Return the value node of the pair NAME in the TOML inline table TABLE."
   (when-let* ((pair (seq-find (lambda (child)
                                 (and (equal (treesit-node-type child) "pair")
                                      (equal (tired--toml-key child) name)))
                               (treesit-node-children table t))))
-    (when-let* ((value (tired--toml-pair-value pair)))
-      (treesit-node-text value t))))
+    (tired--toml-pair-value pair)))
+
+(defun tired--toml-field-text (table name)
+  "Return the plain value text of the pair NAME in the TOML inline table TABLE."
+  (when-let* ((value (tired--toml-field-node table name)))
+    (treesit-node-text value t)))
 
 (defun tired--cargo-node-shown-p (node)
   "Return non-nil when NODE belongs in a Cargo manifest listing.
@@ -395,12 +453,13 @@ inside them, so a pair of another table stays out."
 (defun tired--cargo-version (value)
   "Return the version text of the TOML pair VALUE.
 VALUE holds either a version string or an inline table with a
-`version' key.  Return nil when VALUE names no version."
+`version' key.  Return nil when VALUE names no version.  The text
+keeps the faces that the buffer fontification gave it."
   (pcase (and value (treesit-node-type value))
-    ("string" (tired--toml-unquote (treesit-node-text value t)))
+    ("string" (tired--toml-unquote (treesit-node-text value)))
     ("inline_table"
-     (when-let* ((text (tired--toml-field-text value "version")))
-       (tired--toml-unquote text)))))
+     (when-let* ((node (tired--toml-field-node value "version")))
+       (tired--toml-unquote (treesit-node-text node))))))
 
 (defun tired--cargo-badges (value)
   "Return the badge strings of the TOML pair VALUE.
@@ -466,39 +525,49 @@ a dependency start in one place."
 
 (defun tired--cargo-table-label (node)
   "Return the label of the Cargo table NODE.
-The label names the table and counts its entries."
-  (format "%s (%d)" (tired--toml-key node)
-          (seq-count (lambda (child)
-                       (equal (treesit-node-type child) "pair"))
-                     (treesit-node-children node t))))
+The label names the table and counts its entries.  The name keeps the
+faces that the buffer fontification gave it."
+  (concat (or (tired--toml-key-label node) "")
+          (format " (%d)"
+                  (seq-count (lambda (child)
+                               (equal (treesit-node-type child) "pair"))
+                             (treesit-node-children node t)))))
+
+(defun tired--cargo-member-texts (value)
+  "Return the member texts of the TOML array VALUE with their faces.
+VALUE holds the value node of a feature pair."
+  (when (and value (equal (treesit-node-type value) "array"))
+    (mapcar (lambda (child)
+              (tired--toml-unquote (treesit-node-text child)))
+            (seq-filter (lambda (child)
+                          (equal (treesit-node-type child) "string"))
+                        (treesit-node-children value)))))
 
 (defun tired--cargo-feature-label (node key)
-  "Return the label of the feature NODE under the key KEY.
+  "Return the label of the feature NODE under the plain key KEY.
 List the members of the feature, so the row answers what the
-feature turns on.  Pad KEY to the key column, so every arrow of
-the manifest sits in one place."
-  (let* ((value (tired--toml-pair-value node))
-         (members (when (and value (equal (treesit-node-type value) "array"))
-                    (mapcar (lambda (child)
-                              (tired--toml-unquote
-                               (treesit-node-text child t)))
-                            (seq-filter (lambda (child)
-                                          (equal (treesit-node-type child)
-                                                 "string"))
-                                        (treesit-node-children value))))))
+feature turns on.  Pad the feature name to the key column, so every
+arrow of the manifest sits in one place.  The feature name and each
+member keep the faces of their source text."
+  (let* ((members (tired--cargo-member-texts
+                   (tired--toml-pair-value node)))
+         (name (tired--cargo-padded-key
+                (or (tired--toml-key-label node) key))))
     (if members
-        (format "%s \u2192 %s" (tired--cargo-padded-key key)
-                (string-join members ", "))
+        (concat name " \u2192 " (string-join members ", "))
       key)))
 
 (defun tired--cargo-dependency-label (node key)
-  "Return the label of the dependency NODE under the key KEY.
+  "Return the label of the dependency NODE under the plain key KEY.
 The label holds the crate name, its version and its badges.  Pad
-the version to the version column, so the badges line up."
+the version to the version column, so the badges line up.  The crate
+name and the version keep the faces of their source text."
   (let* ((value (tired--toml-pair-value node))
+         (name (tired--cargo-padded-key
+                (or (tired--toml-key-label node) key)))
          (version (tired--cargo-version value))
          (badges (tired--cargo-badges value)))
-    (string-trim (concat (tired--cargo-padded-key key) " "
+    (string-trim (concat name " "
                          (and version (tired--cargo-padded-version version))
                          (when badges (concat " " (string-join badges " ")))))))
 

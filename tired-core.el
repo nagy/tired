@@ -724,11 +724,13 @@ same line fold together and no other row collides with them."
     ((or 'heading 'title 'table) 'tired-section-heading-face)
     (_ 'tired-section-face)))
 
-(defun tired--mirror-font-lock-face (string)
-  "Return STRING with each `face' property copied into `font-lock-face'.
-`font-lock-face' survives `font-lock-unfontify-region', which removes
-`face'."
-  (let ((string (copy-sequence string))
+(defun tired--face-only-string (string)
+  "Return STRING with only its `face' property.
+A source span may carry a `keymap', a `mouse-face', a `display' or an
+`invisible' property, as an org link does.  A listing row shows its
+whole label and owns its own mouse handling, so those properties stay
+out."
+  (let ((copy (substring-no-properties string))
         (position 0)
         (end (length string)))
     (while (< position end)
@@ -736,20 +738,17 @@ same line fold together and no other row collides with them."
              (next (or (next-single-property-change position 'face string end)
                        end)))
         (when face
-          (add-text-properties position next
-                               (list 'font-lock-face face)
-                               string))
+          (put-text-property position next 'face face copy))
         (setq position next)))
-    string))
+    copy))
 
 (defun tired--section-cell (section)
   "Return the name column string for SECTION, without indentation.
 A handler may return a label that already carries the faces of its
-major mode.  Such a label keeps them and takes no fallback face."
-  (let ((label (tired-section-label section)))
-    (if (text-property-not-all 0 (length label) 'face nil label)
-        (tired--mirror-font-lock-face label)
-      (tired--propertize-name label (tired--section-face section)))))
+major mode.  Such a part keeps its face, and every part without one
+takes the face of the section kind."
+  (tired--paint-missing-face (tired-section-label section)
+                            (tired--section-face section)))
 
 (defun tired--section-rows (entry depth)
   "Return (SECTION . DEPTH) conses for the sections of ENTRY.
@@ -966,6 +965,31 @@ special file.  The order otherwise follows
 `font-lock-unfontify-region', which removes `face'.  A name cell
 carries both, as `package-menu--print-info-simple' does."
   (list 'face face 'font-lock-face face))
+
+(defun tired--paint-missing-face (string face)
+  "Return STRING with FACE on every part that carries no face.
+Drop every text property except `face' first, so a row never inherits
+a `keymap', an `invisible' or a `mouse-face' from its source text.  A
+part that already carries a `face' property keeps it, so a handler may
+mix a plain prefix with propertized source text.  Each face also lands
+in `font-lock-face', which survives `font-lock-unfontify-region'.  A
+FACE of nil leaves the uncovered parts alone."
+  (let ((string (tired--face-only-string string))
+        (position 0)
+        (end (length string)))
+    (while (< position end)
+      (let* ((source (get-text-property position 'face string))
+             (next (or (next-single-property-change position 'face
+                                                    string end)
+                       end)))
+        (if source
+            (put-text-property position next 'font-lock-face source string)
+          (when face
+            (add-text-properties position next
+                                 (tired--face-properties face)
+                                 string)))
+        (setq position next)))
+    string))
 
 (defun tired--propertize-name (name face &optional spans)
   "Return NAME with FACE applied, or NAME alone when FACE is nil.
@@ -1858,7 +1882,7 @@ command is the short way to open a listing, in the manner of
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
   (tired--show-buffer (tired-noselect directory)
-                       tired-display-buffer-action))
+                      tired-display-buffer-action))
 
 ;;;###autoload
 (defun tired-other-window (directory)
@@ -1867,7 +1891,7 @@ The listing goes through `tired-other-window-action'."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
   (tired--show-buffer (tired-noselect directory)
-                       tired-other-window-action))
+                      tired-other-window-action))
 
 (defun tired-up-directory ()
   "Open the parent of the current directory."

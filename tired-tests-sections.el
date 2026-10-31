@@ -121,6 +121,111 @@
         (should (eq (get-text-property 0 'face cell)
                     'font-lock-keyword-face))))))
 
+(ert-deftest tired-org-section-labels-take-mode-faces ()
+  "An org heading label carries the faces of its source text."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org"
+                        "* Intro\n* Body **with markup** here\n** TODO Detail :tag:\n")
+    (let* ((path (expand-file-name "notes.org" root))
+           (sections (tired-file-sections path))
+           (first (car sections))
+           (second (cadr sections))
+           (third (caddr sections)))
+      (should (equal (tired-section-label first) "Intro"))
+      (should (eq (get-text-property 0 'face (tired-section-label first))
+                  'org-level-1))
+      (should (equal (tired-section-label second)
+                     "Body **with markup** here"))
+      (should (text-property-not-all 0 6 'face nil
+                                     (tired-section-label second)))
+      ;; The TODO keyword stays out of the label, and the level 2 face
+      ;; follows the title.
+      (should (equal (tired-section-label third) "Detail"))
+      (should (eq (get-text-property 0 'face (tired-section-label third))
+                  'org-level-2)))))
+
+(ert-deftest tired-section-cell-keeps-only-the-source-faces ()
+  "A section cell drops properties that belong to the source text."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* A [[file:x][link]] here\n")
+    (let* ((path (expand-file-name "notes.org" root))
+           (section (car (tired-file-sections path)))
+           (label (tired-section-label section))
+           (cell (tired--section-cell section)))
+      ;; Org gives a link a key map, a mouse face and an invisible
+      ;; property.  The listing row must show every character.
+      (should (text-property-not-all 0 (length label) 'keymap nil label))
+      (should-not (text-property-not-all 0 (length cell) 'keymap nil cell))
+      (should-not (text-property-not-all 0 (length cell) 'mouse-face nil cell))
+      (should-not (text-property-not-all 0 (length cell) 'invisible nil cell))
+      (should (eq (get-text-property 0 'face cell) 'org-level-1))
+      (should (eq (get-text-property 0 'font-lock-face cell) 'org-level-1)))))
+
+(ert-deftest tired-rust-section-labels-take-mode-faces ()
+  "A Rust item label keeps its source face over a plain kind prefix."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "lib.rs" "struct Config { n: u8 }\n\nfn main() {}\n")
+    (let* ((path (expand-file-name "lib.rs" root))
+           (sections (tired-file-sections path))
+           (structure (car sections))
+           (function (cadr sections))
+           (cell (tired--section-cell structure)))
+      (should (equal (tired-section-label structure) "struct Config"))
+      (should (eq (get-text-property 7 'face (tired-section-label structure))
+                  'font-lock-type-face))
+      (should (eq (get-text-property 9 'face (tired-section-label function))
+                  'font-lock-function-name-face))
+      ;; The kind prefix carries no source face, so it takes the
+      ;; section face, and the name keeps its own.
+      (should (eq (get-text-property 0 'face cell) 'tired-section-face))
+      (should (eq (get-text-property 0 'font-lock-face cell)
+                  'tired-section-face))
+      (should (eq (get-text-property 7 'face cell) 'font-lock-type-face))
+      (should (eq (get-text-property 7 'font-lock-face cell)
+                  'font-lock-type-face)))))
+
+(ert-deftest tired-markdown-section-labels-take-mode-faces ()
+  "A Markdown heading label keeps the face of its level."
+  (skip-unless (and (require 'treesit nil t)
+                    (treesit-ready-p 'markdown t)
+                    (treesit-ready-p 'markdown-inline t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.md" "# Intro\n\n## Detail\n")
+    (let* ((path (expand-file-name "notes.md" root))
+           (sections (tired-file-sections path))
+           (first (get-text-property 0 'face
+                                     (tired-section-label (car sections))))
+           (second (get-text-property 0 'face
+                                      (tired-section-label (cadr sections)))))
+      (should (equal (tired-section-label (car sections)) "Intro"))
+      (should first)
+      (should second)
+      (should-not (equal first second)))))
+
+(ert-deftest tired-cargo-section-labels-take-mode-faces ()
+  "A Cargo row keeps the face of its key and of its version."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "Cargo.toml"
+                        "[dependencies]\nanyhow = \"1.0\"\n")
+    (let* ((path (expand-file-name "Cargo.toml" root))
+           (sections (tired-file-sections path))
+           (table (tired-section-label (car sections)))
+           (dependency (tired-section-label (cadr sections)))
+           (version (string-match "1\\.0" dependency)))
+      (should (equal dependency "anyhow 1.0"))
+      (should (eq (get-text-property 0 'face table) 'font-lock-type-face))
+      (should (eq (get-text-property 0 'face dependency)
+                  'font-lock-property-use-face))
+      (should (eq (get-text-property version 'face dependency)
+                  'font-lock-string-face))
+      ;; The padding and the badges carry no source face, so they take
+      ;; the section face.
+      (should (eq (get-text-property 6 'face
+                                     (tired--section-cell (cadr sections)))
+                  'tired-section-face)))))
+
 (ert-deftest tired-call-handler-does-not-ask-to-kill-its-buffer ()
   "Parsing a file must not prompt about the discarded temp buffer."
   (tired-tests--with-fixture
