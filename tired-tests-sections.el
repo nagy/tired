@@ -23,8 +23,11 @@
 ;;; Code:
 
 (require 'ert)
+
 (require 'cl-lib)
+
 (require 'seq)
+
 (require 'tired-tests-fixtures)
 
 (declare-function treesit-ready-p "treesit" (language &optional quiet))
@@ -40,6 +43,7 @@
       (tired-refresh)
       (should-not (member "notes.org" (tired-tests--names)))
       (should (null (tired-tests--sections))))))
+
 (ert-deftest tired-collapse-row-expands-file-sections ()
   "A collapsed single file still expands its own sections."
   (tired-tests--with-fixture
@@ -56,6 +60,7 @@
     (tired-tests--goto "chain/a/b/notes.org")
     (tired-collapse-file)
     (should-not (tired-tests--sections))))
+
 (ert-deftest tired-file-handler-picks-the-first-matching-rule ()
   "The registry matches the absolute name and the first rule wins."
   (tired-tests--with-fixture
@@ -67,6 +72,7 @@
       (should (eq (tired-file-handler (expand-file-name "beta.txt" root))
                   #'identity))
       (should-not (tired-file-handler (expand-file-name "sub" root))))))
+
 (ert-deftest tired-expand-org-file-shows-nested-headings ()
   "TAB on an org file row shows its headings with levels as depth."
   (tired-tests--with-fixture
@@ -79,6 +85,7 @@
                    '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))
     (should (tired--expanded-p (expand-file-name "notes.org" root)))
     (should (string-match-p "1 expanded" (tired--mode-line)))))
+
 (ert-deftest tired-sections-of-an-elisp-file ()
   "An Emacs Lisp file lists its top-level forms in document order."
   (tired-tests--with-fixture
@@ -91,6 +98,7 @@
                    '(("defvar code-x" . 1)
                      ("defun code-foo" . 1)
                      ("provide code" . 1))))))
+
 (ert-deftest tired-elisp-section-labels-take-mode-faces ()
   "An Emacs Lisp section label carries the faces of its source text."
   (tired-tests--with-fixture
@@ -112,6 +120,7 @@
                     'font-lock-keyword-face))
         (should (eq (get-text-property 0 'face cell)
                     'font-lock-keyword-face))))))
+
 (ert-deftest tired-call-handler-does-not-ask-to-kill-its-buffer ()
   "Parsing a file must not prompt about the discarded temp buffer."
   (tired-tests--with-fixture
@@ -128,6 +137,7 @@
       (should (equal (mapcar #'tired-section-label
                              (tired-file-sections path))
                      '("Intro" "Detail"))))))
+
 (ert-deftest tired-sections-of-a-rust-file ()
   "A Rust file lists items and nests the methods of an impl block."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
@@ -142,6 +152,7 @@
                      ("impl Config" . 1)
                      ("function new" . 2)
                      ("function main" . 1))))))
+
 (ert-deftest tired-sections-of-a-markdown-file ()
   "A Markdown file lists ATX and setext headings and skips code fences."
   (skip-unless (and (require 'treesit nil t)
@@ -155,6 +166,7 @@
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Closing" . 1))))))
+
 (ert-deftest tired-sections-of-a-cargo-manifest ()
   "A Cargo manifest lists the four tables and their entries one level in."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
@@ -189,6 +201,7 @@
                  (car (tired-file-sections
                        (expand-file-name "Cargo.toml" root))))
                 'table))))
+
 (ert-deftest tired-cargo-key-column-covers-every-table ()
   "Cargo rows share one key column across the four tables."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
@@ -205,6 +218,7 @@
                      ("short              \u2192 a" . 2)
                      ("dependencies (1)" . 1)
                      ("a-much-longer-name 1.0" . 2))))))
+
 (ert-deftest tired-cargo-version-column-aligns-badges ()
   "Cargo dependency badges start in one version column."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
@@ -222,6 +236,7 @@
                    '(("dependencies (2)" . 1)
                      ("a        1.0     [optional]" . 2)
                      ("a-longer 0.25.10 [optional] [no-default]" . 2))))))
+
 (ert-deftest tired-cargo-table-folds-its-entries ()
   "Folding a Cargo table section hides the entries below it."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
@@ -239,6 +254,7 @@
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
                    '(("dependencies (2)" . 1))))))
+
 (ert-deftest tired-sections-of-a-sqlite-database ()
   "A SQLite file lists its tables and columns with a table action."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
@@ -260,6 +276,7 @@
       (let ((table (car (tired-file-sections path))))
         (should (eq (tired-section-kind table) 'table))
         (should (consp (tired-section-action table)))))))
+
 (ert-deftest tired-sqlite-table-action-opens-sqlite-mode ()
   "RET on a table section opens the database at that table."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
@@ -279,12 +296,14 @@
           (should (derived-mode-p 'sqlite-mode))
           (should (looking-at "users")))
         (kill-buffer buffer)))))
+
 (ert-deftest tired-sqlite-handler-rejects-a-non-database ()
   "A .db file that holds no database yields no sections."
   (tired-tests--with-fixture
     (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
     (tired-tests--write "junk.db" "not a database")
     (should-not (tired-file-sections (expand-file-name "junk.db" root)))))
+
 (ert-deftest tired-find-file-section-visits-its-line ()
   "RET on a section row visits the file at the section line."
   (tired-tests--with-fixture
@@ -299,6 +318,7 @@
     ;; An org heading narrows the buffer, so widen before the line check.
     (widen)
     (should (= 3 (line-number-at-pos)))))
+
 (ert-deftest tired-find-file-org-heading-narrows-to-its-subtree ()
   "RET on an org heading narrows the visited buffer to that subtree."
   (tired-tests--with-fixture
@@ -315,6 +335,7 @@
       (should (string-match-p "Detail" text))
       (should (string-match-p "detail body" text))
       (should-not (string-match-p "Intro" text)))))
+
 (ert-deftest tired-find-file-org-heading-stays-wide-when-option-off ()
   "An org heading opens wide when `tired-org-narrow-on-open' is nil."
   (tired-tests--with-fixture
@@ -329,6 +350,7 @@
       (should (string-match-p
                "Intro" (buffer-substring-no-properties
                         (point-min) (point-max)))))))
+
 (ert-deftest tired-find-file-non-org-section-stays-wide ()
   "A section of a non-org file opens without narrowing."
   (tired-tests--with-fixture
@@ -339,6 +361,7 @@
     (tired-tests--goto-section "defun beta")
     (tired-find-file)
     (should-not (buffer-narrowed-p))))
+
 (ert-deftest tired-section-rows-are-not-selectable ()
   "A selection command refuses a section row."
   (tired-tests--with-fixture
@@ -349,6 +372,7 @@
     (tired-tests--goto-section "Intro")
     (should-error (tired-select-toggle) :type 'user-error)
     (should-not tired--selection)))
+
 (ert-deftest tired-path-commands-use-the-file-of-a-section ()
   "A section stands for its file, so the path commands reach that file."
   (tired-tests--with-fixture
@@ -363,6 +387,7 @@
       (should (equal (tired--row-path row) path))
       (should (equal (tired-entry-name (car (tired--selection-targets)))
                      "notes.org")))))
+
 (ert-deftest tired-fold-hides-the-child-sections ()
   "TAB on a section row hides its children and TAB again shows them."
   (tired-tests--with-fixture
@@ -377,6 +402,7 @@
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))))
+
 (ert-deftest tired-collapse-file-hides-the-sections ()
   "E collapses the sections that TAB expanded."
   (tired-tests--with-fixture
@@ -388,6 +414,7 @@
     (tired-tests--goto "notes.org")
     (tired-collapse-file)
     (should-not (tired-tests--sections))))
+
 (ert-deftest tired-expand-file-rejects-a-file-without-handler ()
   "A file that no rule claims reports the missing handler."
   (tired-tests--with-fixture
@@ -395,6 +422,7 @@
     (tired-tests--goto "alpha.txt")
     (should-error (tired-expand-file) :type 'user-error)
     (should-not (tired--expanded-p (expand-file-name "alpha.txt" root)))))
+
 (ert-deftest tired-section-cache-follows-modification-time ()
   "The handler runs once per modification time, not once per redraw."
   (tired-tests--with-fixture
@@ -415,6 +443,7 @@
         (should (= 2 calls))
         (should (equal (tired-section-label (car (tired-file-sections path)))
                        "alpha"))))))
+
 (ert-deftest tired-broken-handler-keeps-the-listing ()
   "A handler that signals an error yields no sections and no crash."
   (tired-tests--with-fixture
@@ -425,6 +454,7 @@
       (tired-tests--goto "alpha.txt")
       (should-error (tired-expand-file) :type 'user-error)
       (should (member "alpha.txt" (tired-tests--names))))))
+
 (ert-deftest tired-refresh-drops-a-vanished-expanded-file ()
   "Refresh forgets an expanded file that a command removed."
   (tired-tests--with-fixture
@@ -437,6 +467,7 @@
       (tired-refresh)
       (should-not (tired--expanded-p path))
       (should-not (tired-tests--sections)))))
+
 (ert-deftest tired-watch-paths-cover-expanded-files ()
   "An expanded file gets its own notification watch."
   (tired-tests--with-fixture
@@ -447,6 +478,7 @@
       (tired-toggle-subdir)
       (should (member (expand-file-name "notes.org" root)
                       (tired--watch-paths))))))
+
 (ert-deftest tired-redraw-keeps-point-on-a-section-row ()
   "A redraw returns point to the same section, not to the file row."
   (tired-tests--with-fixture
@@ -457,6 +489,7 @@
     (tired-tests--goto-section "Detail")
     (tired-sort 'size)
     (should (equal (tired-section-label (tired--row-at-point)) "Detail"))))
+
 (ert-deftest tired-filter-keeps-the-sections-of-a-visible-file ()
   "A filter on the file name keeps that file and all of its sections."
   (tired-tests--with-fixture

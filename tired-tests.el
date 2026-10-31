@@ -25,9 +25,13 @@
 ;;; Code:
 
 (require 'tired-tests-fixtures)
+
 (require 'tired-tests-core)
+
 (require 'tired-tests-sections)
+
 (require 'tired-tests-file-ops)
+
 (require 'tired-tests-evil)
 
 (provide 'tired-tests)

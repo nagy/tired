@@ -204,8 +204,11 @@ Data flow:
    vanished.
    `tired-refresh` calls it, prunes dead selection and narrow paths and
    then calls `tired--redraw`.
-9. `tired--redraw` sizes the name column from the longest visible row,
-   clamped between `tired-name-column-min-width' and the window width
+9. `tired--redraw` walks the tree once and leaves the visible rows in
+   `tired--rows`.  The width pass and the printer both read that list
+   through `tired--visible-rows`, so a redraw costs one walk, not two.
+   The redraw sizes the name column from the longest visible row,
+   clamped between `tired-name-column-min-width` and the window width
    minus the fixed columns.  It rebuilds the header line, prints the
    rows, restores point by row key (`tired--row-key`: path for an entry,
    path and line for a section) and reapplies the selection overlays.
@@ -787,6 +790,11 @@ Evil integration:
   an edit deep in the tree show up at most one window late.
   `tired--reload-tables` calls `tired--size-cache-prune`, so the table
   never holds more than one window of totals.
+- `tired--rows` holds a row list for one redraw only.  `tired--redraw`
+  fills it and an `unwind-protect` empties it after the print, so
+  `tired--visible-rows` walks the tree for any other caller and never
+  serves a stale row set.  Do not keep the value between redraws: the
+  filter, the insert set and the fold set all change without a refresh.
 - Do not put `tired--size-cache` on `post-gc-hook`, and do not give it
   weak keys.  One walk of a large tree triggers several garbage
   collections itself: measured 5 collections in a 0.3s walk over 35k

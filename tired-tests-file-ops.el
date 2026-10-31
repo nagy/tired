@@ -24,8 +24,11 @@
 ;;; Code:
 
 (require 'ert)
+
 (require 'cl-lib)
+
 (require 'seq)
+
 (require 'tired-tests-fixtures)
 
 (ert-deftest tired-copy-file-into-a-directory ()
@@ -44,6 +47,7 @@
                         (expand-file-name "alpha.txt" root))
                        "abc"))
         (should-not tired--selection)))))
+
 (ert-deftest tired-copy-directory-recursively ()
   "Copy of a directory keeps its subtree."
   (tired-tests--with-fixture
@@ -59,6 +63,7 @@
         (should (equal (tired-tests--contents
                         (expand-file-name "sub/deep/leaf.txt" destination))
                        "leaf"))))))
+
 (ert-deftest tired-copy-mixed-selection ()
   "Copy handles a selection that mixes files and directories."
   (tired-tests--with-fixture
@@ -74,6 +79,7 @@
         (should (file-regular-p (expand-file-name "alpha.txt" destination)))
         (should (file-directory-p (expand-file-name "sub" destination)))
         (should-not tired--selection)))))
+
 (ert-deftest tired-copy-overwrite-moves-old-file-to-trash ()
   "Copy puts a replaced destination into the trash and undo restores it."
   (tired-tests--with-fixture
@@ -99,6 +105,7 @@
                          (car (tired-tests--trash-entries))
                          tired-trash-directory))
                        "abc"))))))
+
 (ert-deftest tired-move-single-target-renames ()
   "Move with one target reads the destination as the new full path."
   (tired-tests--with-fixture
@@ -112,6 +119,7 @@
         (tired-undo)
         (should (file-regular-p (expand-file-name "alpha.txt" root)))
         (should-not (file-exists-p destination))))))
+
 (ert-deftest tired-move-many-targets-into-a-directory ()
   "Move with several targets reads the destination as a directory."
   (tired-tests--with-fixture
@@ -131,6 +139,7 @@
         (should (file-regular-p (expand-file-name "alpha.txt" root)))
         (should (file-regular-p (expand-file-name "beta.txt" root)))
         (should-not (file-exists-p (expand-file-name "alpha.txt" destination)))))))
+
 (ert-deftest tired-move-overwrite-moves-old-file-to-trash ()
   "Move puts a replaced destination into the trash and undo restores it."
   (tired-tests--with-fixture
@@ -152,6 +161,7 @@
         (should (equal (tired-tests--contents
                         (expand-file-name "alpha.txt" root))
                        "abc"))))))
+
 (ert-deftest tired-other-tired-directory-finds-another-window ()
   "The dwim helper returns the directory of a Tired buffer in another window."
   (tired-tests--with-fixture
@@ -163,12 +173,14 @@
             (tired-tests--with-other-window other
               (should (equal (tired--other-tired-directory) other))))
         (delete-directory other t)))))
+
 (ert-deftest tired-other-tired-directory-skips-the-shown-directory ()
   "The dwim helper ignores a window that shows the same directory."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--with-other-window root
       (should-not (tired--other-tired-directory)))))
+
 (ert-deftest tired-move-uses-another-window-directory-at-once ()
   "Move with another Tired window asks no question and moves at once."
   (tired-tests--with-fixture
@@ -196,6 +208,7 @@
                 (should-not (file-exists-p
                              (expand-file-name "alpha.txt" other)))))
           (delete-directory other t))))))
+
 (ert-deftest tired-move-prompts-without-another-window ()
   "Move asks in the minibuffer when no other window shows a Tired buffer."
   (tired-tests--with-fixture
@@ -210,6 +223,7 @@
           (call-interactively #'tired-move))
         (should asked)
         (should (file-regular-p (expand-file-name "renamed.txt" root)))))))
+
 (ert-deftest tired-move-prompts-when-dwim-is-off ()
   "The dwim option nil keeps the question in the minibuffer."
   (tired-tests--with-fixture
@@ -234,6 +248,7 @@
                   (should-not (file-exists-p
                                (expand-file-name "alpha.txt" other))))))
           (delete-directory other t))))))
+
 (ert-deftest tired-delete-moves-target-to-trash ()
   "Delete removes the target from the listing and keeps it in the trash."
   (tired-tests--with-fixture
@@ -246,6 +261,7 @@
       (should-not (member "alpha.txt" (tired-tests--names)))
       (tired-undo)
       (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
 (ert-deftest tired-delete-handles-nested-selection ()
   "Delete removes a directory and its selected child, and undo restores both."
   (tired-tests--with-fixture
@@ -266,6 +282,7 @@
       (should (equal (tired-tests--contents
                       (expand-file-name "sub/deep/leaf.txt" root))
                      "leaf")))))
+
 (ert-deftest tired-delete-clears-selection-and-refreshes ()
   "Delete clears the selection and drops the rows of the removed entries."
   (tired-tests--with-fixture
@@ -279,6 +296,7 @@
       (should-not tired--selection)
       (should-not (member "alpha.txt" (tired-tests--names)))
       (should-not (member "beta.txt" (tired-tests--names))))))
+
 (ert-deftest tired-delete-leaves-point-on-the-next-entry ()
   "Delete moves point to the entry below the removed one."
   (tired-tests--with-fixture
@@ -287,6 +305,7 @@
       (tired-tests--goto "alpha.txt")
       (tired-delete)
       (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt")))))
+
 (ert-deftest tired-delete-of-a-directory-leaves-point-on-the-next-entry ()
   "Delete of a directory with rows below it moves point past its subtree."
   (tired-tests--with-fixture
@@ -296,6 +315,7 @@
       (tired-insert-subdir)
       (tired-delete)
       (should (equal (tired-entry-name (tired--row-at-point)) ".hidden")))))
+
 (ert-deftest tired-delete-of-an-expanded-file-leaves-point-on-the-next-entry ()
   "Delete of an expanded file moves point past the sections of that file."
   (tired-tests--with-fixture
@@ -307,6 +327,7 @@
       (tired-tests--goto-section "Intro")
       (tired-delete)
       (should (equal (tired-entry-name (tired--row-at-point)) "sub")))))
+
 (ert-deftest tired-delete-reports-partial-failure ()
   "A vanished target does not stop the remaining targets."
   (tired-tests--with-fixture
@@ -326,6 +347,7 @@
         (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
         (tired-undo)
         (should (file-regular-p (expand-file-name "alpha.txt" root)))))))
+
 (ert-deftest tired-mkdir-creates-a-directory ()
   "mkdir creates the directory and undo removes it again."
   (tired-tests--with-fixture
@@ -337,6 +359,7 @@
         (should (member "fresh" (tired-tests--names)))
         (tired-undo)
         (should-not (file-exists-p (expand-file-name "fresh" root)))))))
+
 (ert-deftest tired-mkdir-rejects-an-existing-path ()
   "mkdir refuses a path that already exists."
   (tired-tests--with-fixture
@@ -344,6 +367,7 @@
       (tired root)
       (should-error (tired-mkdir (expand-file-name "alpha.txt" root))
                     :type 'user-error))))
+
 (ert-deftest tired-touch-creates-an-empty-file ()
   "touch creates a file and undo removes it again."
   (tired-tests--with-fixture
@@ -356,6 +380,7 @@
         (should (member "fresh.txt" (tired-tests--names)))
         (tired-undo)
         (should-not (file-exists-p path))))))
+
 (ert-deftest tired-touch-restores-modification-time-on-undo ()
   "touch undoes the timestamp change of an existing file."
   (tired-tests--with-fixture
@@ -371,6 +396,7 @@
         (should (time-equal-p
                  (file-attribute-modification-time (file-attributes path))
                  past))))))
+
 (ert-deftest tired-delete-hands-undo-to-the-hook ()
   "A non-nil `tired-undo-push-functions' takes the action."
   (tired-tests--with-fixture
@@ -387,12 +413,14 @@
         (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
         (funcall (cdar captured))
         (should (file-regular-p (expand-file-name "alpha.txt" root)))))))
+
 (ert-deftest tired-undo-without-actions-errors ()
   "Undo signals a user error when the stack is empty."
   (tired-tests--with-fixture
     (tired-tests--with-trash
       (tired root)
       (should-error (tired-undo) :type 'user-error))))
+
 (ert-deftest tired-delete-keeps-no-shell-dependency ()
   "Delete moves the target into the trash without a shell command."
   (tired-tests--with-fixture
@@ -404,6 +432,7 @@
         (tired-delete))
       (should-not (file-exists-p (expand-file-name "beta.txt" root)))
       (should (string-prefix-p "beta.txt" (car (tired-tests--trash-entries)))))))
+
 (ert-deftest tired-do-shell-command-appends-the-file-name ()
   "A command without a mark runs once per target, with its name."
   (tired-tests--with-fixture
@@ -412,6 +441,7 @@
     (let ((result (tired-tests--shell-run "wc")))
       (should (equal (car result) '("wc alpha.txt")))
       (should (= 1 (cdr result))))))
+
 (ert-deftest tired-do-shell-command-runs-a-star-mark-once ()
   "A `*' mark takes the whole selected file list and runs one command."
   (tired-tests--with-fixture
@@ -424,6 +454,7 @@
       (should (equal (car result) '("du -sh alpha.txt beta.txt")))
       (should (= 1 (cdr result)))
       (should-not tired--selection))))
+
 (ert-deftest tired-do-shell-command-runs-a-question-mark-per-file ()
   "A `?' mark takes one file name, so the command runs once per target."
   (tired-tests--with-fixture
@@ -434,6 +465,7 @@
     (tired-select-toggle)
     (should (equal (car (tired-tests--shell-run "gzip ?"))
                    '("gzip alpha.txt; gzip beta.txt")))))
+
 (ert-deftest tired-do-shell-command-backgrounds-with-a-trailing-ampersand ()
   "A trailing `&' gives one background job per file and no refresh."
   (tired-tests--with-fixture
@@ -446,6 +478,7 @@
       (should (equal (car result)
                      '("gzip alpha.txt & gzip beta.txt & wait")))
       (should (= 0 (cdr result))))))
+
 (ert-deftest tired-do-shell-command-backgrounds-the-file-list-once ()
   "A `*' mark with a trailing `&' makes one background job."
   (tired-tests--with-fixture
@@ -456,6 +489,7 @@
     (tired-select-toggle)
     (should (equal (car (tired-tests--shell-run "du -sh * &"))
                    '("du -sh alpha.txt beta.txt &")))))
+
 (ert-deftest tired-do-shell-command-sequences-a-trailing-semicolon ()
   "A trailing `;' runs the files one after another in one background job."
   (tired-tests--with-fixture
@@ -468,12 +502,14 @@
       (should (equal (car result)
                      '("( gzip alpha.txt; gzip beta.txt ) &")))
       (should (= 0 (cdr result))))))
+
 (ert-deftest tired-do-shell-command-refreshes-after-a-sync-run ()
   "A synchronous command refreshes the listing once."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "alpha.txt")
     (should (= 1 (cdr (tired-tests--shell-run "touch"))))))
+
 (ert-deftest tired-do-shell-command-asks-about-a-bare-mark ()
   "A `*' inside a word stays for the shell, so tired asks first."
   (tired-tests--with-fixture
@@ -487,12 +523,14 @@
     (let ((tired-confirm-shell-command nil))
       (should (equal (car (tired-tests--shell-run "ls *.txt"))
                      '("ls *.txt alpha.txt"))))))
+
 (ert-deftest tired-do-shell-command-rejects-two-mark-kinds ()
   "Both substitution marks in one command signal a user error."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "alpha.txt")
     (should-error (tired-do-shell-command "echo * ?") :type 'user-error)))
+
 (ert-deftest tired-do-shell-command-protects-a-leading-dash ()
   "A name that starts with a dash takes a leading `./'."
   (tired-tests--with-fixture
@@ -501,6 +539,7 @@
     (tired-tests--goto "-dash.txt")
     (should (equal (car (tired-tests--shell-run "rm"))
                    '("rm ./-dash.txt")))))
+
 (ert-deftest tired-do-shell-command-names-an-inserted-subdirectory ()
   "A target below the shown directory takes a relative name."
   (tired-tests--with-fixture
@@ -510,6 +549,7 @@
     (tired-tests--goto "inner.txt")
     (should (equal (car (tired-tests--shell-run "wc"))
                    '("wc sub/inner.txt")))))
+
 (ert-deftest tired-shell-marks-fill-every-isolated-mark ()
   "Two marks that one space separates both take the file name."
   (should (equal (tired-tests--shell-mark-fills "mv * *" "F") "mv F F"))
@@ -519,11 +559,13 @@
   (should-not (tired--shell-keeps-mark-p "ls *" "*"))
   (should (tired--shell-keeps-mark-p "ls *.txt" "*"))
   (should (tired--shell-keeps-mark-p "ls ?.txt" "?")))
+
 (ert-deftest tired-mode-binds-the-shell-command ()
   "`!' runs the shell command, the way `dired-do-shell-command' does."
   (tired-tests--with-fixture
     (tired root)
     (should (eq (key-binding (key-parse "!")) #'tired-do-shell-command))))
+
 (ert-deftest tired-region-delete-acts-on-every-row ()
   "Delete removes every row of the region."
   (tired-tests--with-fixture

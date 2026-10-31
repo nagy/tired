@@ -31,7 +31,9 @@
 ;;; Code:
 
 (require 'ert)
+
 (require 'seq)
+
 (require 'tired)
 
 (declare-function treesit-ready-p "treesit" (language &optional quiet))
@@ -83,9 +85,11 @@ a symlink, and removes every Tired buffer it opened."
                       (string-prefix-p root tired--directory))
              (kill-buffer buffer))))
        (delete-directory root t))))
+
 (defun tired-tests--names ()
   "Return the names of the visible entries in display order."
   (mapcar #'tired-entry-name (tired--visible-entries)))
+
 (defun tired-tests--goto (name)
   "Move point to the line whose entry is NAME."
   (goto-char (point-min))
@@ -98,6 +102,7 @@ a symlink, and removes every Tired buffer it opened."
           (forward-line 1))))
     (unless found
       (error "Entry not listed: %s" name))))
+
 (defun tired-tests--goto-section (label)
   "Move point to the section row whose label is LABEL."
   (goto-char (point-min))
@@ -110,6 +115,7 @@ a symlink, and removes every Tired buffer it opened."
           (forward-line 1))))
     (unless found
       (error "Section not listed: %s" label))))
+
 (defun tired-tests--sections ()
   "Return (LABEL . DEPTH) conses for the section rows in the listing."
   (delq nil
@@ -118,16 +124,19 @@ a symlink, and removes every Tired buffer it opened."
                     (when (tired-section-p entry)
                       (cons (tired-section-label entry) (cdr row)))))
                 (tired--display-rows t))))
+
 (defmacro tired-tests--write (name content)
   "Write CONTENT to NAME inside `root'."
   (declare (indent 1) (debug t))
   `(with-temp-file (expand-file-name ,name root)
      (insert ,content)))
+
 (defun tired-tests--entry (name)
   "Return the listed entry called NAME."
   (seq-find (lambda (entry)
               (equal (tired-entry-name entry) name))
             (tired--sorted-directory-entries tired--directory nil)))
+
 (defmacro tired-tests--with-trash (&rest body)
   "Run BODY with a private trash directory and an empty undo stack."
   (declare (indent 0) (debug t))
@@ -139,14 +148,17 @@ a symlink, and removes every Tired buffer it opened."
      (unwind-protect
          (progn ,@body)
        (delete-directory tired-trash-directory t))))
+
 (defun tired-tests--trash-entries ()
   "Return the names inside `tired-trash-directory'."
   (directory-files tired-trash-directory nil "\\`[^.]"))
+
 (defun tired-tests--contents (path)
   "Return the text inside PATH."
   (with-temp-buffer
     (insert-file-contents path)
     (buffer-string)))
+
 (defmacro tired-tests--with-other-window (directory &rest body)
   "Show DIRECTORY in another window and run BODY.
 The selected window keeps the current buffer.  The window is
@@ -162,6 +174,7 @@ deleted afterwards."
              (select-window ,window)
              ,@body)
          (delete-window ,other)))))
+
 (defun tired-tests--shell-run (command)
   "Run `tired-do-shell-command' with COMMAND and report what it did.
 Return a cons of the shell command lines, in call order, and the
@@ -174,12 +187,15 @@ number of `tired-refresh' calls."
                (lambda (&rest _) (setq refreshes (1+ refreshes)))))
       (tired-do-shell-command command))
     (cons (nreverse lines) refreshes)))
+
 (defun tired-tests--shell-mark-fills (command text)
   "Return COMMAND with each substitution mark replaced by TEXT."
   (tired--shell-fill-marks command text))
+
 (defun tired-tests--cell-face (entry)
   "Return the face of the name column of ENTRY."
   (get-text-property 0 'face (tired--name-cell entry)))
+
 (defun tired-tests--mark-row-range (first last)
   "Activate a region that covers the rows FIRST through LAST.
 The region ends at the beginning of the row after LAST, so LAST
@@ -191,9 +207,11 @@ joins the range."
   (tired-tests--goto last)
   (forward-line 1)
   (beginning-of-line))
+
 (defun tired-tests--target-names ()
   "Return the names of the current targets."
   (mapcar #'tired-entry-name (tired--selection-targets)))
+
 (provide 'tired-tests)
 
 (provide 'tired-tests-fixtures)

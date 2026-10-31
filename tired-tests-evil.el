@@ -24,11 +24,15 @@
 ;;; Code:
 
 (require 'ert)
+
 (require 'tired-tests-fixtures)
 
 (declare-function evil-local-mode "evil" (&optional arg))
+
 (declare-function evil-normal-state "evil" nil)
+
 (declare-function evil-visual-line "evil" (&optional count))
+
 (declare-function tired-evil-mode "tired-evil" (&optional arg))
 
 (ert-deftest tired-evil-mode-binds-the-tired-commands ()
@@ -80,6 +84,7 @@
       (tired-evil-mode -1)
       (evil-local-mode -1))
     (should-not (bound-and-true-p tired-evil-local-mode))))
+
 (ert-deftest tired-evil-visual-state-binds-the-file-commands ()
   "A visual range reaches delete, and the text objects stay."
   (skip-unless (require 'evil nil t))
@@ -104,6 +109,7 @@
       (evil-normal-state)
       (tired-evil-mode -1)
       (evil-local-mode -1))))
+
 (ert-deftest tired-evil-mode-covers-a-buffer-made-later ()
   "A Tired buffer that appears after the mode is on takes the keys."
   (skip-unless (require 'evil nil t))
@@ -119,6 +125,7 @@
           (should (eq (key-binding (key-parse "D")) #'tired-delete)))
       (tired-evil-mode -1)
       (evil-local-mode -1))))
+
 (ert-deftest tired-evil-bindings-arrive-with-the-evil-library ()
   "Loading Tired and then evil gives RET back to the Tired command."
   (skip-unless (require 'evil nil t))

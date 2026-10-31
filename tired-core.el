@@ -309,6 +309,13 @@ The redraw counts them, so the mode line reads one number.")
 (defvar-local tired--header-base nil
   "Header line string built by `tabulated-list-init-header'.")
 
+(defvar-local tired--rows nil
+  "Visible rows of the current redraw, as (ROW . DEPTH) conses.
+`tired--redraw' walks the tree once and leaves the result here, so
+the name column width and the printed rows read one list instead of
+two.  The value is nil outside a redraw, so any other caller walks
+the tree itself and never sees a stale row set.")
+
 (defvar-local tired--watches nil
   "Alist of watched directory names to file notification descriptors.")
 
@@ -749,10 +756,16 @@ sections of its file when the user expands it."
       (walk tired--directory 0))
     (nreverse rows)))
 
+(defun tired--visible-rows ()
+  "Return the visible (ROW . DEPTH) conses of the current listing.
+Inside a redraw the value comes from `tired--rows', so the tree
+walks once.  Outside a redraw the function walks the tree itself."
+  (or tired--rows (tired--display-rows t)))
+
 (defun tired--visible-entries ()
   "Return the entries that are currently shown, in display order.
 Section rows are not entries, so they stay out of the result."
-  (seq-filter #'tired-entry-p (mapcar #'car (tired--display-rows t))))
+  (seq-filter #'tired-entry-p (mapcar #'car (tired--visible-rows))))
 
 (defvar tired--ignored-source nil
   "Value of `completion-ignored-extensions' behind the cached regexp.")
@@ -1042,7 +1055,7 @@ serves every row of every redraw, so a nested directory costs one
 read per `tired-size-cache-ttl' window, not one read per redraw."
   (mapcar (lambda (row)
             (list (car row) (tired--row (car row) (cdr row))))
-          (tired--display-rows t)))
+          (tired--visible-rows)))
 
 (defun tired--column-label (label key)
   "Return LABEL with a direction indicator when KEY is the sort key."
@@ -1064,7 +1077,7 @@ other columns."
         (available (- (window-width (or window (selected-window)))
                       tired--fixed-column-width)))
     (when tired--directory
-      (dolist (row (tired--display-rows t))
+      (dolist (row (tired--visible-rows))
         (setq longest
               (max longest
                    (+ (* 2 (cdr row))
@@ -1444,15 +1457,19 @@ point and the scroll position of every window that shows the listing."
          (mark-entry (tired--row-at (mark t)))
          (views (tired--window-views)))
     (setq tired--hidden-total (tired--count-hidden))
-    (setq tabulated-list-format
-          (tired--format (tired--name-column-width window)))
-    (tabulated-list-init-header)
-    (setq tired--header-base header-line-format)
-    (setq header-line-format
-          (list (propertize (tired--header-title) 'face 'bold)
-                "  "
-                tired--header-base))
-    (tabulated-list-print t)
+    (setq tired--rows (tired--display-rows t))
+    (unwind-protect
+        (progn
+          (setq tabulated-list-format
+                (tired--format (tired--name-column-width window)))
+          (tabulated-list-init-header)
+          (setq tired--header-base header-line-format)
+          (setq header-line-format
+                (list (propertize (tired--header-title) 'face 'bold)
+                      "  "
+                      tired--header-base))
+          (tabulated-list-print t))
+      (setq tired--rows nil))
     (tired--goto-entry point-entry)
     (tired--restore-window-views views)
     (tired--restore-mark mark-entry)
