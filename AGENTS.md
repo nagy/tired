@@ -51,7 +51,7 @@ Nix outputs:
   tests run without an `EMACSLOADPATH` export.  Evil is always
   present, because `melpaBuild` compiles every installed file.  Its
   `checkPhase` byte-compiles with warnings as errors and runs the ERT
-  suite.  `checkInputs` holds the tree-sitter Rust and Markdown
+  suite.  `checkInputs` holds the tree-sitter Rust, Markdown and TOML
   grammars and the phase exports `TREESIT_EXTRA_LOAD_PATH` for them,
   so the section tests run instead of skipping.  The suite reads that
   variable itself; a developer machine without a grammar skips the
@@ -129,10 +129,13 @@ Data flow:
    to the first section, and a folded section in `tired--folded` hides
    its children.  `tired--name-visible-p` decides whether a file row and
    its sections pass the filter.
-   The Rust and Markdown handlers share `tired--treesit-sections`.  A
-   language contributes a spec plist: `:language`, `:mode`, `:kinds`,
-   `:containers`, `:fields`, and an optional `:label`, `:level` and
-   `:require`.  The SQLite handler opens the file read-only through the
+   The Rust, Markdown and Cargo handlers share `tired--treesit-sections`.
+   A language contributes a spec plist: `:language`, `:mode`, `:kinds`,
+   `:containers`, `:fields`, and an optional `:label`, `:level`,
+   `:require` and `:filter`.  `:filter` receives a node and returns nil
+   to drop that node's section.  The Cargo handler uses it, so only the
+   four tables that `tired--cargo-tables` names and their pairs show.
+   The SQLite handler opens the file read-only through the
    built-in `sqlite' support and gives its sections synthetic line
    ordinals.  The org handler gives every heading the action
    `tired--org-open-heading`, which calls `tired--visit-section` and
@@ -386,10 +389,10 @@ Evil integration:
   modified flag clear.  Without VISIT the buffer starts modified, and
   `kill-buffer` on the discarded buffer asks the user whether to kill
   it, so every expand of a file raises a prompt.
-- Section handlers stay free of a hard dependency.  The Rust and
-  Markdown handlers call `(require 'treesit)` at run time and return nil
-  when the grammar is absent.  The Markdown handler also requires
-  `markdown-ts-mode', because that mode has no autoload here.  The
+- Section handlers stay free of a hard dependency.  The Rust,
+  Markdown and Cargo handlers call `(require 'treesit)` at run time and
+  return nil when the grammar is absent.  The Markdown handler also
+  requires `markdown-ts-mode', because that mode has no autoload here.  The
   SQLite handler checks `(fboundp 'sqlite-available-p)` and wraps the
   open in `condition-case`, so a file that is not a database yields no
   sections and no warning.  Byte-compile needs a `declare-function` for
@@ -399,6 +402,16 @@ Evil integration:
   `tired--treesit-kind` compares against `treesit-node-type` with
   `equal`.  A new grammar costs one spec and one handler that calls
   `tired--treesit-sections`.
+- `treesit-node-children` returns anonymous nodes too, so a TOML pair
+  lists its `=` sign beside its key and its value.  Pass NAMED, or read
+  the sign as the value.
+- The Cargo handler keeps its own label format in
+  `tired--cargo-section-label`.  A pair of `[features]` lists the
+  members of the feature.  A pair of another table pads the crate name
+  to the widest sibling key, then adds the version and the badges
+  `[optional]` and `[no-default]`.  A table row counts its entries.
+  The labels stay plain strings, so the filter, the copy commands and
+  the tests read them.
 - A handler with no real line gives every section a distinct synthetic
   `:line`.  The section fold state and the point restore key on
   `(PATH . LINE)`, so two sections that share a line fold together and

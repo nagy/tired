@@ -116,6 +116,7 @@
                 p.tree-sitter-rust
                 p.tree-sitter-markdown
                 p.tree-sitter-markdown-inline
+                p.tree-sitter-toml
               ]),
               # Evil reaches the build Emacs only.  tired-evil.el needs the
               # library to byte-compile, and the ERT suite tests its key

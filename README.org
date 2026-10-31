@@ -19,6 +19,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Expand a file into sections: org headings, Emacs Lisp top-level
   forms, Rust items and Markdown headings through tree-sitter, and
   SQLite tables and columns through the built-in sqlite support
+- Expand a Cargo manifest into its =features=, =dependencies=,
+  =dev-dependencies= and =build-dependencies= tables
 - Name completion over the whole subtree, including directories
 - Transient selection that file commands act on
 - Range selection through the Emacs region, with shift motion and mouse drag
@@ -377,7 +379,7 @@ extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
 on =TAB=.
 
-Five handlers ship with the package:
+Six handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
@@ -386,6 +388,7 @@ Five handlers ship with the package:
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out |
 | SQLite        | Every table and view, then its columns one level deeper |
+| Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper |
 
 =RET= on a section row visits the file at the section line.  A section
 row fills the name column only.  A SQLite section opens the table in
@@ -396,9 +399,17 @@ subtree, so only the heading and its children show.  Use =C-x n w=
 to widen it again.  Set =tired-org-narrow-on-open= to =nil= to keep
 the whole file visible.
 
-The Rust and Markdown handlers share one tree-sitter walker.  A
+The Rust, Markdown and Cargo handlers share one tree-sitter walker.  A
 language contributes a spec of node types and fields, so a new grammar
 costs one entry.
+
+The Cargo handler reads only the manifest it parses.  Its table rows
+count their entries.  A dependency row holds
+the crate name, its version and the badges =[optional]= and
+=[no-default]=.  A feature row holds the feature name and the members
+it turns on.  A table outside those four stays out, so a
+=[patch.crates-io]= target or a =[target.'cfg(...)'.dependencies]=
+table shows no section.
 
 The variable =tired-file-handlers= maps a regexp to a handler.  The
 regexp matches the absolute file name and the first match wins.  A

@@ -92,7 +92,8 @@
 ;; function.  The function reads the file in a temporary buffer and
 ;; returns a list of plists with `:label', `:line', `:level' and
 ;; `:kind'.  Org files yield headings, Emacs Lisp files yield top-level
-;; forms, Rust and Markdown files yield items through tree-sitter, and
+;; forms, Rust and Markdown files yield items through tree-sitter,
+;; Cargo manifests yield the four dependency and feature tables, and
 ;; SQLite databases yield tables and columns through the built-in
 ;; `sqlite' support.  TAB expands a file row, and TAB on a section row
 ;; folds that section.
@@ -203,6 +204,7 @@ name."
     ("\\.el\\'" . tired-file-sections-elisp)
     ("\\.rs\\'" . tired-file-sections-rust)
     ("\\.\\(?:md\\|markdown\\)\\'" . tired-file-sections-markdown)
+    ("/Cargo\\.toml\\'" . tired-file-sections-cargo)
     ("\\.\\(?:db\\|sqlite\\|sqlite3\\)\\'" . tired-file-sections-sqlite))
   "Alist of regexp to a function that extracts sections from a file.
 The regexp matches the absolute file name, and the first match wins.
@@ -2448,6 +2450,7 @@ The directory contents come from `directory-files' and
 (declare-function treesit-node-child "treesit" (node n &optional named))
 (declare-function treesit-node-children "treesit" (node &optional named))
 (declare-function treesit-node-start "treesit" (node))
+(declare-function treesit-node-parent "treesit" (node))
 (declare-function treesit-node-text "treesit" (node &optional no-propertize))
 (declare-function treesit-node-type "treesit" (node))
 (declare-function treesit-ready-p "treesit" (language &optional quiet))
@@ -2645,12 +2648,21 @@ in a marker node does not rely on the tree depth."
       (funcall function node)
     depth))
 
+(defun tired--treesit-shown-p (node spec)
+  "Return non-nil when SPEC shows NODE as a section.
+SPEC may name a `:filter' function, which receives NODE and decides
+whether NODE appears.  Without one every node of a known kind
+appears."
+  (let ((filter (plist-get spec :filter)))
+    (or (null filter) (funcall filter node))))
+
 (defun tired--treesit-walk (node spec depth)
   "Return the section plists of NODE and its children under SPEC.
 DEPTH is the current nesting depth.  A node type listed in
-`:containers' raises the depth of its children by one."
+`:containers' raises the depth of its children by one.  A node that
+`:filter' rejects yields no section, and its children still walk."
   (let* ((kind (tired--treesit-kind node spec))
-         (here (when kind
+         (here (when (and kind (tired--treesit-shown-p node spec))
                  (list (list :label (tired--treesit-label node kind spec)
                              :line (line-number-at-pos
                                     (treesit-node-start node))
@@ -2669,8 +2681,9 @@ DEPTH is the current nesting depth.  A node type listed in
   "Return the section plists of the current buffer according to SPEC.
 SPEC is a plist with `:language', an optional `:mode', an optional
 `:require', `:kinds', optional `:containers', optional `:fields',
-optional `:label' and optional `:level'.  Return nil when the
-grammar is missing, so the caller keeps a plain file row."
+optional `:filter', optional `:label' and optional `:level'.  Return
+nil when the grammar is missing, so the caller keeps a plain file
+row."
   (require 'treesit)
   (let ((language (plist-get spec :language)))
     (when (and (treesit-available-p) (treesit-ready-p language t))
@@ -2716,6 +2729,161 @@ Read ATX and setext headings through tree-sitter, so a heading
 inside a fenced code block stays out of the listing.  Return nil
 when the Markdown grammar is missing."
   (tired--treesit-sections tired--markdown-section-spec))
+
+(defconst tired--cargo-tables '("features" "dependencies"
+                                "dev-dependencies" "build-dependencies")
+  "Table names that the Cargo manifest handler lists.
+A table with any other name stays out, so `[patch.crates-io]' and
+`[target.'cfg(...)'.dependencies]' show no section.")
+
+(defconst tired--cargo-section-spec
+  '(:language toml
+    :mode toml-ts-mode
+    :require toml-ts-mode
+    :kinds (("table" . table)
+            ("table_array_element" . table)
+            ("pair" . dependency))
+    :containers ("table" "table_array_element")
+    :filter tired--cargo-node-shown-p
+    :label tired--cargo-section-label)
+  "Tree-sitter section spec for a Cargo manifest.")
+
+(defun tired--toml-unquote (text)
+  "Return TEXT without the quotes of a TOML string."
+  (if (and (> (length text) 1)
+           (memq (aref text 0) '(?\" ?'))
+           (eq (aref text 0) (aref text (1- (length text)))))
+      (substring text 1 -1)
+    text))
+
+(defun tired--toml-key (node)
+  "Return the key text of the TOML pair or table NODE.
+Strip the quotes of a quoted key, so a quoted crate name reads like
+a bare one."
+  (when-let* ((child (seq-find (lambda (child)
+                                 (member (treesit-node-type child)
+                                         '("bare_key" "quoted_key"
+                                           "dotted_key")))
+                               (treesit-node-children node t))))
+    (if (equal (treesit-node-type child) "quoted_key")
+        (tired--toml-unquote (treesit-node-text child t))
+      (treesit-node-text child t))))
+
+(defun tired--toml-pair-value (node)
+  "Return the value node of the TOML pair NODE, or nil."
+  (seq-find (lambda (child)
+              (not (member (treesit-node-type child)
+                           '("bare_key" "quoted_key" "dotted_key"
+                             "comment"))))
+            (treesit-node-children node t)))
+
+(defun tired--toml-field-text (table name)
+  "Return the value text of the pair NAME in the TOML inline table TABLE."
+  (when-let* ((pair (seq-find (lambda (child)
+                                (and (equal (treesit-node-type child) "pair")
+                                     (equal (tired--toml-key child) name)))
+                              (treesit-node-children table t))))
+    (when-let* ((value (tired--toml-pair-value pair)))
+      (treesit-node-text value t))))
+
+(defun tired--cargo-node-shown-p (node)
+  "Return non-nil when NODE belongs in a Cargo manifest listing.
+Keep the four tables that `tired--cargo-tables' names and the pairs
+inside them, so a pair of another table stays out."
+  (pcase (treesit-node-type node)
+    ((or "table" "table_array_element")
+     (member (tired--toml-key node) tired--cargo-tables))
+    ("pair"
+     (member (tired--toml-key (treesit-node-parent node)) tired--cargo-tables))))
+
+(defun tired--cargo-version (value)
+  "Return the version text of the TOML pair VALUE.
+VALUE holds either a version string or an inline table with a
+`version' key.  Return nil when VALUE names no version."
+  (pcase (and value (treesit-node-type value))
+    ("string" (tired--toml-unquote (treesit-node-text value t)))
+    ("inline_table"
+     (when-let* ((text (tired--toml-field-text value "version")))
+       (tired--toml-unquote text)))))
+
+(defun tired--cargo-badges (value)
+  "Return the badge strings of the TOML pair VALUE.
+An inline table with `optional = true' earns `[optional]', and one
+with `default-features = false' earns `[no-default]'."
+  (when (and value (equal (treesit-node-type value) "inline_table"))
+    (delq nil
+          (list (when (equal (tired--toml-field-text value "optional") "true")
+                  "[optional]")
+                (when (equal (tired--toml-field-text value "default-features")
+                             "false")
+                  "[no-default]")))))
+
+(defun tired--cargo-padded-key (node key)
+  "Return KEY padded to the widest sibling key of the TOML pair NODE.
+The manifest reads as a table of columns, so the versions line up."
+  (let* ((siblings (seq-filter (lambda (child)
+                                 (equal (treesit-node-type child) "pair"))
+                               (treesit-node-children
+                                (treesit-node-parent node) t)))
+         (width (seq-max (mapcar (lambda (child)
+                                   (length (or (tired--toml-key child) "")))
+                                 siblings))))
+    (concat key (make-string (max 0 (- width (length key))) ?\s))))
+
+(defun tired--cargo-table-label (node)
+  "Return the label of the Cargo table NODE.
+The label names the table and counts its entries."
+  (format "%s (%d)" (tired--toml-key node)
+          (seq-count (lambda (child)
+                       (equal (treesit-node-type child) "pair"))
+                     (treesit-node-children node t))))
+
+(defun tired--cargo-feature-label (node key)
+  "Return the label of the feature NODE under the key KEY.
+List the members of the feature, so the row answers what the
+feature turns on."
+  (let* ((value (tired--toml-pair-value node))
+         (members (when (and value (equal (treesit-node-type value) "array"))
+                    (mapcar (lambda (child)
+                              (tired--toml-unquote
+                               (treesit-node-text child t)))
+                            (seq-filter (lambda (child)
+                                          (equal (treesit-node-type child)
+                                                 "string"))
+                                        (treesit-node-children value))))))
+    (if members
+        (format "%s \u2192 %s" key (string-join members ", "))
+      key)))
+
+(defun tired--cargo-dependency-label (node key)
+  "Return the label of the dependency NODE under the key KEY.
+The label holds the crate name, its version and its badges."
+  (let* ((value (tired--toml-pair-value node))
+         (version (tired--cargo-version value))
+         (badges (tired--cargo-badges value)))
+    (string-trim (concat (tired--cargo-padded-key node key) " " version
+                         (when badges (concat " " (string-join badges " ")))))))
+
+(defun tired--cargo-section-label (node _kind)
+  "Return the label of the Cargo manifest NODE.
+KIND stays unused, because the parent table decides the label
+shape: a pair of `[features]' lists members, and a pair of any
+other listed table holds a dependency."
+  (if (equal (treesit-node-type node) "pair")
+      (let ((key (tired--toml-key node))
+            (parent (tired--toml-key (treesit-node-parent node))))
+        (if (equal parent "features")
+            (tired--cargo-feature-label node key)
+          (tired--cargo-dependency-label node key)))
+    (tired--cargo-table-label node)))
+
+(defun tired-file-sections-cargo (_path)
+  "Return the tables of the current Cargo manifest buffer as sections.
+The buffer already holds the file, so the handler ignores PATH.
+Read the `features', `dependencies', `dev-dependencies' and
+`build-dependencies' tables through tree-sitter, with their entries
+one level below.  Return nil when the TOML grammar is missing."
+  (tired--treesit-sections tired--cargo-section-spec))
 
 (defun tired--sqlite-column-label (row)
   "Return the label for the `PRAGMA table_info' ROW of one column.

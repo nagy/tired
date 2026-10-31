@@ -1787,6 +1787,59 @@ joins the range."
     (should (equal (tired-tests--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Closing" . 1))))))
 
+(ert-deftest tired-sections-of-a-cargo-manifest ()
+  "A Cargo manifest lists the four tables and their entries one level in."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "Cargo.toml"
+                        (concat "[package]\nname = \"demo\"\n\n"
+                                "[features]\ndefault = [\"cache\", \"svg\"]\n"
+                                "cache = [\"dep:jixel\"]\n\n"
+                                "[dependencies]\nanyhow = \"1.0\"\n"
+                                "image = { version = \"0.25.10\", default-features = false }\n"
+                                "xdg = { version = \"3.0.0\", optional = true }\n\n"
+                                "[dev-dependencies]\ntempfile = \"3.27.0\"\n\n"
+                                "[build-dependencies]\ncc = \"1.0\"\n\n"
+                                "[patch.crates-io]\ncc = \"1.1\"\n\n"
+                                "[target.'cfg(unix)'.dependencies]\nfoo = \"2.0\"\n"))
+    (tired root)
+    (tired-tests--goto "Cargo.toml")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("features (2)" . 1)
+                     ("default \u2192 cache, svg" . 2)
+                     ("cache \u2192 dep:jixel" . 2)
+                     ("dependencies (3)" . 1)
+                     ("anyhow 1.0" . 2)
+                     ("image  0.25.10 [no-default]" . 2)
+                     ("xdg    3.0.0 [optional]" . 2)
+                     ("dev-dependencies (1)" . 1)
+                     ("tempfile 3.27.0" . 2)
+                     ("build-dependencies (1)" . 1)
+                     ("cc 1.0" . 2))))
+    (should (eq (tired-section-kind
+                 (car (tired-file-sections
+                       (expand-file-name "Cargo.toml" root))))
+                'table))))
+
+(ert-deftest tired-cargo-table-folds-its-entries ()
+  "Folding a Cargo table section hides the entries below it."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "Cargo.toml"
+                        "[dependencies]\nanyhow = \"1.0\"\nserde = \"1.0\"\n")
+    (tired root)
+    (tired-tests--goto "Cargo.toml")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("dependencies (2)" . 1)
+                     ("anyhow 1.0" . 2)
+                     ("serde  1.0" . 2))))
+    (tired-tests--goto-section "dependencies (2)")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("dependencies (2)" . 1))))))
+
 (ert-deftest tired-sections-of-a-sqlite-database ()
   "A SQLite file lists its tables and columns with a table action."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
