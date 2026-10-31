@@ -213,6 +213,11 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   needs a key in `tired-evil-keys`, and no mouse event goes in
   `tired-evil-visual-keys`.
 - Rows must be vectors.  Emacs 31 calls `aref` on them.
+- `tired-select-extension` keys a group with `file-name-extension` and
+  an empty fallback, so an extensionless name and a dotfile share one
+  group.  It adds to the selection instead of toggling, and its body
+  runs in `save-excursion`, because point must stay on the row that
+  started the command.
 - A section row is not selectable.  Do not add one to
   `tired--selection`: the selection and the narrow snapshot key by path
   alone, so change them only through `tired--set-selection` and

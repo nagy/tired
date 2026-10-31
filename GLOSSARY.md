@@ -28,6 +28,13 @@ The transient set of entry paths that commands act on in a directory
 buffer.  An active region joins it before a command acts.
 _Avoid_: Marks, region, highlight
 
+**Extension group**:
+The visible files that share the extension of the row at point.  A
+name without an extension and a dotfile name share one empty key.
+`tired-select-extension` adds the whole group to the selection and
+leaves point on its row.
+_Avoid_: File type, suffix set
+
 **Target**:
 The entries a command acts on: the selection when it is non-empty,
 else the active region, else the entry at point.  A command commits

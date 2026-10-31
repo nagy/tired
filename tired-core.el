@@ -2247,6 +2247,36 @@ it.  A selected entry that the listing hides stays selected."
   (tired--toggle-selection
    (mapcar #'tired-entry-path (tired--visible-entries))))
 
+(defun tired-select-extension ()
+  "Add every visible file that shares the extension of point.
+An extensionless name and a dotfile name share one empty key, so a
+name that holds no dot still finds its own group.  A directory
+stays out.  A section row stands for the file that holds it.  The
+command adds to the selection, so a second extension joins the
+first.  Point stays on the row that started the command."
+  (interactive)
+  (let* ((row (tired--row-at-point))
+         (path (cond ((tired-entry-p row) (tired-entry-path row))
+                     ((tired-section-p row) (tired-section-path row))
+                     (t (user-error "No entry at point"))))
+         (extension (or (file-name-extension path) ""))
+         (paths (copy-sequence tired--selection))
+         (seen (make-hash-table :test #'equal)))
+    (dolist (selected paths)
+      (puthash selected t seen))
+    (dolist (entry (tired--visible-entries))
+      (let ((candidate (tired-entry-path entry)))
+        (when (and (not (tired--directory-entry-p entry))
+                   (equal (or (file-name-extension candidate) "")
+                          extension)
+                   (not (gethash candidate seen)))
+          (puthash candidate t seen)
+          (push candidate paths))))
+    (save-excursion
+      (tired--set-selection paths)
+      (tired--apply-selection-overlays)
+      (tired--update-mode-line))))
+
 (defun tired-select-none ()
   "Clear the transient selection and the active region.
 Both sources feed one target list, so a clear drops both."
@@ -2707,6 +2737,7 @@ into `context-menu-functions' locally."
   "M-SPC" #'tired-select-toggle
   "S-SPC" #'tired-select-toggle
   "t" #'tired-select-all
+  "%" #'tired-select-extension
   "u" #'tired-select-none
   "~" #'tired-toggle-hidden
   "N" #'tired-toggle-narrow
@@ -2770,6 +2801,9 @@ command that needs an entry stays insensitive on an empty row."
      ["Toggle and move down" tired-select-toggle-next
       :active (tired--row-at-point)]
      ["All" tired-select-all]
+     ["By extension" tired-select-extension
+      :active (tired--row-at-point)
+      :help "Add every visible file with the extension of point"]
      ["None" tired-select-none
       :active tired--selection]
      ["Invert" tired-select-invert]

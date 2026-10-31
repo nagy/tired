@@ -118,7 +118,10 @@ entry.  With an empty selection it selects them all, with a full
 selection it clears them, and with a partial selection it inverts the
 visible part.  A selected entry that a filter or a narrow snapshot
 hides stays selected, so =u= remains the way to clear the whole
-selection.
+selection.  =%= adds every visible file that shares the extension of
+the row at point, and point stays on that row.  A second extension
+joins the first, so =%= on a =.el= file and then on a =.org= file
+selects both groups.  A directory stays out.
 
 The active region is the second way to make a selection.  Move with
 =S-<down>= and =S-<up>=, drag with the mouse, or set a mark with

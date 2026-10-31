@@ -98,6 +98,7 @@
     ("m" . tired-select-toggle-next)
     ("M-SPC" . tired-select-toggle)
     ("t" . tired-select-all)
+    ("%" . tired-select-extension)
     ("u" . tired-select-none)
     ;; Files.
     ("D" . tired-delete)

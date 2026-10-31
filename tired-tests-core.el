@@ -451,6 +451,40 @@ costs one redraw and not one per character."
     (should-not (member (expand-file-name "alpha.txt" root)
                         tired--selection))))
 
+(ert-deftest tired-select-extension-selects-sibling-files ()
+  "The command selects every visible file with the extension of point."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (call-interactively #'tired-select-extension)
+    (should (equal (sort (mapcar #'tired-entry-name (tired--selection-targets))
+                         #'string<)
+                   '("alpha.txt" "beta.txt")))
+    (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt"))))
+
+(ert-deftest tired-select-extension-adds-to-the-selection ()
+  "A second extension joins the first, and a directory stays out."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name "gamma.org" root) (insert "g"))
+    (make-directory (expand-file-name "notes.org" root))
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-extension)
+    (tired-tests--goto "gamma.org")
+    (tired-select-extension)
+    (should (equal (sort (mapcar #'tired-entry-name (tired--selection-targets))
+                         #'string<)
+                   '("alpha.txt" "beta.txt" "gamma.org")))
+    (should (equal (tired-entry-name (tired--row-at-point)) "gamma.org"))))
+
+(ert-deftest tired-select-extension-signals-on-an-empty-row ()
+  "A listing line that holds no row signals an error."
+  (tired-tests--with-fixture
+    (tired root)
+    (goto-char (point-max))
+    (beginning-of-line)
+    (should-error (tired-select-extension) :type 'user-error)))
+
 (ert-deftest tired-copy-path-joins-targets ()
   "Copying paths puts one path per line on the kill ring."
   (tired-tests--with-fixture
