@@ -94,10 +94,13 @@ keystroke."
   :group 'tired)
 
 (defcustom tired-collapse-single-child t
-  "When non-nil, collapse a directory that leads to exactly one file.
-The collapsed row shows the path relative to the listed directory,
-uses the file attributes, and keeps the directory's position in the
-listing.  The row acts as the file for open, selection and copy."
+  "When non-nil, collapse a single-entry directory chain into one row.
+The chain runs while a directory holds exactly one entry.  It stops
+at the first branch, so the collapsed row names the last entry of
+the chain, file or directory.  The row shows the path relative to
+the listed directory, uses the attributes of the leaf, and keeps the
+directory's position in the listing.  The row acts as the leaf for
+open, selection and copy, and a directory leaf still expands."
   :type 'boolean)
 
 (defcustom tired-name-column-min-width 20
@@ -351,8 +354,9 @@ the tree itself and never sees a stale row set.")
 
 (defvar-local tired--collapse-cache nil
   "Hash table mapping a directory to its single-entry chain result.
-The value is the final file entry, or nil when the chain does not
-collapse.  Refresh clears the cache.")
+The value is a cons of the leaf entry and the directories that the
+chain walk visited, start first.  The leaf stays nil when the chain
+does not collapse.  Refresh clears the cache.")
 
 (defvar-local tired--expanded nil
   "Hash set of absolute file names whose sections appear in the listing.")
@@ -421,6 +425,15 @@ A circular link counts as broken.  The user option
   "Return non-nil when the listing holds ENTRY back as hidden."
   (and (not tired--show-hidden)
        (tired--hidden-name-p (tired-entry-name entry))))
+
+(defun tired--chain-name-hidden-p (name)
+  "Return non-nil when NAME, one link of a collapsed chain, stays hidden.
+The link carries its own name and no path, so a dotfile rule that
+reads the last component matches here as it does on a real row."
+  (or (and (not tired--show-hidden)
+           (tired--hidden-name-p name))
+      (and tired--hide-dotfiles
+           (string-prefix-p "." name))))
 
 (defun tired--name-visible-p (entry)
   "Return non-nil when ENTRY passes the hidden, dotfile and name filters."
@@ -503,47 +516,62 @@ the dotfile setting."
     (seq-remove (lambda (name) (member name '("." "..")))
                 (directory-files directory nil nil t))))
 
-(defun tired--single-entry-file (directory)
-  "Return the file entry at the end of a single-entry chain under DIRECTORY.
-Return nil when a level holds zero or several entries.  The chain
-stops at the first branch.  A visited-truename set stops cycles."
+(defun tired--single-entry-leaf (directory)
+  "Return the leaf of the single-entry chain that starts at DIRECTORY.
+The value is a cons of the leaf entry and the directories that the
+walk visited, start first.  The leaf stays nil when DIRECTORY holds
+zero or several entries, because such a chain does not collapse.
+Every later level shortens the chain: the walk stops at the first
+branch, at a hidden link, at an unreadable directory or at a cycle,
+and the entry it reached becomes the leaf.  A visited-truename set
+stops cycles."
   (let ((current (directory-file-name (expand-file-name directory)))
         (seen (make-hash-table :test #'equal))
-        (result nil)
+        (visited nil)
+        (leaf nil)
         (searching t))
     (while searching
       (let ((key (file-truename current)))
         (if (gethash key seen)
             (setq searching nil)
           (puthash key t seen)
+          (push current visited)
           (let ((names (tired--directory-names current)))
-            (if (/= 1 (length names))
+            (if (or (/= 1 (length names))
+                    (tired--chain-name-hidden-p (car names)))
                 (setq searching nil)
               (let ((entry (tired--make-entry current (car names))))
+                (setq leaf entry)
                 (if (tired-entry-dirp entry)
                     (setq current (tired-entry-path entry))
-                  (setq result entry
-                        searching nil))))))))
-    result))
+                  (setq searching nil))))))))
+    (cons leaf (nreverse visited))))
 
-(defun tired--collapsed-file (directory)
-  "Return the cached chain result for DIRECTORY, or nil."
+(defun tired--collapse-result (directory)
+  "Return the cached chain result for DIRECTORY.
+The value is a cons of the leaf entry, or nil, and the visited
+directories."
   (let* ((key (directory-file-name (expand-file-name directory)))
          (cached (and (hash-table-p tired--collapse-cache)
                       (gethash key tired--collapse-cache 'missing))))
     (if (not (eq cached 'missing))
         cached
-      (let ((file (tired--single-entry-file key)))
+      (let ((result (tired--single-entry-leaf key)))
         (when (hash-table-p tired--collapse-cache)
-          (puthash key file tired--collapse-cache))
-        file))))
+          (puthash key result tired--collapse-cache))
+        result))))
+
+(defun tired--collapsed-file (directory)
+  "Return the cached chain leaf for DIRECTORY, or nil."
+  (car (tired--collapse-result directory)))
 
 (defun tired--collapsed-display-entry (directory entry)
-  "Return a display clone for ENTRY when it collapses to one file.
+  "Return a display clone for ENTRY when it collapses to one entry.
 DIRECTORY is the listed parent and provides the relative name.  The
 result is nil when ENTRY is not a directory or does not collapse.
-A remote directory never collapses, because the chain walk reads
-one directory per level, and every read costs a network round trip."
+The leaf of the chain can be a file or a directory.  A remote
+directory never collapses, because the chain walk reads one
+directory per level, and every read costs a network round trip."
   (when (and tired-collapse-single-child
              (tired-entry-dirp entry)
              (not (file-remote-p (tired-entry-path entry))))
@@ -738,10 +766,11 @@ ROW is a `tired-entry' or a `tired-section'.  Children of inserted
 directories follow the row of their parent and indent by DEPTH.  The
 sections of an expanded file follow the row of that file.  With
 VISIBLE-ONLY, skip hidden, filtered and narrowed-out entries.  A
-directory seen twice through symlinks appears once.  A directory that
-leads to exactly one file collapses into one row for that file,
-keeping the directory's sort position.  Such a row still shows the
-sections of its file when the user expands it."
+directory seen twice through symlinks appears once.  A directory
+that leads to a single entry chain collapses into one row for the
+last entry of the chain, keeping the directory's sort position.
+Such a row still shows the sections of its file, and still shows the
+children of its directory, when the user expands it."
   (let ((rows nil)
         (seen (make-hash-table :test #'equal)))
     (cl-labels
@@ -778,11 +807,10 @@ sections of its file when the user expands it."
                      (dolist (row shown)
                        (push row rows)))
                    (when (and (not hidden)
-                              (not collapsed)
-                              (tired--directory-entry-p entry)
+                              (tired--directory-entry-p display)
                               (tired--inserted-p
-                               (tired-entry-path entry)))
-                     (walk (tired-entry-path entry) (1+ depth)))))))))
+                               (tired-entry-path display)))
+                     (walk (tired-entry-path display) (1+ depth)))))))))
       (walk tired--directory 0))
     (nreverse rows)))
 
@@ -927,14 +955,16 @@ Paint SPANS over the result when SPANS holds entries."
   "Return the name cell for the collapsed ENTRY.
 Paint every directory component with the directory face, because the
 row stands for a chain of directories.  Paint the last component
-with the face the file takes on its own row.  A symbolic link keeps
-its target arrow."
+with the face its own row takes, and close a directory leaf with a
+slash.  A symbolic link keeps its target arrow."
   (let* ((name (tired-entry-name entry))
          (file (file-name-nondirectory name))
          (head (string-remove-suffix file name)))
     (concat (tired--propertize-name head 'tired-directory-face)
             (tired--propertize-name file (tired--name-face entry file)
                                     (tired--entry-name-spans entry file))
+            (when (tired-entry-dirp entry)
+              (tired--propertize-name "/" 'tired-directory-suffix-face))
             (when (eq (tired-entry-type entry) 'symlink)
               (tired--symlink-suffix entry)))))
 
@@ -1384,18 +1414,33 @@ Keep the region active, or inactive, as it was before the redraw."
       (when (tired--goto-row row)
         (set-marker (mark-marker) (point) (current-buffer))))))
 
+(defun tired--chain-paths ()
+  "Return the skipped directories of every cached collapse.
+A new sibling in one of them breaks the chain, so each needs its own
+watch.  A directory that does not collapse skips nothing and adds
+nothing.  A directory that the listing shows keeps its own watch
+when the user inserts it, so the duplicates cost nothing."
+  (let (paths)
+    (when (hash-table-p tired--collapse-cache)
+      (maphash (lambda (_directory result)
+                 (when (car result)
+                   (setq paths (append (cdr result) paths))))
+               tired--collapse-cache))
+    paths))
+
 (defun tired--watch-paths ()
   "Return the paths that need a file notification watch.
 The root directory is always watched.  Inserted directories join the
-list.  Collapsed directories stay unwatched, so their changes arrive
-with the next explicit refresh.  Every expanded file joins as well,
-because a directory watch does not report an edit to a file inside
-that directory."
+list, and so does every directory that a collapsed chain skips,
+because a new sibling there breaks the collapse.  Every expanded
+file joins as well, because a directory watch does not report an
+edit to a file inside that directory."
   (append (list (directory-file-name (expand-file-name tired--directory)))
           (and (hash-table-p tired--inserted)
                (hash-table-keys tired--inserted))
           (and (hash-table-p tired--expanded)
-               (hash-table-keys tired--expanded))))
+               (hash-table-keys tired--expanded))
+          (tired--chain-paths)))
 
 (defun tired--stop-watching ()
   "Cancel the debounce timer and remove every file notification watch."
@@ -1572,7 +1617,9 @@ A resize changes the space available to the name column."
 (add-hook 'window-size-change-functions #'tired--window-size-changed)
 
 (defun tired--forget-inserted (directory)
-  "Remove DIRECTORY and its inserted descendants from the listing."
+  "Remove DIRECTORY and its inserted descendants from the listing.
+Drop the chain results below them as well, so a stale chain adds no
+watch."
   (let* ((base (directory-file-name (expand-file-name directory)))
          (prefix (file-name-as-directory base))
          doomed)
@@ -1584,7 +1631,21 @@ A resize changes the space available to the name column."
              tired--inserted)
     (dolist (other doomed)
       (remhash other tired--inserted)
-      (remhash other tired--tables))))
+      (remhash other tired--tables))
+    (tired--forget-chains base)))
+
+(defun tired--forget-chains (directory)
+  "Drop the chain results under DIRECTORY from the collapse cache."
+  (when (hash-table-p tired--collapse-cache)
+    (let ((prefix (file-name-as-directory
+                   (directory-file-name (expand-file-name directory))))
+          stale)
+      (maphash (lambda (key _result)
+                 (when (string-prefix-p prefix key)
+                   (push key stale)))
+               tired--collapse-cache)
+      (dolist (key stale)
+        (remhash key tired--collapse-cache)))))
 
 (defun tired--reload-tables ()
   "Read the root directory and every inserted directory.
@@ -2044,12 +2105,16 @@ removes it."
   "Toggle the display of entries whose name starts with a dot."
   (interactive)
   (setq tired--hide-dotfiles (not tired--hide-dotfiles))
+  ;; A dotfile link ends a chain, so the cached chains follow the toggle.
+  (setq tired--collapse-cache (make-hash-table :test #'equal))
   (tired--redraw))
 
 (defun tired-toggle-hidden ()
   "Toggle the display of entries that `tired-hidden-regexps' hides."
   (interactive)
   (setq tired--show-hidden (not tired--show-hidden))
+  ;; A hidden link ends a chain, so the cached chains follow the toggle.
+  (setq tired--collapse-cache (make-hash-table :test #'equal))
   (tired--redraw))
 
 (defun tired-toggle-collapse ()

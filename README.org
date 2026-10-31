@@ -31,7 +31,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Live name filter, dotfile toggle and regexp-hidden toggle
 - Regexp rules that hide entries, with a mode line count
 - Automatic refresh on directory changes, debounced
-- Single-child directory chains collapse into their one file
+- Single-child directory chains collapse into their last entry
 - Optional recursive size of a directory
 - Optional evil bindings in =tired-evil.el=, with the evil motions kept
 - Native Elisp listing, no external process
@@ -384,34 +384,40 @@ theme colors the slash apart from the name.
 
 * Single-child collapse
 
-A directory that leads to exactly one file collapses into one row for
-that file.  For example `sub/deep/leaf.txt' replaces the `sub' row.
-Every listed directory is inspected on refresh.  The chain stops at
-the first branch, so a directory with two entries stays a directory.
-Hidden files count, which means they block a collapse or form the
-final file themselves.  A remote directory keeps its own row, because
-the walk reads one directory per level and a remote read costs a
-network round trip.
+A chain of single-entry directories collapses into one row for its
+last entry.  A file at the end gives `sub/deep/leaf.txt' in place of
+the `sub' row.  A directory at the end gives `docs/adr/' when `docs'
+holds only `adr', so a branch one level down loses no row.  Every
+listed directory is inspected on refresh.  The chain stops at the
+first branch, so a directory with two entries ends the chain, and an
+empty directory ends it as well.  A hidden name ends the chain before
+the hidden row, so `tired-hidden-regexps' and the dotfile toggle keep
+their reach.  A remote directory keeps its own row, because the walk
+reads one directory per level and a remote read costs a network
+round trip.
 
-The collapsed row keeps the directory's sort position, shows the file
-attributes, and acts as the file.  =RET= opens it and =w= copies its
-real path.  The directory components of the row name take the
-directory face, and the last component takes the face that the file
-takes on its own row, so `tools/file.el' shows a colored `tools/' and
-a plain `file.el'.  =C= toggles collapse for the current buffer.
+The collapsed row keeps the directory's sort position, shows the
+attributes of the last entry, and acts as that entry.  =RET= opens a
+file leaf, and opens a Tired buffer for a directory leaf.  =w= copies
+the real path.  The directory components of the row name take the
+directory face, and the last component takes the face that its own
+row would take, so `tools/file.el' shows a colored `tools/' and a
+plain `file.el'.  =C= toggles collapse for the current buffer.
 Inserted sections collapse as well; =C= off shows the real rows.  A
 collapsed row still expands its file sections, so =TAB= on a deep
 single file shows the sections of that file below the collapsed row.
+=TAB= on a directory leaf shows its children, indented below the row.
 
 * Automatic refresh
 
 The listing refreshes itself when a shown directory changes.  The
-root directory and every inserted section get a file notification
-watch.  Events coalesce for `tired-auto-revert-delay' seconds, so a
-build writing many files causes one refresh.  Collapsed sections stay
-unwatched until the next insertion or explicit refresh.  Emacs lock
-files do not trigger a refresh, and an open minibuffer postpones the
-refresh.  =A= toggles the feature for the current buffer.
+root directory, every inserted section and every skipped chain level
+get a file notification watch.  Events coalesce for
+`tired-auto-revert-delay' seconds, so a build writing many files
+causes one refresh.  A new sibling in a skipped level breaks its
+chain, so that watch matters.  Emacs lock files do not trigger a
+refresh, and an open minibuffer postpones the refresh.  =A= toggles
+the feature for the current buffer.
 
 Remote directories need a working file notification backend.  Without
 one, the watches fail silently and =g= remains available.

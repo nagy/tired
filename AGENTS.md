@@ -79,10 +79,11 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
    conses.  A `file-truename` set stops symlink cycles.
    `tired--directory-entry-p` decides whether a row takes children and
    counts a symlink that resolves to a directory.
-4. `tired--collapsed-display-entry` swaps a directory row for the file at
-   the end of a single-entry chain.  It runs after sorting, so the row
-   keeps the directory position, and it caches per refresh in
-   `tired--collapse-cache`.
+4. `tired--collapsed-display-entry` swaps a directory row for the leaf
+   of a single-entry chain, a file or a directory.  It runs after
+   sorting, so the row keeps the directory position, and it caches per
+   refresh in `tired--collapse-cache`, together with the directories
+   that the chain walk visited.
 5. `tired-file-sections` picks a handler through `tired-file-handlers`,
    runs it in a temporary buffer, and turns the plists into
    `tired-section` structs.  The result caches in `tired--sections` by
@@ -97,9 +98,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
    `tired--selection-set` mirrors it; `tired--region-entries` reads the
    region.  `tired--selection-targets` takes the selection first, then
    the region, then the row at point.
-8. `tired--sync-watches` watches the root, every inserted directory and
-   every expanded file.  `tired--file-changed` debounces into
-   `tired--auto-revert-now`, and `kill-buffer-hook` stops the watches.
+8. `tired--sync-watches` watches the root, every inserted directory,
+   every expanded file and every skipped chain level.  `tired--file-changed`
+   debounces into `tired--auto-revert-now`, and `kill-buffer-hook` stops
+   the watches.
 9. `tired-filter` reads the minibuffer and schedules a redraw through
    `tired-filter-delay`; the exit and quit paths flush at once.
 10. `tired--apply-to-targets` runs one function over the targets, deepest
@@ -205,6 +207,19 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   original path exists again.
 - Single-child collapse and the size walk skip a remote directory,
   because every read there costs a network round trip.
+- A collapsed row takes the leaf of the chain, so `tired-entry-path`
+  names the leaf and the name holds the relative path.  The leaf can
+  be a directory: `tired--display-rows` walks the children of `display`
+  rather than of `entry`, or the insert of such a row shows nothing.
+  `tired--entry-for-path` reads a parent table by file name and misses
+  a collapsed row, so look the row up in `tired--display-rows`.
+- A hidden name ends a chain before that level, so a hidden middle
+  directory keeps its subtree out of the listing.  `tired--hidden-p`
+  reads the whole joined name and cannot do that test.
+- The collapse cache value is a cons of the leaf and the visited
+  directories, and `tired--chain-paths` feeds the watched paths from
+  the second part.  Drop a chain result when its directory leaves the
+  tree, or the watch outlives the row.
 - `tired-tests--with-trash` binds a private trash, an empty undo stack
   and an empty `tired-undo-push-functions`.  Use it for any test that
   removes or replaces a path.

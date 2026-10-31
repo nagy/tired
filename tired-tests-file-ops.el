@@ -373,7 +373,7 @@ carries the process id.  A set option wins."
       (let ((path (expand-file-name "fresh/nested" root)))
         (tired-mkdir path)
         (should (file-directory-p path))
-        (should (member "fresh" (tired-tests--names)))
+        (should (member "fresh/nested" (tired-tests--names)))
         (tired-undo)
         (should-not (file-exists-p (expand-file-name "fresh" root)))))))
 

@@ -1301,7 +1301,7 @@ The same substitution rules apply to the header line."
     (should (= 4 (length (tired-tests--names))))))
 
 (ert-deftest tired-watch-directories-follow-inserted-sections ()
-  "The watch list holds the root and every inserted directory."
+  "The watch list holds the root, the insertions and the collapsed chains."
   (tired-tests--with-fixture
     (let ((tired-auto-revert t))
       (tired root)
@@ -1309,9 +1309,12 @@ The same substitution rules apply to the header line."
                      (list (directory-file-name root))))
       (tired-tests--goto "sub")
       (tired-insert-subdir)
+      ;; `deep` collapses into its one file, so a new sibling there
+      ;; breaks the chain and needs its own watch.
       (should (equal (sort (tired--watch-paths) #'string<)
                      (sort (list (directory-file-name root)
-                                 (expand-file-name "sub" root))
+                                 (expand-file-name "sub" root)
+                                 (expand-file-name "sub/deep" root))
                            #'string<))))))
 
 (ert-deftest tired-sync-watches-adds-and-removes ()
@@ -1328,10 +1331,12 @@ The same substitution rules apply to the header line."
         (tired-tests--goto "sub")
         (tired-insert-subdir)
         (should (member (expand-file-name "sub" root) added))
+        ;; `sub/deep` collapses, so its own watch joins the list.
+        (should (member (expand-file-name "sub/deep" root) added))
         (tired-refresh)
-        (should (= 2 (length added)))
+        (should (= 3 (length added)))
         (tired-remove-subdir)
-        (should (= 1 (length removed)))))))
+        (should (= 2 (length removed)))))))
 
 (ert-deftest tired-kill-buffer-removes-watches ()
   "Killing a Tired buffer removes its file notification watches."
@@ -1409,16 +1414,65 @@ The same substitution rules apply to the header line."
     (kill-buffer (current-buffer))))
 
 (ert-deftest tired-collapse-requires-exactly-one-entry ()
-  "A branch or an empty directory does not collapse."
+  "A branch or an empty directory stops the chain at its own row."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "branch/x" root) t)
     (with-temp-file (expand-file-name "branch/x/one.txt") (insert "1"))
     (with-temp-file (expand-file-name "branch/x/two.txt") (insert "2"))
     (make-directory (expand-file-name "empty" root))
     (tired root)
-    (should (member "branch" (tired-tests--names)))
+    (should (member "branch/x" (tired-tests--names)))
     (should (member "empty" (tired-tests--names)))
+    (should-not (member "branch" (tired-tests--names)))
     (should-not (member "branch/x/one.txt" (tired-tests--names)))))
+
+(ert-deftest tired-collapse-into-a-directory-leaf ()
+  "A chain that ends at a branch collapses into that directory row."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (tired-tests--write "chain/a/b/one.txt" "1")
+    (tired-tests--write "chain/a/b/two.txt" "2")
+    (tired root)
+    (should (equal (car (tired-tests--names)) "chain/a/b"))
+    (let ((entry (car (seq-find
+                       (lambda (row)
+                         (equal (tired-entry-name (car row)) "chain/a/b"))
+                       (tired--display-rows t)))))
+      (should (tired-entry-collapsed entry))
+      (should (tired-entry-dirp entry))
+      (should (equal (substring-no-properties (tired--name-cell entry))
+                     "chain/a/b/")))
+    (tired-tests--goto "chain/a/b")
+    (tired-insert-subdir)
+    (should (member "one.txt" (tired-tests--names)))
+    (should (member "two.txt" (tired-tests--names)))))
+
+(ert-deftest tired-collapse-into-an-empty-directory ()
+  "A chain that ends at an empty directory collapses to that row."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "solo/inner" root) t)
+    (tired root)
+    (should (member "solo/inner" (tired-tests--names)))
+    (should-not (member "solo" (tired-tests--names)))
+    (tired-tests--goto "solo/inner")
+    (tired-insert-subdir)
+    (should (equal (tired-tests--names)
+                   '("solo/inner" "sub" ".hidden" "alpha.txt"
+                     "beta.txt" "link")))))
+
+(ert-deftest tired-collapse-stops-at-a-hidden-link ()
+  "A hidden name in the middle of a chain cancels the collapse."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/.secret/b" root) t)
+    (tired-tests--write "chain/.secret/b/one.txt" "1")
+    (tired-tests--write "chain/.secret/b/two.txt" "2")
+    (let ((tired-hidden-regexps '("^\\.secret\\'")))
+      (tired root)
+      (should (member "chain" (tired-tests--names)))
+      (should-not (member "chain/.secret/b" (tired-tests--names)))
+      ;; The chain result follows the toggle, not the first walk.
+      (tired-toggle-hidden)
+      (should (member "chain/.secret/b" (tired-tests--names))))))
 
 (ert-deftest tired-collapse-hidden-final-file ()
   "A collapsed chain whose file is hidden follows the dotfile toggle."  (tired-tests--with-fixture
@@ -1488,7 +1542,8 @@ costs a network round trip, so the row stays plain."
     (should (member "chain/a/b/file.txt" (tired-tests--names)))
     (with-temp-file (expand-file-name "chain/a/b/other.txt") (insert "x"))
     (tired-refresh)
-    (should (member "chain" (tired-tests--names)))
+    (should (member "chain/a/b" (tired-tests--names)))
+    (should-not (member "chain" (tired-tests--names)))
     (should-not (member "chain/a/b/file.txt" (tired-tests--names)))))
 
 (ert-deftest tired-find-file-other-window-visits-the-entry ()
