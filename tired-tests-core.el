@@ -568,6 +568,41 @@ costs one redraw and not one per character."
                     :type 'user-error)
       (should-error (tired-mouse-toggle event) :type 'user-error))))
 
+(ert-deftest tired-context-menu-lists-the-row-commands ()
+  "A right click on a row offers the commands that act on it."
+  (skip-unless (require 'mouse nil t))
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let* ((event (tired-tests--click 'mouse-3 (point)))
+           (menu (tired-context-menu (make-sparse-keymap) event)))
+      (should (lookup-key menu [tired-visit]))
+      (should (lookup-key menu [tired-rename]))
+      (should (lookup-key menu [tired-delete]))
+      (should (lookup-key menu [tired-refresh]))
+      ;; The command acts on the clicked row, not on the row at point
+      ;; when the menu opened.
+      (tired-tests--goto "beta.txt")
+      (call-interactively (lookup-key menu [tired-copy-name]))
+      (should (equal (current-kill 0) "alpha.txt")))))
+
+(ert-deftest tired-context-menu-skips-a-click-outside-a-row ()
+  "A click below the last row keeps the plain Emacs menu."
+  (skip-unless (require 'mouse nil t))
+  (tired-tests--with-fixture
+    (tired root)
+    (let* ((event (tired-tests--click 'mouse-3 (point-max)))
+           (menu (tired-context-menu (make-sparse-keymap) event)))
+      (should-not (lookup-key menu [tired-visit]))
+      (should-not (lookup-key menu [tired-refresh])))))
+
+(ert-deftest tired-mode-adds-the-context-menu-function ()
+  "A Tired buffer carries the context menu function locally."
+  (skip-unless (require 'mouse nil t))
+  (tired-tests--with-fixture
+    (tired root)
+    (should (memq #'tired-context-menu context-menu-functions))))
+
 (ert-deftest tired-refresh-prunes-deleted-selection ()
   "Refresh drops selected entries that no longer exist."
   (tired-tests--with-fixture

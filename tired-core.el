@@ -2399,6 +2399,63 @@ takes the file back from the browser."
         (browse-url-of-file (tired-entry-path entry))))
     (deactivate-mark)))
 
+(defun tired--context-command (position command)
+  "Return a command that calls COMMAND at POSITION.
+A context menu click does not move point, so the command moves
+there first and then reads the row at point."
+  (lambda ()
+    (interactive)
+    (when (integer-or-marker-p position)
+      (goto-char (min position (point-max))))
+    (call-interactively command)))
+
+(defun tired-context-menu (menu click)
+  "Populate MENU with the Tired commands for CLICK.
+A click on a row adds the commands that act on that row, and the
+listing commands follow.  A click below the last row adds nothing,
+so the plain Emacs menu stays.  `tired-mode' puts this function
+into `context-menu-functions' locally."
+  (let ((row (tired--click-row click)))
+    (when (and row (derived-mode-p 'tired-mode))
+      (let* ((start (event-start click))
+             (position (posn-point start))
+             (entry (tired-entry-p row))
+             (command (lambda (function)
+                        (tired--context-command position function))))
+        (define-key-after menu [tired-visit]
+          (list 'menu-item "Visit" (funcall command #'tired-find-file)))
+        (define-key-after menu [tired-visit-other-window]
+          (list 'menu-item "Visit in Other Window"
+                (funcall command #'tired-find-file-other-window)))
+        (define-key-after menu [tired-separator] menu-bar-separator)
+        (when (tired--directory-entry-p row)
+          (define-key-after menu [tired-insert-subdir]
+            (list 'menu-item "Insert Children"
+                  (funcall command #'tired-insert-subdir)))
+          (define-key-after menu [tired-toggle-subdir]
+            (list 'menu-item "Toggle Subtree"
+                  (funcall command #'tired-toggle-subdir))))
+        (when (and entry (tired-file-handler (tired-entry-path row)))
+          (define-key-after menu [tired-expand-file]
+            (list 'menu-item "Expand Sections"
+                  (funcall command #'tired-toggle-subdir))))
+        (when entry
+          (define-key-after menu [tired-rename]
+            (list 'menu-item "Rename" (funcall command #'tired-rename)))
+          (define-key-after menu [tired-copy-name]
+            (list 'menu-item "Copy Name"
+                  (funcall command #'tired-copy-name))))
+        (define-key-after menu [tired-copy-here]
+          (list 'menu-item "Copy Here" (funcall command #'tired-copy)))
+        (define-key-after menu [tired-move]
+          (list 'menu-item "Move" (funcall command #'tired-move)))
+        (define-key-after menu [tired-delete]
+          (list 'menu-item "Delete" (funcall command #'tired-delete)))
+        (define-key-after menu [tired-separator-2] menu-bar-separator)
+        (define-key-after menu [tired-refresh]
+          '(menu-item "Refresh" tired-refresh))))
+    menu))
+
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
   :parent tabulated-list-mode-map
@@ -2564,7 +2621,11 @@ The directory contents come from `directory-files' and
   (setq-local tired--mode-line-base (default-value 'mode-line-format))
   (setq-local tired--mode-line-cache "")
   (setq-local mode-line-format tired--mode-line-base)
-  (add-hook 'post-command-hook #'tired--mode-line-maybe-update nil t))
+  (add-hook 'post-command-hook #'tired--mode-line-maybe-update nil t)
+  ;; `context-menu-functions' lives in mouse.el.  A session without a
+  ;; menu has no context menu mode, so skip the hook there.
+  (when (boundp 'context-menu-functions)
+    (add-hook 'context-menu-functions #'tired-context-menu nil t)))
 
 (provide 'tired-core)
 

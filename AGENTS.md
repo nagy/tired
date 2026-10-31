@@ -121,6 +121,12 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
     opens that row in another window and `tired-mouse-toggle` runs
     `tired-toggle-subdir` on it.  `tired--click-selects-row` returns nil
     and takes the `follow-link` binding, so one click selects.
+13. `tired-context-menu` fills the `mouse-3` menu from the row under the
+    click.  `tired-mode` adds it to `context-menu-functions` with a
+    buffer-local hook, and the guard reads `(boundp
+    'context-menu-functions)`, because `mouse.el` owns the variable.  A
+    menu click leaves point alone, so each row command goes through
+    `tired--context-command` and moves to the clicked position first.
 
 ## Conventions
 

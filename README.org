@@ -157,6 +157,14 @@ Every column header takes a click.  =mouse-1= on =Name=, =Size=,
 the column that already sorts flips the direction, as =s= does.  The
 arrow in the label shows the current column and direction.
 
+With `context-menu-mode' on, =mouse-3= on a row opens the Emacs
+context menu with the Tired commands at the end: visit, visit in
+another window, insert, toggle the subtree, expand sections, rename,
+copy the name, copy, move, delete and refresh.  The commands act on
+the clicked row, not on the row that held point before the click.
+=tired-mode= adds its function to `context-menu-functions' in the
+buffer, so a listing elsewhere keeps the plain menu.
+
 * Evil
 
 The package ships evil bindings in a separate file, so the main
