@@ -114,12 +114,14 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
     region stay untouched.
 11. `tired-evil.el` is a second library.  `tired.el` installs its hook
     after `provide`, so both load orders work.
-12. `tired--row` wraps the name column in `tired--click-cell`, so the
-    printed row carries `mouse-face` and a `help-echo` that names the
-    mouse commands.  `tired--click-row` reads the row under a click from
-    the buffer of the clicked window.  `tired-mouse-find-file-other-window`
-    opens that row in another window and `tired-mouse-toggle` runs
-    `tired-toggle-subdir` on it.  `tired--click-selects-row` returns nil
+12. `tired--paint-row-mouse` runs after `tabulated-list-print` and gives
+    every printed line `mouse-face` and the `help-echo` from
+    `tired--mouse-help`, so the whole row reacts.  Bind
+    `inhibit-read-only`, because the listing buffer is read-only.
+    `tired--click-row` reads the row under a click from the buffer of the
+    clicked window.  `tired-mouse-find-file-other-window` opens that row
+    in another window and `tired-mouse-toggle` runs `tired-toggle-subdir`
+    on it.  `tired--click-selects-row` returns nil
     and takes the `follow-link` binding, so one click selects.
 13. `tired-context-menu` fills the `mouse-3` menu from the row under the
     click.  `tired-mode` adds it to `context-menu-functions` with a

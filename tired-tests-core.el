@@ -540,19 +540,26 @@ costs one redraw and not one per character."
       (tired-up-directory)
       (should (eq (current-buffer) origin)))))
 
-(ert-deftest tired-name-column-carries-the-mouse-properties ()
-  "A printed name column lights up and explains the mouse commands."
+(ert-deftest tired-row-carries-the-mouse-properties ()
+  "A printed row lights up and explains the mouse commands."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "sub")
     (should (eq (get-text-property (point) 'mouse-face) 'highlight))
     (should (string-match-p "double-click"
                             (get-text-property (point) 'help-echo)))
+    ;; The size column and the space after the mode column react too.
+    (let ((last (1- (line-end-position))))
+      (should (eq (get-text-property last 'mouse-face) 'highlight))
+      (should (string-match-p "mouse-2"
+                              (get-text-property last 'help-echo))))
     ;; The indent belongs to the row, so a child row lights up from
     ;; the left edge too.
     (tired-insert-subdir)
     (tired-tests--goto "inner.txt")
-    (should (eq (get-text-property (point) 'mouse-face) 'highlight))))
+    (should (eq (get-text-property (point) 'mouse-face) 'highlight))
+    (should (eq (get-text-property (line-beginning-position) 'mouse-face)
+                'highlight))))
 
 (ert-deftest tired-mouse-click-does-not-follow-a-link ()
   "One click moves point, so a marked row is no link."

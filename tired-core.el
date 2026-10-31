@@ -1036,14 +1036,22 @@ a double click toggles it."
     "mouse-2: visit in another window, double-click: expand or collapse")
    (t "mouse-2: visit in another window")))
 
-(defun tired--click-cell (row string)
-  "Return STRING, the name column of ROW, with the mouse properties.
-The mouse face lights the row under the pointer, and the help text
-names the two mouse commands.  `tabulated-list-print-col' inserts a
-column string as it stands, so the properties survive the print."
-  (propertize string
-              'mouse-face 'highlight
-              'help-echo (tired--mouse-help row)))
+(defun tired--paint-row-mouse ()
+  "Add the mouse face and the help text to every printed row.
+`tabulated-list-print' erases and reprints the buffer, so this pass
+runs after each print.  The whole line reacts, so the indent of a
+nested row and the space beside the columns light up too."
+  (let ((inhibit-read-only t))
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((row (tabulated-list-get-id)))
+          (when row
+            (add-text-properties
+             (line-beginning-position) (line-end-position)
+             (list 'mouse-face 'highlight
+                   'help-echo (tired--mouse-help row)))))
+        (forward-line 1)))))
 
 (defvar tired--size-cache (make-hash-table :test #'equal)
   "Global memo table for `tired--subtree-size'.
@@ -1154,17 +1162,13 @@ name column only, because one table format serves every row.
 Emacs 31 requires a vector of column descriptors here; a list makes
 `tabulated-list-print-entry' signal a type error."
   (if (tired-section-p row)
-      (vector (tired--click-cell
-               row
-               (concat (make-string (* 2 depth) ?\s)
-                       (tired--section-cell row)))
+      (vector (concat (make-string (* 2 depth) ?\s)
+                      (tired--section-cell row))
               ""
               ""
               "")
-    (vector (tired--click-cell
-             row
-             (concat (make-string (* 2 depth) ?\s)
-                     (tired--name-cell row)))
+    (vector (concat (make-string (* 2 depth) ?\s)
+                    (tired--name-cell row))
             (tired--size-column row)
             (propertize (format-time-string tired-date-format
                                             (tired-entry-mtime row))
@@ -1678,7 +1682,8 @@ point and the scroll position of every window that shows the listing."
                                   'face 'bold)
                       "  "
                       tired--header-base))
-          (tabulated-list-print t))
+          (tabulated-list-print t)
+          (tired--paint-row-mouse))
       (setq tired--rows nil))
     (tired--goto-entry point-entry)
     (tired--restore-window-views views)

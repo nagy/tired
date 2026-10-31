@@ -152,8 +152,9 @@ entries next to the selection count.
 
 * Mouse
 
-The name column lights the row under the pointer with =highlight=, and
-its help text names the two mouse commands.
+The whole row lights up under the pointer with =highlight=, and its
+help text names the two mouse commands.  The indent of a nested row
+and the space beside the columns belong to the row, so they react too.
 
 - =double-mouse-1= toggles the row under the pointer.  A directory row
   inserts or removes its children.  A file row with a section handler
