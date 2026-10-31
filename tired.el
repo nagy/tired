@@ -53,7 +53,7 @@
 ;;   s       sort the listing
 ;;   SPC     toggle selection, then move to the next line
 ;;   M-SPC   toggle selection of the entry at point
-;;   t       select every visible entry
+;;   t       toggle the selection of every visible entry
 ;;   u       clear the selection
 ;;   ~       show or hide the entries that a regexp hides
 ;;   N       narrow to the selection, or widen again
@@ -1827,8 +1827,28 @@ another window."
   "Jump to the Tired buffer described by BOOKMARK."
   (tired (bookmark-prop-get bookmark 'directory)))
 
+(defun tired--toggle-selection (paths)
+  "Toggle the membership of every path in PATHS in the selection.
+An unselected path joins the selection and a selected path leaves
+it.  Update the overlays and the mode line afterwards."
+  (let ((toggled (make-hash-table :test #'equal))
+        selection)
+    (dolist (path paths)
+      (puthash path t toggled))
+    (dolist (path tired--selection)
+      (unless (gethash path toggled)
+        (push path selection)))
+    (maphash (lambda (path _ignore)
+               (unless (and (hash-table-p tired--selection-set)
+                            (gethash path tired--selection-set))
+                 (push path selection)))
+             toggled)
+    (tired--set-selection selection))
+  (tired--apply-selection-overlays)
+  (force-mode-line-update))
+
 (defun tired-select-toggle ()
-  "Add the entry at point to the selection, or remove it.
+  "Toggle the entry at point in the selection.
 Signal a user error on a section row, because a section stands for
 its file and a file row already covers that file."
   (interactive)
@@ -1838,12 +1858,7 @@ its file and a file row already covers that file."
       (user-error "A section row is not selectable"))
      ((not (tired-entry-p entry))
       (user-error "No entry at point")))
-    (let ((path (tired-entry-path entry)))
-      (if (tired--selected-p entry)
-          (tired--set-selection (delete path tired--selection))
-        (tired--set-selection (cons path tired--selection)))))
-  (tired--apply-selection-overlays)
-  (force-mode-line-update))
+    (tired--toggle-selection (list (tired-entry-path entry)))))
 
 (defun tired-select-toggle-next ()
   "Toggle the selection at point, then move to the next line."
@@ -1852,16 +1867,12 @@ its file and a file row already covers that file."
   (forward-line 1))
 
 (defun tired-select-all ()
-  "Select every visible entry, or clear the whole selection.
-When every visible entry already belongs to the selection, the
-command clears the selection instead, so the key toggles."
+  "Toggle the selection of every visible entry.
+An unselected entry joins the selection and a selected entry leaves
+it.  A selected entry that the listing hides stays selected."
   (interactive)
-  (let ((entries (tired--visible-entries)))
-    (if (and entries (seq-every-p #'tired--selected-p entries))
-        (tired--set-selection nil)
-      (tired--set-selection (mapcar #'tired-entry-path entries))))
-  (tired--apply-selection-overlays)
-  (force-mode-line-update))
+  (tired--toggle-selection
+   (mapcar #'tired-entry-path (tired--visible-entries))))
 
 (defun tired-select-none ()
   "Clear the transient selection."

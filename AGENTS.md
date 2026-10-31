@@ -164,10 +164,14 @@ Data flow:
    selection first, then `tired--region-entries`, then the row at point;
    a command that acts on the region deactivates it.  A section row
    resolves to the file entry that owns it, and `tired-select-toggle`
-   refuses a section row.  `tired-select-all` toggles: when every
-   visible entry already belongs to the selection, it clears the whole
-   selection, so a wider selection that holds hidden entries also
-   goes.
+   refuses a section row.  `tired--toggle-selection` flips the
+   membership of a list of paths in one pass, and both
+   `tired-select-toggle` and `tired-select-all` call it.
+   `tired-select-all` toggles every visible entry: an unselected entry
+   joins the selection, a selected entry leaves it, and a selected
+   entry that the filter or the narrow snapshot hides stays selected.
+   The old all-selected branch is gone, so `tired-select-none` is the
+   only way to clear the whole selection.
 7. `tired--in-narrow-p`, `tired--name-visible-p` and
    `tired--entry-visible-p` apply the narrow snapshot, the dotfile
    setting, the hidden regexps and the name filter.

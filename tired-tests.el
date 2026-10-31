@@ -429,8 +429,19 @@ the width of the listing untouched."
                               (overlay-get overlay 'tired-selection))
                             (overlays-in (point-min) (point-max))))))
 
-(ert-deftest tired-select-all-clears-a-wider-selection ()
-  "A visible selection clears a selection that also holds hidden entries."
+(ert-deftest tired-select-all-toggles-a-partial-selection ()
+  "Selecting all inverts the visible part of a partial selection."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-select-all)
+    (should (= 4 (length tired--selection)))
+    (should-not (member (expand-file-name "alpha.txt" root)
+                        tired--selection))))
+
+(ert-deftest tired-select-all-keeps-a-selection-that-the-filter-hides ()
+  "A hidden selected entry survives a toggle of the visible entries."
   (tired-tests--with-fixture
     (tired root)
     (tired-select-all)
@@ -438,7 +449,9 @@ the width of the listing untouched."
     (setq tired--filter "alpha")
     (tired-refresh)
     (tired-select-all)
-    (should-not tired--selection)))
+    (should (= 4 (length tired--selection)))
+    (should-not (member (expand-file-name "alpha.txt" root)
+                        tired--selection))))
 
 (ert-deftest tired-copy-path-joins-targets ()
   "Copying paths puts one path per line on the kill ring."
@@ -1681,6 +1694,7 @@ number of `tired-refresh' calls."
     (tired-select-toggle)
     (should (equal (mapcar #'tired-entry-name (tired--selection-targets))
                    '("inner.txt")))
+    (tired-select-none)
     (tired-select-all)
     (should (= 8 (length (tired--selection-targets))))))
 

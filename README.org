@@ -92,7 +92,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =s=     | =tired-sort=                   | Sort by a column                        |
 | =SPC=   | =tired-select-toggle-next=     | Toggle selection, move down             |
 | =M-SPC= | =tired-select-toggle=          | Toggle selection at point               |
-| =t=     | =tired-select-all=             | Select all visible, or clear them       |
+| =t=     | =tired-select-all=             | Toggle every visible entry              |
 | =u=     | =tired-select-none=            | Clear the selection                     |
 | =~=     | =tired-toggle-hidden=         | Show or hide regexp-hidden entries      |
 | =N=     | =tired-toggle-narrow=          | Narrow to the selection, or widen       |
@@ -117,8 +117,11 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 
 The selection is transient.  It belongs to the buffer and it is pruned
 when entries disappear.  Commands that act on it clear it afterwards.
-=t= selects every visible entry, and =t= again clears the selection,
-so one key toggles the whole listing.
+=t= toggles every visible entry.  With an empty selection it selects
+them all, with a full selection it clears them, and with a partial
+selection it inverts the visible part.  A selected entry that a filter
+or a narrow snapshot hides stays selected, so =u= remains the way to
+clear the whole selection.
 
 The active region is a second target source.  Move with =S-<down>=
 and =S-<up>=, drag with the mouse, or set a mark with =C-SPC= and
@@ -199,7 +202,7 @@ listing:
 | =~=           | =tired-toggle-hidden=           |
 | =A=           | =tired-toggle-auto-revert=      |
 | =m=, =M-SPC=  | toggle the selection next, here |
-| =t=, =u= | select all, none                |
+| =t=, =u=      | toggle all, none                |
 | =D=, =c=, =R= | delete, copy, move              |
 | =!=           | =tired-do-shell-command=        |
 | =+=, =M-t=    | create a directory, a file      |
