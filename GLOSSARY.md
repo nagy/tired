@@ -33,6 +33,12 @@ The entries a command acts on.  The target is the selection when it is
 non-empty, else the active region, else the entry at point.
 _Avoid_: Operand, subject
 
+**Shell command**:
+The shell line that `tired-do-shell-command` builds from the targets
+and the substitution marks of the typed command.  The shell owns the
+result, so no undo action covers it.
+_Avoid_: Job, process, filter
+
 **Region**:
 The Emacs region between mark and point, used as a target source.
 Every row between the two positions joins, except the row on which the

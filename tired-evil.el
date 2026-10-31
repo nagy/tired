@@ -79,6 +79,7 @@
     ("~" . tired-select-invert)
     ;; Files.
     ("D" . tired-delete)
+    ("!" . tired-do-shell-command)
     ("c" . tired-copy)
     ("R" . tired-move)
     ("+" . tired-mkdir)
@@ -95,6 +96,7 @@ so a visual range reaches every file command.")
 
 (defvar tired-evil-visual-keys
   '(("D" . tired-delete)
+    ("!" . tired-do-shell-command)
     ("c" . tired-copy)
     ("R" . tired-move)
     ("U" . tired-undo)

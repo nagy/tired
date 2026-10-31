@@ -69,6 +69,7 @@
 ;;   c       copy the targets into a directory
 ;;   m       move the targets
 ;;   D       delete the targets, without a confirmation
+;;   !       run a shell command on the targets
 ;;   +       create a directory
 ;;   M-t     create an empty file
 ;;   U       undo the last file operation
@@ -2439,6 +2440,214 @@ takes the file back from the browser."
         (browse-url-of-file (tired-entry-path entry))))
     (deactivate-mark)))
 
+(defvar tired-shell-command-history nil
+  "History list for `tired-do-shell-command'.")
+
+(defcustom tired-confirm-shell-command t
+  "Whether `tired-do-shell-command' asks about a mark that stays.
+A `*' or `?' that whitespace does not isolate reaches the shell
+untouched, and the user sometimes means a substitution.  The
+command asks one yes-or-no question in that case.  Set this option
+to nil to skip the question."
+  :type 'boolean)
+
+(defun tired--shell-regexp ()
+  "Return the regexp that matches one substitution mark.
+Group 1 holds the leading whitespace or the start of the string,
+group 2 holds the mark and group 3 holds the trailing whitespace
+or the end of the string.  A `?' inside backquote signs matches
+with group 2 alone, so a shell can read it untouched."
+  (concat "\\(?1:\\`\\|[ \t]\\)\\(?2:[*?]\\)\\(?3:[ \t]\\|\\'\\)"
+          "\\|\\(?1:\\)\\(?2:`\\?`\\)\\(?3:\\)"))
+
+(defun tired--shell-marks (string)
+  "Return the substitution marks of STRING as a list of strings.
+A mark is `*', `?' or a `?' that backquote signs wrap, where
+whitespace isolates it, at the start or the end of STRING.  The
+scan continues after each mark, so one space between two marks
+hides neither."
+  (let ((regexp (tired--shell-regexp))
+        (start 0)
+        (marks nil))
+    (while (string-match regexp string start)
+      (push (match-string 2 string) marks)
+      (setq start (match-end 2)))
+    (nreverse marks)))
+
+(defun tired--shell-mark-count (string mark)
+  "Return the number of MARK characters in STRING."
+  (let ((regexp (regexp-quote mark))
+        (start 0)
+        (count 0))
+    (while (string-match regexp string start)
+      (setq count (1+ count)
+            start (match-end 0)))
+    count))
+
+(defun tired--shell-mark-match-p (string mark)
+  "Return non-nil when STRING holds MARK where whitespace isolates it.
+Isolated means whitespace on both sides, or the start or the end of
+STRING.  A `?' wrapped in backquote signs counts too.  MARK of nil
+matches either mark."
+  (seq-some (lambda (text)
+              (or (null mark) (string-search mark text)))
+            (tired--shell-marks string)))
+
+(defun tired--shell-fill-marks (command text)
+  "Return COMMAND with every substitution mark replaced by TEXT.
+TEXT goes in as it stands, so a caller quotes a file name first.
+The scan continues after each mark, so two marks that one space
+separates both fill, and a mark inside TEXT stays."
+  (let ((regexp (tired--shell-regexp))
+        (start 0)
+        (parts nil))
+    (while (string-match regexp command start)
+      (push (substring command start (match-beginning 2)) parts)
+      (push text parts)
+      (setq start (match-end 2)))
+    (push (substring command start) parts)
+    (apply #'concat (nreverse parts))))
+
+(defun tired--shell-keeps-mark-p (command mark)
+  "Return non-nil when COMMAND passes MARK to the shell.
+A mark that whitespace isolates becomes a substitution, so it never
+reaches the shell.  Every other mark does, and so does a bare `?'
+outside backquote signs."
+  (let ((isolated 0))
+    (dolist (text (tired--shell-marks command))
+      (when (string-search mark text)
+        (setq isolated (1+ isolated))))
+    (< isolated (tired--shell-mark-count command mark))))
+
+(defun tired--shell-file-name (path)
+  "Return PATH as a name to hand to a shell command.
+The name is relative to the shown directory, so an entry of an
+inserted subdirectory reads as `sub/file'.  A name that starts with
+a dash takes a leading `./', so the command does not read it as a
+switch."
+  (let ((name (file-relative-name path tired--directory)))
+    (if (string-prefix-p "-" name) (concat "./" name) name)))
+
+(defun tired--shell-parts (command)
+  "Split COMMAND into its body and the flags of its last characters.
+Return a list of the body, a background flag and a sequential
+flag.  A trailing `&' asks for a background run.  A trailing `;'
+or `;&' also asks for a background run, and it makes the runs wait
+for each other."
+  (let ((body command)
+        (background nil)
+        (sequential nil))
+    (when (string-match "[ \t]*&[ \t]*\\'" body)
+      (setq body (substring body 0 (match-beginning 0))
+            background t))
+    (when (string-match "[ \t]*;[ \t]*\\'" body)
+      (setq body (substring body 0 (match-beginning 0))
+            sequential t))
+    (list body (or background sequential) sequential)))
+
+(defun tired--shell-on-each (command files)
+  "Return one shell command body per path in FILES.
+A `?' mark in COMMAND takes the file name.  A COMMAND without a
+mark takes the name at its end, after a space."
+  (let ((substitutes (tired--shell-mark-match-p command "?"))
+        (names (mapcar (lambda (path)
+                         (shell-quote-argument (tired--shell-file-name path)))
+                       files)))
+    (mapcar (lambda (name)
+              (if substitutes
+                  (tired--shell-fill-marks command name)
+                (concat command " " name)))
+            names)))
+
+(defun tired--shell-once (command files)
+  "Return one shell command body for the whole list of FILES.
+A substitution mark in COMMAND takes the shell-quoted list, and a
+COMMAND without a mark takes the list at its end."
+  (let ((names (mapconcat (lambda (path)
+                            (shell-quote-argument (tired--shell-file-name path)))
+                          files " ")))
+    (if (tired--shell-mark-match-p command nil)
+        (tired--shell-fill-marks command names)
+      (concat command " " names))))
+
+(defun tired--shell-command-line (command files background sequential)
+  "Return the shell command line that runs COMMAND over FILES.
+A `*' mark puts the whole file list into one run.  A `?' mark runs
+COMMAND once per file, and so does a COMMAND without a mark.
+BACKGROUND makes the whole line run in the background.
+SEQUENTIAL makes the runs wait for each other."
+  (if (tired--shell-mark-match-p command "*")
+      (concat (tired--shell-once command files)
+              (if background " &" ""))
+    (let ((bodies (tired--shell-on-each command files)))
+      (cond
+       ((not background) (mapconcat #'identity bodies "; "))
+       (sequential (concat "( " (mapconcat #'identity bodies "; ") " ) &"))
+       (t (concat (mapconcat #'identity bodies " & ") " & wait"))))))
+
+(defun tired--shell-target-label (targets)
+  "Return a description of TARGETS for a shell command prompt."
+  (if (null (cdr targets))
+      (file-name-nondirectory
+       (directory-file-name (tired-entry-path (car targets))))
+    (format "%d entries" (length targets))))
+
+(defun tired-do-shell-command (command)
+  "Run shell COMMAND on the target entries.
+Tired reads the targets from the selection, then the region, then
+the row at point, and it lists them relative to the shown
+directory.
+
+A `*' that whitespace isolates in COMMAND stands for the whole file
+list in one run.  A `?' that whitespace isolates stands for one
+file, so Tired runs COMMAND once per file.  With neither mark,
+Tired adds one file name to COMMAND and runs it once per file.  A
+mark that whitespace does not isolate reaches the shell as it
+stands, and Tired asks one question first unless
+`tired-confirm-shell-command' is nil.  A `?' inside backquote signs
+counts as a substitution too.
+
+A trailing `&' runs the command in the background, with one job per
+file.  A trailing `;' or `;&' runs the files one after another, in
+one background job.  A background run leaves the listing alone,
+and a synchronous run refreshes it, because COMMAND can create or
+remove paths.
+
+The shell owns the result, so `tired-undo' cannot reverse this
+command.  The command clears the selection and the region, like
+every other command that acts on targets."
+  (interactive
+   (let ((targets (tired--selection-targets)))
+     (unless targets
+       (user-error "No entry at point"))
+     (list (read-shell-command
+            (format "! on %s: " (tired--shell-target-label targets))
+            nil 'tired-shell-command-history))))
+  (let ((targets (tired--selection-targets)))
+    (unless targets
+      (user-error "No entry at point"))
+    (cl-destructuring-bind (body background sequential)
+        (tired--shell-parts command)
+      (when (string-blank-p body)
+        (user-error "Empty shell command"))
+      (when (and (tired--shell-mark-match-p body "*")
+                 (tired--shell-mark-match-p body "?"))
+        (user-error "Do not combine `*' and `?' marks"))
+      (when (and tired-confirm-shell-command
+                 (or (tired--shell-keeps-mark-p body "*")
+                     (tired--shell-keeps-mark-p body "?"))
+                 (not (y-or-n-p
+                       "A `*' or `?' stays for the shell.  Run the command? ")))
+        (user-error "Command canceled"))
+      (let ((default-directory (file-name-as-directory tired--directory)))
+        (shell-command
+         (tired--shell-command-line body (mapcar #'tired-entry-path targets)
+                                    background sequential)))
+      (tired-select-none)
+      (deactivate-mark)
+      (unless background
+        (tired-refresh)))))
+
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
   :parent tabulated-list-mode-map
@@ -2474,6 +2683,7 @@ takes the file back from the browser."
   "c" #'tired-copy
   "m" #'tired-move
   "D" #'tired-delete
+  "!" #'tired-do-shell-command
   "+" #'tired-mkdir
   "M-t" #'tired-touch
   "U" #'tired-undo

@@ -901,6 +901,156 @@ deleted afterwards."
       (should-not (file-exists-p (expand-file-name "beta.txt" root)))
       (should (string-prefix-p "beta.txt" (car (tired-tests--trash-entries)))))))
 
+(defun tired-tests--shell-run (command)
+  "Run `tired-do-shell-command' with COMMAND and report what it did.
+Return a cons of the shell command lines, in call order, and the
+number of `tired-refresh' calls."
+  (let ((lines nil)
+        (refreshes 0))
+    (cl-letf (((symbol-function 'shell-command)
+               (lambda (line &optional _buffer _error) (push line lines)))
+              ((symbol-function 'tired-refresh)
+               (lambda (&rest _) (setq refreshes (1+ refreshes)))))
+      (tired-do-shell-command command))
+    (cons (nreverse lines) refreshes)))
+
+(defun tired-tests--shell-mark-fills (command text)
+  "Return COMMAND with each substitution mark replaced by TEXT."
+  (tired--shell-fill-marks command text))
+
+(ert-deftest tired-do-shell-command-appends-the-file-name ()
+  "A command without a mark runs once per target, with its name."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let ((result (tired-tests--shell-run "wc")))
+      (should (equal (car result) '("wc alpha.txt")))
+      (should (= 1 (cdr result))))))
+
+(ert-deftest tired-do-shell-command-runs-a-star-mark-once ()
+  "A `*' mark takes the whole selected file list and runs one command."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (let ((result (tired-tests--shell-run "du -sh *")))
+      (should (equal (car result) '("du -sh alpha.txt beta.txt")))
+      (should (= 1 (cdr result)))
+      (should-not tired--selection))))
+
+(ert-deftest tired-do-shell-command-runs-a-question-mark-per-file ()
+  "A `?' mark takes one file name, so the command runs once per target."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (should (equal (car (tired-tests--shell-run "gzip ?"))
+                   '("gzip alpha.txt; gzip beta.txt")))))
+
+(ert-deftest tired-do-shell-command-backgrounds-with-a-trailing-ampersand ()
+  "A trailing `&' gives one background job per file and no refresh."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (let ((result (tired-tests--shell-run "gzip ? &")))
+      (should (equal (car result)
+                     '("gzip alpha.txt & gzip beta.txt & wait")))
+      (should (= 0 (cdr result))))))
+
+(ert-deftest tired-do-shell-command-backgrounds-the-file-list-once ()
+  "A `*' mark with a trailing `&' makes one background job."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (should (equal (car (tired-tests--shell-run "du -sh * &"))
+                   '("du -sh alpha.txt beta.txt &")))))
+
+(ert-deftest tired-do-shell-command-sequences-a-trailing-semicolon ()
+  "A trailing `;' runs the files one after another in one background job."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (let ((result (tired-tests--shell-run "gzip ?;")))
+      (should (equal (car result)
+                     '("( gzip alpha.txt; gzip beta.txt ) &")))
+      (should (= 0 (cdr result))))))
+
+(ert-deftest tired-do-shell-command-refreshes-after-a-sync-run ()
+  "A synchronous command refreshes the listing once."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (should (= 1 (cdr (tired-tests--shell-run "touch"))))))
+
+(ert-deftest tired-do-shell-command-asks-about-a-bare-mark ()
+  "A `*' inside a word stays for the shell, so tired asks first."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (&rest _) (setq asked t) nil)))
+        (should-error (tired-do-shell-command "ls *.txt") :type 'user-error))
+      (should asked))
+    (let ((tired-confirm-shell-command nil))
+      (should (equal (car (tired-tests--shell-run "ls *.txt"))
+                     '("ls *.txt alpha.txt"))))))
+
+(ert-deftest tired-do-shell-command-rejects-two-mark-kinds ()
+  "Both substitution marks in one command signal a user error."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (should-error (tired-do-shell-command "echo * ?") :type 'user-error)))
+
+(ert-deftest tired-do-shell-command-protects-a-leading-dash ()
+  "A name that starts with a dash takes a leading `./'."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name "-dash.txt" root) (insert "dash"))
+    (tired root)
+    (tired-tests--goto "-dash.txt")
+    (should (equal (car (tired-tests--shell-run "rm"))
+                   '("rm ./-dash.txt")))))
+
+(ert-deftest tired-do-shell-command-names-an-inserted-subdirectory ()
+  "A target below the shown directory takes a relative name."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (should (equal (car (tired-tests--shell-run "wc"))
+                   '("wc sub/inner.txt")))))
+
+(ert-deftest tired-shell-marks-fill-every-isolated-mark ()
+  "Two marks that one space separates both take the file name."
+  (should (equal (tired-tests--shell-mark-fills "mv * *" "F") "mv F F"))
+  (should (equal (tired-tests--shell-mark-fills "cp `?` x" "F") "cp F x"))
+  ;; A mark inside the replacement text never fills again.
+  (should (equal (tired-tests--shell-mark-fills "ls *" "*") "ls *"))
+  (should-not (tired--shell-keeps-mark-p "ls *" "*"))
+  (should (tired--shell-keeps-mark-p "ls *.txt" "*"))
+  (should (tired--shell-keeps-mark-p "ls ?.txt" "?")))
+
+(ert-deftest tired-mode-binds-the-shell-command ()
+  "`!' runs the shell command, the way `dired-do-shell-command' does."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq (key-binding (key-parse "!")) #'tired-do-shell-command))))
+
 
 (ert-deftest tired-find-file-visits-the-file ()
   "Opening a file entry visits that file."
@@ -2386,6 +2536,10 @@ that starts at the first line."
           (tired-evil-mode 1)
           (should (bound-and-true-p tired-evil-local-mode))
           (should (eq (key-binding (key-parse "D")) #'tired-delete))
+          ;; The shell command keeps its dired key, so `evil-shell-command'
+          ;; does not filter the listing through a shell.
+          (should (eq (key-binding (key-parse "!"))
+                      #'tired-do-shell-command))
           (should (eq (key-binding (key-parse "TAB"))
                       #'tired-toggle-subdir))
           (should (eq (key-binding (key-parse "f")) #'tired-find-file))
@@ -2430,6 +2584,8 @@ that starts at the first line."
           (evil-visual-line)
           (should (eq evil-state 'visual))
           (should (eq (key-binding (key-parse "D")) #'tired-delete))
+          (should (eq (key-binding (key-parse "!"))
+                      #'tired-do-shell-command))
           (should (eq (key-binding (key-parse "c")) #'tired-copy))
           (should (eq (key-binding (key-parse "R")) #'tired-move))
           (should (eq (key-binding (key-parse "m"))

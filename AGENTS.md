@@ -17,8 +17,9 @@ that vector form, so earlier Emacs versions cannot run it.
 
 The file commands act at once, without a confirmation question.  A
 removed path goes into a session trash, so `tired-undo` reverses the
-last operation.  Inline rename editing and asynchronous loading live
-in git-bug issues, not in code.
+last operation.  `tired-do-shell-command` is the one command that runs
+a shell and the one command that can ask a question.  Inline rename
+editing and asynchronous loading live in git-bug issues, not in code.
 
 ## Build & test
 
@@ -316,6 +317,46 @@ File operations:
   runs the pair, and `tired--refresh-buffers` redraws every Tired
   buffer.
 
+Shell commands:
+
+- `tired-do-shell-command` (`!`) runs the user's shell command on the
+  targets.  It is the one command that calls a shell and the one
+  command that can ask a question.  It pushes no undo action, because
+  the shell owns the result, and it still clears the selection and the
+  region.
+- `tired--shell-regexp` matches one substitution mark: `*`, `?` or a
+  `?` wrapped in backquote signs that whitespace isolates, at the start
+  or the end of the string.  Group 2 holds the mark, so the helpers
+  replace and count it alone.  Do not match a bare `[*?]`: a glob
+  pattern such as `*.txt` must reach the shell unchanged.
+- `tired--shell-marks` scans with `(match-end 2)` as the next start.
+  The trailing whitespace of group 3 then serves as the leading
+  whitespace of the next mark, so `mv * *` fills both marks.  A scan
+  that advances to `(match-end 0)` sees one blank only once and leaves
+  the second mark in place.
+- `tired--shell-fill-marks` fills the marks with a quoted name and
+  never rescans the inserted text, so a name that holds a mark cannot
+  loop.  `tired--shell-mark-count` and `tired--shell-keeps-mark-p`
+  subtract the substituted marks from the total, which decides whether
+  `tired-confirm-shell-command` asks.
+- `tired--shell-file-name` makes a target name relative to
+  `tired--directory`, so a target below the shown directory reads as
+  `sub/file`, and prefixes a leading dash with `./`.  Never pass the
+  absolute path: the command runs in the shown directory.
+- `tired--shell-parts` splits a trailing `&` and a trailing `;` or
+  `;&`.  The first backgrounds the run, and the second makes the
+  per-file runs wait for each other.  A trailing `;` alone also
+  backgrounds, because a sequential set of files wants no blocking
+  Emacs.
+- `tired--shell-command-line` joins the runs.  A `*` mark gives one
+  run with the whole list, a `?` mark gives one run per file, and a
+  command without a mark appends one name per file.  Background runs
+  use `&` between the per-file bodies and end with `& wait`, and a
+  sequential run wraps the `;` list in a subshell before the `&`.
+  `shell-command` reads the last `&` as an asynchronous run.
+- A synchronous run calls `tired-refresh`; a background run does not,
+  because the shell decides when the paths change.
+
 Sorting is implemented in `tired--lessp`, not in `tabulated-list`,
 because tabulated-list cannot keep directories first while sorting other
 columns.  `tabulated-list-format` therefore marks every column as
@@ -356,7 +397,9 @@ Evil integration:
   The normal table leaves `j`, `k`, `gg`, `C-d`, `C-u`, `n` and
   `N` to evil, the way `evil-collection-dired` does.  It shadows
   `w`, `W` and `P`, so the four copy commands keep their
-  `tired-mode-map` keys in normal state too.  It puts `f` on
+  `tired-mode-map` keys in normal state too.  It also shadows `!`, so
+  `evil-shell-command` does not filter the listing through a shell,
+  and it puts `f` on
   `tired-find-file` and keeps `gf` as the same command.  The table
   remaps `evil-replace` to `revert-buffer-quick`, because a listing
   is read-only and `r` has no other use there.  It remaps
@@ -431,6 +474,9 @@ Evil integration:
 - File commands never ask a confirmation question and never call a
   shell.  Removal goes through `tired--trash-move`, never through
   `delete-file` or `delete-directory`, so undo can restore the path.
+  `tired-do-shell-command` is the single exception: it runs the user's
+  shell command, it asks about a mark that stays for the shell while
+  `tired-confirm-shell-command` holds, and it takes no trash step.
 - A section row is not selectable.  It carries its file path, so the
   path commands reach the file.  Do not add section rows to
   `tired--selection`, because `tired--redraw` and

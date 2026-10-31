@@ -107,6 +107,7 @@ records a directory buffer and =M-x bookmark-jump= restores it.
 | =c=     | =tired-copy=                   | Copy the targets into a directory       |
 | =m=     | =tired-move=                   | Move the targets                        |
 | =D=     | =tired-delete=                 | Delete the targets, no confirmation     |
+| =!=     | =tired-do-shell-command=       | Run a shell command on the targets      |
 | =+=     | =tired-mkdir=                  | Create a directory                      |
 | =M-t=   | =tired-touch=                  | Create an empty file                    |
 | =U=     | =tired-undo=                   | Undo the last file operation            |
@@ -198,6 +199,7 @@ listing:
 | =m=, =M-SPC=  | toggle the selection next, here |
 | =t=, =u=, =~= | select all, none, invert        |
 | =D=, =c=, =R= | delete, copy, move              |
+| =!=           | =tired-do-shell-command=        |
 | =+=, =M-t=    | create a directory, a file      |
 | =U=           | =tired-undo=                    |
 | =y=, =w=      | copy names, copy paths          |
@@ -214,8 +216,9 @@ adds and removes the keys for every Tired buffer, existing or new.
 target, =R= reads the destination as a new full path, so a rename
 works.  With several targets, =R= reads a destination directory.
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
-empty file.  None of the commands asks for a confirmation.  None of
-them calls a shell.
+empty file.  None of these commands asks for a confirmation.  None
+of them calls a shell.  =!= is the one command that runs a shell, and
+the next section covers it.
 
 =R= reads its destination from a second window.  When another window
 of the frame shows a Tired buffer for another directory, the command
@@ -244,6 +247,62 @@ A global undo system can take these actions.  Add a function to
 =tired-undo-push-functions=.  It receives a description and a
 function that reverts the action.  While the hook is empty, Tired
 keeps the action on a stack for =tired-undo=.
+
+* Shell commands
+
+=!= runs a shell command on the targets, the way
+=dired-do-shell-command= does.  The command names each target relative
+to the shown directory, so a target of an inserted section reads as
+=sub/file=.  A name that starts with a dash takes a leading =./=, so the
+command does not read it as a switch.
+
+A =*= that whitespace isolates stands for the whole file list, and the
+command runs once:
+
+#+begin_src text
+  ! du -sh *        =>  du -sh alpha.txt beta.txt
+#+end_src
+
+A =?= that whitespace isolates stands for one file, so the command runs
+once per file:
+
+#+begin_src text
+  ! gzip ?          =>  gzip alpha.txt; gzip beta.txt
+#+end_src
+
+Without either mark, Tired adds one file name to the command and runs
+it once per file:
+
+#+begin_src text
+  ! wc              =>  wc alpha.txt; wc beta.txt
+#+end_src
+
+A mark that whitespace does not isolate reaches the shell unchanged,
+so a glob pattern stays a glob pattern.  Tired asks one question
+before it runs such a command, because a user sometimes means a
+substitution there.  Set =tired-confirm-shell-command= to nil to skip
+that question:
+
+#+begin_src elisp
+  (setq tired-confirm-shell-command nil)
+#+end_src
+
+A trailing =&= runs the command in the background, with one job per
+file.  A trailing =;= or =;&= runs the files one after another, in one
+background job:
+
+#+begin_src text
+  ! gzip ? &        =>  gzip alpha.txt & gzip beta.txt & wait
+  ! gzip ?;         =>  ( gzip alpha.txt; gzip beta.txt ) &
+#+end_src
+
+A synchronous command refreshes the listing when it ends, so a new or
+removed path shows at once.  A background command leaves the listing
+alone, because the shell owns the timing.
+
+The shell owns the result, so =U= cannot reverse this command.  =!=
+clears the selection and the region, like every other command that
+acts on targets.
 
 * Directory sizes
 
