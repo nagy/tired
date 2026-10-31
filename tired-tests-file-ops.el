@@ -467,6 +467,39 @@ the test binds `tired-sort-by-extension' to nil."
         (tired-delete)
         (should (equal (tired-entry-name (tired--row-at-point)) "link"))))))
 
+(ert-deftest tired-delete-past-point-reaches-the-next-surviving-entry ()
+  "Delete of a run that covers point moves point below the whole run.
+The row below point leaves the listing too, so the plain next row
+is gone.  Point must land on the first row that stays below the
+run, not on the first line."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto ".hidden")
+      (tired-select-toggle)
+      (tired-tests--goto "alpha.txt")
+      (tired-select-toggle)
+      (tired-tests--goto "beta.txt")
+      (tired-select-toggle)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (should (equal (tired-tests--names) '("sub" "link")))
+      (should (equal (tired-entry-name (tired--row-at-point)) "link")))))
+
+(ert-deftest tired-delete-of-the-tail-keeps-the-last-remaining-entry ()
+  "Delete of every row below point stops on the last row that remains."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "beta.txt")
+      (tired-select-toggle)
+      (tired-tests--goto "link")
+      (tired-select-toggle)
+      (tired-tests--goto "beta.txt")
+      (tired-delete)
+      (should (equal (tired-tests--names) '("sub" ".hidden" "alpha.txt")))
+      (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt")))))
+
 (ert-deftest tired-delete-reports-partial-failure ()
   "A vanished target does not stop the remaining targets."
   (tired-tests--with-fixture

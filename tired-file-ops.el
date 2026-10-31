@@ -156,12 +156,14 @@ non-nil, so the command signals a user error then."
     (or (equal path parent)
         (string-prefix-p (file-name-as-directory parent) path))))
 
-(defun tired--next-surviving-row (row)
-  "Return the first row below ROW that a removal of ROW keeps.
-Rows of the same path and rows below it count as doomed, because a
-command that removes a directory removes its children and a command
-that removes a file removes its sections.  Return nil when no row
-stays below ROW."
+(defun tired--next-surviving-row (row &optional doomed)
+  "Return the first row below ROW that the command keeps.
+DOOMED holds the target paths of the command, so a row whose path
+lies under one of them leaves the listing too.  A row of the path
+of ROW and one below it count as doomed even without that list,
+because a command that removes a directory removes its children
+and a command that removes a file removes its sections.  Return
+nil when no row stays below ROW."
   (let ((from (and row (tired--row-position row))))
     (when from
       (let ((path (tired--row-path row))
@@ -173,7 +175,12 @@ stays below ROW."
             (let ((here (tired--row-at-point)))
               (when (and here
                          (not (tired--path-under-p
-                               (tired--row-path here) path)))
+                               (tired--row-path here) path))
+                         (not (cl-some (lambda (doomed-path)
+                                         (tired--path-under-p
+                                          (tired--row-path here)
+                                          doomed-path))
+                                       doomed)))
                 (setq result here)))
             (forward-line 1)))
         result))))
@@ -184,8 +191,9 @@ DESCRIPTION names the action.  Deepest paths run first, so a
 selection that holds a directory and its children reaches the
 children first.  A failure does not stop the remaining targets.
 A command that removed the row at point leaves point on the next
-row that survives, not on the first line.  Report the failures and
-refresh the listing."
+row that survives, not on the first line.  When no row below
+survives, point stops on the last row that remains.  Report the
+failures and refresh the listing."
   (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
@@ -197,7 +205,8 @@ refresh the listing."
     (let* ((done 0)
            (failures nil)
            (point-row (tired--row-at-point))
-           (successor (tired--next-surviving-row point-row)))
+           (doomed (mapcar #'tired-entry-path targets))
+           (successor (tired--next-surviving-row point-row doomed)))
       (dolist (entry targets)
         (let ((path (tired-entry-path entry)))
           (condition-case err
@@ -206,8 +215,12 @@ refresh the listing."
             (error (push (cons path (error-message-string err)) failures)))))
       (tired-select-none)
       (tired-refresh)
-      (unless (tired--row-position point-row)
-        (tired--goto-row successor))
+      (unless (or (tired--row-position point-row)
+                  (tired--goto-row successor))
+        ;; Every row below point left the listing.  Stop on the last
+        ;; row that remains, so a removal never sends point to the
+        ;; first line.
+        (goto-char (or (tired--last-row-position) (point-min))))
       (deactivate-mark)
       (tired--report-operation description done (nreverse failures)))))
 

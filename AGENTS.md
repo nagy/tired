@@ -315,7 +315,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired--last-row-position`, because the printer closes the last row
   with a newline and a plain `forward-line` would stop below every row.
   `tired--apply-to-targets` still prefers the next surviving row, so a
-  delete goes down when a row stays below and up otherwise.
+  delete goes down when a row stays below and up otherwise.  That row
+  is the first one below point whose path lies under no target, so a
+  run that covers point and the rows under it moves past the whole
+  run.  When no row below survives, point stops on the last row, never
+  on the first line.
 - The section read passes VISIT to `insert-file-contents`, so the buffer
   carries `buffer-file-name` and no modified flag; without it every
   expand raises a kill question.  A handler selects its own major mode
