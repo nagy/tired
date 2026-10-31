@@ -831,6 +831,17 @@ a symlink, and removes every Tired buffer it opened."
       (should (derived-mode-p 'tired-mode))
       (should (equal tired--directory root)))))
 
+(ert-deftest tired-directory-name-cell-paints-its-slash ()
+  "The slash of a directory row takes `tired-directory-suffix-face'."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((cell (tired--name-cell (tired-tests--entry "sub"))))
+      (should (string-suffix-p "/" cell))
+      (should (eq 'tired-directory-suffix-face
+                  (get-text-property (1- (length cell)) 'face cell)))
+      (should (eq 'tired-directory-suffix-face
+                  (get-text-property (1- (length cell)) 'font-lock-face cell))))))
+
 (ert-deftest tired-faces-inherit-dired-faces ()
   "Each name face takes its look from the matching Dired face."
   (dolist (pair '((tired-directory-face . dired-directory)

@@ -228,6 +228,11 @@ takes effect on the next open without a re-parse."
   '((t :inherit dired-directory))
   "Face for directory names.")
 
+(defface tired-directory-suffix-face
+  '((t :inherit parenthesis))
+  "Face for the slash that marks a directory row.
+The slash stays a separate run of text, so a theme colors it alone.")
+
 (defface tired-symlink-face
   '((t :inherit dired-symlink))
   "Face for the name of a symbolic link.")
@@ -923,7 +928,9 @@ its target arrow."
      ((tired-entry-collapsed entry) (tired--collapsed-name-cell entry))
      (t (pcase (tired-entry-type entry)
           ('directory
-           (concat (tired--propertize-name name face) "/"))
+           (concat (tired--propertize-name name face)
+                   (tired--propertize-name
+                    "/" 'tired-directory-suffix-face)))
           ('symlink
            (concat (tired--propertize-name name face spans)
                    (tired--symlink-suffix entry)))

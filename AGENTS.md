@@ -367,6 +367,12 @@ Evil integration:
   face.  `tired--size-column' adds the paint, and
   `tired--size-cell' stays a plain string, so the tests compare it
   with `string=' or `equal'.
+  A directory row paints its trailing slash with
+  `tired-directory-suffix-face', which inherits `parenthesis'.  The
+  slash stays a separate `tired--propertize-name' call, so a theme
+  colors the slash alone and the name keeps its own face.
+  `tired--name-face' never returns that face, because it covers a
+  suffix and not a name.
 - `tired-mode` does not set `font-lock-defaults`.  No upstream
   tabulated-list mode does: the printer already built the row strings,
   so colorization belongs in the entry data.  `proced` uses font-lock
