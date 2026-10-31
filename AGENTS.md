@@ -23,7 +23,8 @@ README before you document a command.
   redraw, watches, `tired-mode`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Markdown, Cargo and
   SQLite handlers
-- `tired-file-ops.el` — copy, move, delete, undo, mkdir, touch, shell
+- `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
+  touch, shell
 - `tired-evil.el` — optional evil bindings
 - `tired-tests.el` — loads the suites
 - `tired-tests-fixtures.el` — shared fixtures, helpers and setup
@@ -106,7 +107,9 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
    `tired-filter-delay`; the exit and quit paths flush at once.
 10. `tired--apply-to-targets` runs one function over the targets, deepest
     path first, then clears the selection, refreshes and reports.  Each
-    command pushes one undo function.
+    command pushes one undo function.  `tired-rename` stays outside that
+    helper: it reads the row at point alone, so the selection and the
+    region stay untouched.
 11. `tired-evil.el` is a second library.  `tired.el` installs its hook
     after `provide`, so both load orders work.
 12. `tired--row` wraps the name column in `tired--click-cell`, so the
@@ -165,6 +168,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   `tired--selection`: the selection and the narrow snapshot key by path
   alone, so change them only through `tired--set-selection` and
   `tired--set-narrowed`.
+- `tired-entry-path` reads an entry struct.  Test `tired-entry-p` before
+  the call, or a section row signals `wrong-type-argument`.
+- Evil remaps `evil-replace` to `tired-rename`, so `r` renames a row and
+  `R` keeps `tired-move`.
 - Use `tired--directory-entry-p`, not `tired-entry-dirp`, to decide
   whether a row takes children.  `DIRP` covers real directories only, and
   the sort key, the size column and the directory face read it.

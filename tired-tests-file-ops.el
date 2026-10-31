@@ -120,6 +120,75 @@
         (should (file-regular-p (expand-file-name "alpha.txt" root)))
         (should-not (file-exists-p destination))))))
 
+(ert-deftest tired-rename-file ()
+  "Rename changes the name at point and undo returns the old name."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-rename "renamed.txt")
+      (should (file-regular-p (expand-file-name "renamed.txt" root)))
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should (equal (tired-entry-name (tired--row-at-point)) "renamed.txt"))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should-not (file-exists-p (expand-file-name "renamed.txt" root))))))
+
+(ert-deftest tired-rename-keeps-the-selection ()
+  "Rename reads the row at point and leaves the selection alone."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-select-toggle)
+      (tired-tests--goto "beta.txt")
+      (tired-rename "gamma.txt")
+      (should (file-regular-p (expand-file-name "gamma.txt" root)))
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should (= 1 (length tired--selection))))))
+
+(ert-deftest tired-rename-replaces-an-existing-path ()
+  "Rename puts the replaced path into the trash and undo restores both."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-rename "beta.txt")
+      (should (equal (tired-tests--contents
+                      (expand-file-name "beta.txt" root))
+                     "abc"))
+      (should (= 1 (length (tired-tests--trash-entries))))
+      (tired-undo)
+      (should (equal (tired-tests--contents
+                      (expand-file-name "alpha.txt" root))
+                     "abc"))
+      (should (equal (tired-tests--contents
+                      (expand-file-name "beta.txt" root))
+                     (make-string 40 ?x))))))
+
+(ert-deftest tired-rename-rejects-a-directory-part ()
+  "Rename takes a base name and never a path."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (should-error (tired-rename "sub/inner.txt") :type 'user-error)
+      (should-error (tired-rename "") :type 'user-error)
+      (should-error (tired-rename "..") :type 'user-error)
+      (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-rename-rejects-a-section ()
+  "A section row names no file of its own."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (with-temp-file (expand-file-name "note.org" root)
+        (insert "* One\n"))
+      (tired root)
+      (tired-tests--goto "note.org")
+      (tired-expand-file)
+      (tired-tests--goto-section "One")
+      (should-error (tired-rename "other.org") :type 'user-error))))
+
 (ert-deftest tired-move-many-targets-into-a-directory ()
   "Move with several targets reads the destination as a directory."
   (tired-tests--with-fixture

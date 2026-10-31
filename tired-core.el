@@ -47,6 +47,7 @@
 (declare-function tired-do-shell-command "tired-file-ops" (command))
 (declare-function tired-mkdir "tired-file-ops" (directory))
 (declare-function tired-move "tired-file-ops" (destination))
+(declare-function tired-rename "tired-file-ops" (name))
 (declare-function tired-touch "tired-file-ops" (file))
 (declare-function tired-undo "tired-file-ops" nil)
 
@@ -2399,6 +2400,7 @@ takes the file back from the browser."
   "P" #'tired-copy-project-path
   "c" #'tired-copy
   "m" #'tired-move
+  "R" #'tired-rename
   "D" #'tired-delete
   "!" #'tired-do-shell-command
   "+" #'tired-mkdir
@@ -2474,6 +2476,9 @@ command that needs an entry stays insensitive on an empty row."
      :active (tired--selection-targets)]
     ["Move" tired-move
      :active (tired--selection-targets)]
+    ["Rename" tired-rename
+     :active (tired-entry-p (tired--row-at-point))
+     :help "Rename the entry at point, without a confirmation"]
     ["Delete" tired-delete
      :active (tired--selection-targets)
      :help "Move the targets into the session trash"]

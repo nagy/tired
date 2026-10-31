@@ -350,6 +350,52 @@ move never calls a shell."
        (format "move to %s" (abbreviate-file-name directory))
        (lambda () (tired--undo-move moved trashed))))))
 
+(defun tired-rename (name)
+  "Rename the entry at point to NAME.
+NAME holds the new base name and no directory part.  Interactively,
+the minibuffer shows the current name first.  An existing
+destination goes to `tired-trash-directory' first, so `tired-undo'
+puts it back.  The command reads the row at point alone and ignores
+the selection and the region.  A later `tired-undo' returns the old
+name.  Point follows the renamed row.  The command never calls a
+shell."
+  (interactive
+   (let ((row (tired--row-at-point)))
+     (unless row
+       (user-error "No entry at point"))
+     (when (tired-section-p row)
+       (user-error "Cannot rename a section"))
+     (let ((old (file-name-nondirectory
+                 (directory-file-name (tired-entry-path row)))))
+       (list (read-string (format "Rename %s to: " old) old)))))
+  (let ((row (tired--row-at-point)))
+    (unless row
+      (user-error "No entry at point"))
+    (unless (tired-entry-p row)
+      (user-error "Cannot rename a section"))
+    (let* ((path (tired-entry-path row))
+           (directory (file-name-directory (directory-file-name path)))
+           (old (file-name-nondirectory (directory-file-name path)))
+           (target (expand-file-name name directory)))
+      (when (or (string-empty-p name) (member name '("." "..")))
+        (user-error "Invalid name %s" name))
+      (when (file-name-directory name)
+        (user-error "A name holds no directory part: %s" name))
+      (if (equal (directory-file-name target) (directory-file-name path))
+          (message "Name unchanged")
+        (let ((previous (tired--replace-with-trash target)))
+          (rename-file path target)
+          (tired--push-undo
+           (format "rename %s to %s" old name)
+           (lambda ()
+             (ignore-errors (tired--restore-path target path))
+             (when previous
+               (ignore-errors (tired--restore-path previous target)))
+             (tired--refresh-buffers)))
+          (tired-refresh)
+          (tired--goto-path target)
+          (message "Renamed %s to %s" old name))))))
+
 (defun tired-delete ()
   "Move the targets into `tired-trash-directory'.
 The command asks no question and never calls a shell.  A later

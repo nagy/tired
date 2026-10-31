@@ -61,10 +61,10 @@
           (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
           ;; The search key narrows the listing instead of searching it.
           (should (eq (key-binding (key-parse "/")) #'tired-filter))
-          ;; `evil-replace' has nothing to do in a read-only listing,
-          ;; so the remap turns its key into a reload.
+          ;; `evil-replace' names a character and a listing names a
+          ;; file, so the remap turns its key into a rename.
           (should (eq (key-binding (key-parse "r"))
-                      #'revert-buffer-quick))
+                      #'tired-rename))
           (should (eq (key-binding (key-parse "m"))
                       #'tired-select-toggle-next))
           ;; The toggle key replaces the selection invert on the evil map.

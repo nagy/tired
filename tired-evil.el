@@ -84,7 +84,7 @@
     ("C" . tired-toggle-collapse)
     ;; View.
     ("gr" . tired-refresh)
-    ("<remap> <evil-replace>" . revert-buffer-quick)
+    ("<remap> <evil-replace>" . tired-rename)
     ("<remap> <evil-ex-search-forward>" . tired-filter)
     ("<remap> <evil-search-forward>" . tired-filter)
     ("<remap> <evil-goto-line>" . tired-goto-last-entry)
