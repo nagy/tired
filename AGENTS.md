@@ -170,7 +170,12 @@ Data flow:
    goes.
 7. `tired--in-narrow-p`, `tired--name-visible-p` and
    `tired--entry-visible-p` apply the narrow snapshot, the dotfile
-   setting and the name filter.  `tired--narrow-ancestors` adds the
+   setting, the hidden regexps and the name filter.
+   `tired--hidden-p` matches `tired-hidden-regexps' against the entry
+   name, and `tired--display-rows' drops a hidden row before it reads
+   the sections, so a hidden file takes its sections with it and a
+   hidden directory skips its inserted children.
+   `tired--narrow-ancestors` adds the
    directories that contain a narrowed path, so inserted sections keep
    their parent rows.  A file row stays visible when a section label
    matches the filter, and that file then shows only the matching
@@ -774,6 +779,21 @@ Evil integration:
 - The header line is rebuilt on every refresh.  `tired--header-base`
   holds the string from `tabulated-list-init-header`, so the directory
   title can be prepended without losing the column labels.
+- `tired-hidden-regexps` matches an entry name, never the full path,
+  the way `tired-name-faces` does, and it matches without case
+  sensitivity, the way the name filter does.  `tired--hidden-p` runs after the
+  single-child collapse, so a chain that ends in a hidden file drops
+  its collapsed row too.  `tired--display-rows` drops a hidden row even
+  when its VISIBLE-ONLY argument is nil, so the name column width and
+  `tired--selected-entries` never see a hidden path.
+- `tired--count-hidden` scans every table in `tired--tables` and
+  `tired--redraw` stores the result in `tired--hidden-total`, because
+  the mode line renders on every redisplay.  Do not scan the tables
+  from `tired--mode-line`.  The count includes an entry that the
+  dotfile setting or the filter also hides, and it includes the
+  children of a hidden directory while that directory stays inserted.
+  The count follows a redraw, so a change to the option needs a redraw
+  before the mode line updates.
 - Rows must be vectors, not lists.  Emacs 31 `tabulated-list-print-entry`
   calls `aref` on them.  Do not "simplify" `tired--row` back to `list`.
 - `tired-mode` sets `tabulated-list-padding` to 0, so no blank column

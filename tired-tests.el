@@ -213,6 +213,38 @@ a symlink, and removes every Tired buffer it opened."
     (tired-toggle-dotfiles)
     (should (member ".hidden" (tired-tests--names)))))
 
+(ert-deftest tired-hidden-regexps-remove-entries ()
+  "A regexp in `tired-hidden-regexps' removes matching entries."
+  (tired-tests--with-fixture
+    (let ((tired-hidden-regexps '("\\.txt\\'")))
+      (tired root)
+      (should (equal (tired-tests--names)
+                     '("sub" ".hidden" "link"))))))
+
+(ert-deftest tired-hidden-regexps-hide-the-sections-of-a-file ()
+  "A hidden file takes its sections out of the listing too."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (tired root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (let ((tired-hidden-regexps '("notes\\.org\\'")))
+      (tired-refresh)
+      (should-not (member "notes.org" (tired-tests--names)))
+      (should (null (tired-tests--sections))))))
+
+(ert-deftest tired-hidden-regexps-hide-an-inserted-subtree ()
+  "A hidden directory hides the children that the user inserted."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (tired-toggle-subdir)
+    (should (member "inner.txt" (tired-tests--names)))
+    (let ((tired-hidden-regexps '("\\`sub\\'")))
+      (tired-refresh)
+      (should-not (member "sub" (tired-tests--names)))
+      (should-not (member "inner.txt" (tired-tests--names))))))
+
 (ert-deftest tired-sort-by-size-toggles-direction ()
   "Sorting by size orders files by size and flips on repetition."
   (tired-tests--with-fixture
@@ -1773,6 +1805,13 @@ that starts at the first line."
       (tired-tests--goto "alpha.txt")
       (tired-select-toggle)
       (should (string-prefix-p " [1 selected" (tired--mode-line))))))
+
+(ert-deftest tired-mode-line-counts-hidden-entries ()
+  "The mode line reports the entries that `tired-hidden-regexps' hides."
+  (tired-tests--with-fixture
+    (let ((tired-hidden-regexps '("\\.txt\\'")))
+      (tired root)
+      (should (string-match-p "2 hidden" (tired--mode-line))))))
 
 (ert-deftest tired-mode-line-counts-the-region ()
   "The mode line reports the region when the selection is empty."

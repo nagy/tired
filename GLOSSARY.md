@@ -81,6 +81,13 @@ _Avoid_: Highlight, font-lock keyword
 The text of one submatch that a partial name rule paints.
 _Avoid_: Highlight range, overlay
 
+**Hidden entry**:
+An entry whose name matches one regexp in `tired-hidden-regexps`.  It
+leaves the listing with its sections, and a hidden directory skips the
+children that the user inserted.  The mode line counts the hidden
+entries of the shown directories.
+_Avoid_: Ignored file, filtered file
+
 **Section**:
 One item that a handler extracted from a file, such as a heading, a
 declaration or a PDF bookmark.  A section row follows the row of its

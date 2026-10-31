@@ -127,6 +127,14 @@
   "When non-nil, do not list entries whose name starts with a dot."
   :type 'boolean)
 
+(defcustom tired-hidden-regexps nil
+  "List of regexps that hide an entry from the listing.
+Each regexp matches the entry name, and case does not matter.  A
+matching entry leaves the listing, and the sections of a matching
+file leave it too.  A matching directory hides its inserted children
+as well.  The mode line reports how many entries the rules hide."
+  :type '(repeat regexp))
+
 (defcustom tired-date-format "%Y-%m-%d %H:%M"
   "Format string for the modification time column.
 See `format-time-string' for the available conversions."
@@ -346,6 +354,10 @@ One of `name', `size', `modified' or `mode'.")
 (defvar-local tired--hide-dotfiles nil
   "When non-nil, hide entries whose name starts with a dot.")
 
+(defvar-local tired--hidden-total 0
+  "Number of entries that `tired-hidden-regexps' hides.
+The redraw counts them, so the mode line reads one number.")
+
 (defvar-local tired--selection nil
   "List of absolute file names in the transient selection.")
 
@@ -429,10 +441,21 @@ A circular link counts as broken.  The user option
       (and (hash-table-p tired--narrowed-set)
            (gethash (tired-entry-path entry) tired--narrowed-set))))
 
-(defun tired--name-visible-p (entry)
-  "Return non-nil when ENTRY passes the dotfile and name filters."
+(defun tired--hidden-name-p (name)
+  "Return non-nil when a regexp in `tired-hidden-regexps' matches NAME."
   (let ((case-fold-search t))
-    (and (or (not tired--hide-dotfiles)
+    (seq-some (lambda (regexp) (string-match-p regexp name))
+              tired-hidden-regexps)))
+
+(defun tired--hidden-p (entry)
+  "Return non-nil when `tired-hidden-regexps' hides ENTRY."
+  (tired--hidden-name-p (tired-entry-name entry)))
+
+(defun tired--name-visible-p (entry)
+  "Return non-nil when ENTRY passes the hidden, dotfile and name filters."
+  (let ((case-fold-search t))
+    (and (not (tired--hidden-p entry))
+         (or (not tired--hide-dotfiles)
              (not (string-prefix-p "."
                                    (file-name-nondirectory
                                     (tired-entry-name entry)))))
@@ -756,26 +779,32 @@ sections of its file when the user expands it."
                  (let* ((collapsed
                          (tired--collapsed-display-entry directory entry))
                         (display (or collapsed entry))
-                        (sections (and (not (tired--directory-entry-p display))
+                        (hidden (tired--hidden-p display))
+                        (sections (and (not hidden)
+                                       (not (tired--directory-entry-p display))
                                        (tired--expanded-p
                                         (tired-entry-path display))
                                        (tired--section-rows display depth)))
-                        (name-visible (tired--name-visible-p display))
-                        (shown (cond
-                                ((not visible-only) sections)
-                                ((not (tired--in-narrow-p display)) nil)
-                                (name-visible sections)
-                                (t (seq-filter
-                                    (lambda (row)
-                                      (tired--section-visible-p (car row)))
-                                    sections)))))
-                   (when (or (not visible-only)
-                             (and (tired--in-narrow-p display)
-                                  (or name-visible shown)))
-                     (push (cons display depth) rows))
-                   (dolist (row shown)
-                     (push row rows))
-                   (when (and (not collapsed)
+                        (name-visible (and (not hidden)
+                                           (tired--name-visible-p display)))
+                        (shown (and (not hidden)
+                                    (cond
+                                     ((not visible-only) sections)
+                                     ((not (tired--in-narrow-p display)) nil)
+                                     (name-visible sections)
+                                     (t (seq-filter
+                                         (lambda (row)
+                                           (tired--section-visible-p (car row)))
+                                         sections))))))
+                   (unless hidden
+                     (when (or (not visible-only)
+                               (and (tired--in-narrow-p display)
+                                    (or name-visible shown)))
+                       (push (cons display depth) rows))
+                     (dolist (row shown)
+                       (push row rows)))
+                   (when (and (not hidden)
+                              (not collapsed)
                               (tired--directory-entry-p entry)
                               (tired--inserted-p
                                (tired-entry-path entry)))
@@ -1128,6 +1157,21 @@ column from the current listing."
           (when tired--hide-dotfiles
             "  [dotfiles hidden]")))
 
+(defun tired--count-hidden ()
+  "Return the number of entries that `tired-hidden-regexps' hides.
+Count the entries of every shown directory, whether or not the
+filter, the narrow snapshot or the dotfile setting also hides one."
+  (let ((count 0))
+    (when (and tired-hidden-regexps (hash-table-p tired--tables))
+      (maphash
+       (lambda (_directory table)
+         (maphash (lambda (_name entry)
+                    (when (tired--hidden-p entry)
+                      (setq count (1+ count))))
+                  table))
+       tired--tables))
+    count))
+
 (defun tired--mode-line ()
   "Return the `tired-mode' mode line string.
 Return the empty string when the listing holds no optional state, so
@@ -1148,6 +1192,8 @@ an ordinary listing shows no bracket group at all."
     (when (and (hash-table-p tired--expanded)
                (> (hash-table-count tired--expanded) 0))
       (push (format "%d expanded" (hash-table-count tired--expanded)) parts))
+    (when (> tired--hidden-total 0)
+      (push (format "%d hidden" tired--hidden-total) parts))
     (when tired--filter
       (push (format "filter: %s" tired--filter) parts))
     (unless tired-collapse-single-child
@@ -1455,6 +1501,7 @@ point and the scroll position of every window that shows the listing."
          (point-entry (tired--point-row window))
          (mark-entry (tired--row-at (mark t)))
          (views (tired--window-views)))
+    (setq tired--hidden-total (tired--count-hidden))
     (setq tabulated-list-format
           (tired--format (tired--name-column-width window)))
     (tabulated-list-init-header)
