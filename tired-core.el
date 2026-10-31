@@ -78,6 +78,16 @@ See `format-time-string' for the available conversions."
   "When non-nil, refresh the listing when a watched directory changes."
   :type 'boolean)
 
+(defcustom tired-auto-revert-remote nil
+  "When non-nil, watch a remote directory too.
+A remote directory costs a network round trip for every
+notification, and `file-notify-add-watch' fails on some TRAMP
+methods.  This option defaults to nil, so a remote listing starts
+without watches even when `tired-auto-revert' holds.  The
+toggle command still works in the buffer, and it reports the
+effective state."
+  :type 'boolean)
+
 (defcustom tired-auto-revert-delay 0.5
   "Seconds to wait after a file notification before refreshing.
 A delay coalesces bursts of events, such as a build writing many
@@ -1498,9 +1508,19 @@ edit to a file inside that directory."
     (ignore-errors (file-notify-rm-watch (cdr watch))))
   (setq tired--watches nil))
 
+(defun tired--auto-revert-enabled-p ()
+  "Return non-nil when the current buffer may watch its paths.
+A remote directory needs `tired-auto-revert-remote' as well as
+`tired-auto-revert', because every watch there costs a network
+round trip and some TRAMP methods refuse one."
+  (and tired-auto-revert
+       (or tired-auto-revert-remote
+           (not (file-remote-p (or tired--directory
+                                   default-directory))))))
+
 (defun tired--sync-watches ()
   "Add missing watches and remove watches for vanished paths."
-  (if (not tired-auto-revert)
+  (if (not (tired--auto-revert-enabled-p))
       (tired--stop-watching)
     (let ((wanted (tired--watch-paths)))
       (dolist (directory wanted)
@@ -1539,7 +1559,7 @@ or filter prompt keeps its input."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq tired--revert-timer nil)
-      (when (and tired-auto-revert
+      (when (and (tired--auto-revert-enabled-p)
                  (not (active-minibuffer-window)))
         (tired-refresh)))))
 
@@ -1558,7 +1578,7 @@ listing refreshes once."
   (setq-local tired-auto-revert (not tired-auto-revert))
   (tired--sync-watches)
   (tired--update-mode-line)
-  (message "Auto-revert %s" (if tired-auto-revert "on" "off")))
+  (message "Auto-revert %s" (if (tired--auto-revert-enabled-p) "on" "off")))
 
 (defun tired--point-row (window)
   "Return the row at the point of WINDOW.

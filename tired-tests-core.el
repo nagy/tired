@@ -1437,6 +1437,61 @@ The same substitution rules apply to the header line."
           (kill-buffer buffer)
           (should (= 1 (length removed))))))))
 
+(defmacro tired-tests--with-remote (root added &rest body)
+  "Treat every path below ROOT as remote and record watches in ADDED."
+  (declare (indent 2) (debug t))
+  `(cl-letf (((symbol-function 'file-remote-p)
+              (lambda (path &rest _) (string-prefix-p ,root path)))
+             ((symbol-function 'file-notify-add-watch)
+              (lambda (directory &rest _) (push directory ,added) nil)))
+     ,@body))
+
+(ert-deftest tired-auto-revert-remote-is-a-user-option ()
+  "The remote watch switch starts off and carries a docstring."
+  (should (custom-variable-p 'tired-auto-revert-remote))
+  (should-not (default-value 'tired-auto-revert-remote))
+  (should (stringp (documentation-property 'tired-auto-revert-remote
+                                           'variable-documentation))))
+
+(ert-deftest tired-sync-watches-skips-a-remote-directory ()
+  "A remote directory gains no watch while the option stays nil."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t)
+          (tired-auto-revert-remote nil)
+          (added nil))
+      (tired-tests--with-remote root added
+        (tired root)
+        (should-not added)
+        (should-not tired--watches)))))
+
+(ert-deftest tired-sync-watches-follows-the-remote-option ()
+  "A user who opts in still gets a watch on a remote directory."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t)
+          (tired-auto-revert-remote t)
+          (added nil))
+      (tired-tests--with-remote root added
+        (tired root)
+        (should (member (directory-file-name root) added))))))
+
+(ert-deftest tired-toggle-auto-revert-reports-the-remote-state ()
+  "The toggle names the state that the buffer really reaches."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t)
+          (tired-auto-revert-remote nil)
+          (added nil))
+      (tired-tests--with-remote root added
+        (tired root)
+        ;; A remote directory starts without watches even though the
+        ;; global option holds.
+        (should-not (tired--auto-revert-enabled-p))
+        (tired-toggle-auto-revert)
+        (should-not tired-auto-revert)
+        ;; The local flag and the remote option decide together.
+        (let ((tired-auto-revert-remote t))
+          (tired-toggle-auto-revert)
+          (should (tired--auto-revert-enabled-p)))))))
+
 (ert-deftest tired-file-change-coalesces-into-one-timer ()
   "A second event keeps the pending timer instead of adding another."
   (tired-tests--with-fixture

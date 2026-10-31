@@ -459,8 +459,17 @@ chain, so that watch matters.  Emacs lock files do not trigger a
 refresh, and an open minibuffer postpones the refresh.  =A= toggles
 the feature for the current buffer.
 
-Remote directories need a working file notification backend.  Without
-one, the watches fail silently and =g= remains available.
+Remote directories stay unwatched by default.  Every remote
+notification costs a network round trip, and some TRAMP methods
+refuse a watch.  The buffer therefore needs both
+`tired-auto-revert' and `tired-auto-revert-remote' before it
+watches a remote path.  =A= reports the state that the buffer really
+reaches.  Without a working backend, the watches fail silently and
+=g= remains available.
+
+#+begin_src elisp
+  (setq tired-auto-revert-remote t)  ; watch remote listings too
+#+end_src
 
 * Inserted directories
 

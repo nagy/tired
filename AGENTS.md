@@ -102,7 +102,9 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 8. `tired--sync-watches` watches the root, every inserted directory,
    every expanded file and every skipped chain level.  `tired--file-changed`
    debounces into `tired--auto-revert-now`, and `kill-buffer-hook` stops
-   the watches.
+   the watches.  `tired--auto-revert-enabled-p` reads both
+   `tired-auto-revert` and `tired-auto-revert-remote`, so a remote
+   buffer stays unwatched unless the user opts in.
 9. `tired-filter` reads the minibuffer and schedules a redraw through
    `tired-filter-delay`; the exit and quit paths flush at once.
 10. `tired--apply-to-targets` runs one function over the targets, deepest
@@ -236,8 +238,7 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   before its parent exists.  `tired--restore-path` stays silent when the
   original path exists again.
 - Single-child collapse and the size walk skip a remote directory,
-  because every read there costs a network round trip.
-- A collapsed row takes the leaf of the chain, so `tired-entry-path`
+  because every read there costs a network round trip.- A collapsed row takes the leaf of the chain, so `tired-entry-path`
   names the leaf and the name holds the relative path.  The leaf can
   be a directory: `tired--display-rows` walks the children of `display`
   rather than of `entry`, or the insert of such a row shows nothing.
