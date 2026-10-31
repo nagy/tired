@@ -482,6 +482,69 @@ costs one redraw and not one per character."
       (tired-up-directory)
       (should (eq (current-buffer) origin)))))
 
+(ert-deftest tired-name-column-carries-the-mouse-properties ()
+  "A printed name column lights up and explains the mouse commands."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (should (eq (get-text-property (point) 'mouse-face) 'highlight))
+    (should (string-match-p "double-click"
+                            (get-text-property (point) 'help-echo)))
+    ;; The indent belongs to the row, so a child row lights up from
+    ;; the left edge too.
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (should (eq (get-text-property (point) 'mouse-face) 'highlight))))
+
+(ert-deftest tired-mouse-click-does-not-follow-a-link ()
+  "One click moves point, so a marked row is no link."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (should (eq (get-text-property (point) 'mouse-face) 'highlight))
+    (should-not (mouse-on-link-p (list (selected-window) (point))))))
+
+(ert-deftest tired-mouse-find-file-other-window-opens-the-clicked-row ()
+  "The middle button opens the row under the pointer, not the selection."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (let* ((position (save-excursion
+                       (tired-tests--goto "alpha.txt")
+                       (point)))
+           (event (tired-tests--click 'mouse-2 position))
+           (opened nil))
+      (cl-letf (((symbol-function 'tired--open-entry)
+                 (lambda (row other-window)
+                   (push (list (tired-entry-name row) other-window) opened))))
+        (tired-mouse-find-file-other-window event))
+      (should (equal opened '(("alpha.txt" t))))
+      (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt"))
+      (should (tired--selected-p (tired-tests--entry "beta.txt"))))))
+
+(ert-deftest tired-mouse-toggle-toggles-the-clicked-row ()
+  "A double click inserts the children of a directory and removes them."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((event (tired-tests--click
+                  'double-mouse-1
+                  (save-excursion (tired-tests--goto "sub") (point)))))
+      (tired-mouse-toggle event)
+      (should (member "inner.txt" (tired-tests--names)))
+      (should (equal (tired-entry-name (tired--row-at-point)) "sub"))
+      (tired-mouse-toggle event)
+      (should-not (member "inner.txt" (tired-tests--names))))))
+
+(ert-deftest tired-mouse-commands-refuse-a-click-outside-a-row ()
+  "A click below the last row signals an error instead of acting."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((event (tired-tests--click 'mouse-2 (point-max))))
+      (should-error (tired-mouse-find-file-other-window event)
+                    :type 'user-error)
+      (should-error (tired-mouse-toggle event) :type 'user-error))))
+
 (ert-deftest tired-refresh-prunes-deleted-selection ()
   "Refresh drops selected entries that no longer exist."
   (tired-tests--with-fixture

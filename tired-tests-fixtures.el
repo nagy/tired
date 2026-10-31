@@ -86,6 +86,12 @@ a symlink, and removes every Tired buffer it opened."
              (kill-buffer buffer))))
        (delete-directory root t))))
 
+(defun tired-tests--click (type position)
+  "Return a mouse click event of TYPE at buffer POSITION.
+The event names the selected window, so batch Emacs reads it like a
+click on the listing that the window shows."
+  (list type (list (selected-window) position)))
+
 (defun tired-tests--names ()
   "Return the names of the visible entries in display order."
   (mapcar #'tired-entry-name (tired--visible-entries)))

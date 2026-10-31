@@ -53,6 +53,10 @@
                       #'tired-do-shell-command))
           (should (eq (key-binding (key-parse "TAB"))
                       #'tired-toggle-subdir))
+          ;; The middle button opens the row, because a read-only
+          ;; listing has nothing to paste.
+          (should (eq (key-binding (key-parse "<mouse-2>"))
+                      #'tired-mouse-find-file-other-window))
           (should (eq (key-binding (key-parse "f")) #'tired-find-file))
           (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
           ;; The search key narrows the listing instead of searching it.

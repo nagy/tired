@@ -26,6 +26,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Name completion over the whole subtree, including directories
 - Transient selection that file commands act on
 - Range selection through the Emacs region, with shift motion and mouse drag
+- Mouse support: one click selects a row, a double click toggles it, the
+  middle button opens it in another window
 - Copy, move, delete, mkdir and touch without a confirmation question
 - Delete and replaced targets go to a session trash, so undo restores them
 - Live name filter, dotfile toggle and regexp-hidden toggle
@@ -130,6 +132,25 @@ directories that contain the selected entries.  =N= again widens it.
 The mode line shows the total size of the selected non-directory
 entries next to the selection count.
 
+* Mouse
+
+The name column lights the row under the pointer with =highlight=, and
+its help text names the two mouse commands.
+
+- =double-mouse-1= toggles the row under the pointer.  A directory row
+  inserts or removes its children.  A file row with a section handler
+  expands or collapses its sections.  A section row folds or unfolds
+  its children.  These are the =TAB= actions.
+- =mouse-2= opens the row under the pointer in another window.  It reads
+  that row only, so the selection stays and every command that acts on
+  the selection keeps working.
+
+One click moves point to the row, and a drag makes a region, as in any
+Emacs buffer.  A row is not a link, so no click opens an entry.  The key
+map binds =follow-link= to a predicate that returns nil, because
+=tabulated-list-mode= turns a click on a =mouse-face= row into a click
+on the other button.
+
 * Evil
 
 The package ships evil bindings in a separate file, so the main
@@ -165,6 +186,12 @@ Visual state keeps its text objects.  The keys that act on files stay
 bound there, so =V= followed by a motion and =D= deletes the range,
 because the region already feeds every file command.  =tired-evil-mode=
 adds and removes the keys for every Tired buffer, existing or new.
+
+Evil keeps its own mouse handling.  =down-mouse-1= runs
+=evil-mouse-drag-region=, so a drag makes a visual selection and a
+double click selects text at the pointer.  Normal state keeps the
+middle button on the Tired command, because a read-only listing has
+nothing to paste.  Use =TAB= or =e= to toggle a row.
 
 * File operations
 

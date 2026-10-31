@@ -109,6 +109,13 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
     command pushes one undo function.
 11. `tired-evil.el` is a second library.  `tired.el` installs its hook
     after `provide`, so both load orders work.
+12. `tired--row` wraps the name column in `tired--click-cell`, so the
+    printed row carries `mouse-face` and a `help-echo` that names the
+    mouse commands.  `tired--click-row` reads the row under a click from
+    the buffer of the clicked window.  `tired-mouse-find-file-other-window`
+    opens that row in another window and `tired-mouse-toggle` runs
+    `tired-toggle-subdir` on it.  `tired--click-selects-row` returns nil
+    and takes the `follow-link` binding, so one click selects.
 
 ## Conventions
 
@@ -123,7 +130,9 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   listing when the menu opens; use `(bound-and-true-p VARIABLE)` for a
   variable that another library owns.
 - A new key belongs in `tired-mode-map` and in `tired-evil-keys`, and in
-  `tired-evil-visual-keys` when it reads the region.
+  `tired-evil-visual-keys` when it reads the region.  A mouse event
+  belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
+  shadows it.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the
@@ -142,6 +151,15 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   as literal characters.
 - `define-minor-mode` defines a defcustom, so a mode without
   `:group 'tired` fails byte compilation.
+- `tabulated-list-mode` binds `follow-link` to `mouse-face`, and with
+  that value a click on a `mouse-face` row arrives as `mouse-2`, so a
+  single click would open a row.  `tired-mode-map` binds `follow-link`
+  to `tired--click-selects-row`, which returns nil, and `mouse-on-link-p`
+  calls that binding as a predicate.  Do not drop the binding.
+- Evil binds `down-mouse-1` in its motion state map, so a double click
+  selects text and never reaches `tired-mouse-toggle`.  Only `mouse-2`
+  needs a key in `tired-evil-keys`, and no mouse event goes in
+  `tired-evil-visual-keys`.
 - Rows must be vectors.  Emacs 31 calls `aref` on them.
 - A section row is not selectable.  Do not add one to
   `tired--selection`: the selection and the narrow snapshot key by path
@@ -226,6 +244,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
 - Batch Emacs dispatches no file notification event during `sit-for`, so
   the tests stub `file-notify-add-watch`.  Batch Emacs also has no window
   layout, so a test asserts buffer state, not window state.
+- Batch Emacs sends no mouse event, so a test builds one with
+  `tired-tests--click`: a posn of `(WINDOW POINT)` is enough for
+  `event-start`, `posn-window` and `posn-point`, and `mouse-set-point`
+  takes it.
 - Flake sources are git-tracked files only.  `git add` a new file before
   `nix flake check`, or the build cannot see it.
 - In batch Emacs the region needs `transient-mark-mode`, which starts

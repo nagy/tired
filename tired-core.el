@@ -985,6 +985,30 @@ slash.  A symbolic link keeps its target arrow."
                    (tired--symlink-suffix entry)))
           (_ (tired--propertize-name name face spans)))))))
 
+(defun tired--mouse-help (row)
+  "Return the mouse help text for ROW.
+The keys alone never show the mouse, so the text names the two
+commands.  The middle button reads the row, and the second click of
+a double click toggles it."
+  (cond
+   ((tired-section-p row)
+    "mouse-2: visit in another window, double-click: fold")
+   ((tired--directory-entry-p row)
+    (concat "mouse-2: visit in another window, "
+            "double-click: show or hide the children"))
+   ((tired-file-handler (tired-entry-path row))
+    "mouse-2: visit in another window, double-click: expand or collapse")
+   (t "mouse-2: visit in another window")))
+
+(defun tired--click-cell (row string)
+  "Return STRING, the name column of ROW, with the mouse properties.
+The mouse face lights the row under the pointer, and the help text
+names the two mouse commands.  `tabulated-list-print-col' inserts a
+column string as it stands, so the properties survive the print."
+  (propertize string
+              'mouse-face 'highlight
+              'help-echo (tired--mouse-help row)))
+
 (defvar tired--size-cache (make-hash-table :test #'equal)
   "Global memo table for `tired--subtree-size'.
 Every Tired buffer shares the table.  A key holds the absolute name
@@ -1094,13 +1118,17 @@ name column only, because one table format serves every row.
 Emacs 31 requires a vector of column descriptors here; a list makes
 `tabulated-list-print-entry' signal a type error."
   (if (tired-section-p row)
-      (vector (concat (make-string (* 2 depth) ?\s)
-                      (tired--section-cell row))
+      (vector (tired--click-cell
+               row
+               (concat (make-string (* 2 depth) ?\s)
+                       (tired--section-cell row)))
               ""
               ""
               "")
-    (vector (concat (make-string (* 2 depth) ?\s)
-                    (tired--name-cell row))
+    (vector (tired--click-cell
+             row
+             (concat (make-string (* 2 depth) ?\s)
+                     (tired--name-cell row)))
             (tired--size-column row)
             (propertize (format-time-string tired-date-format
                                             (tired-entry-mtime row))
@@ -2259,6 +2287,56 @@ selection is cleared afterwards."
   (interactive)
   (tired-find-file t))
 
+(defun tired--click-row (event)
+  "Return the row under the mouse click EVENT, or nil.
+The click may land in a window that shows another listing, so read
+the row from the buffer of that window.  A click below the last row
+returns nil."
+  (let* ((position (event-start event))
+         (window (posn-window position))
+         (point (posn-point position)))
+    (when (and (window-live-p window)
+               (integer-or-marker-p point))
+      (with-current-buffer (window-buffer window)
+        (when (and (>= point (point-min))
+                   (<= point (point-max)))
+          (tired--row-at point))))))
+
+(defun tired-mouse-find-file-other-window (event)
+  "Visit the entry under the mouse click EVENT in another window.
+Read the row under the pointer, not the selection, so one click
+opens one entry and the selection stays.  A section row visits its
+own file position and a directory row opens a Tired buffer."
+  (interactive "e")
+  (let ((row (tired--click-row event)))
+    (unless row
+      (user-error "No entry under the mouse"))
+    (mouse-set-point event)
+    (tired--open-entry row t)))
+
+(defun tired-mouse-toggle (event)
+  "Toggle the row under the mouse double click EVENT.
+A directory row inserts or removes its children, a file row with a
+handler expands or collapses its sections, and a section row folds
+or unfolds its children.  Move point to the row first, so the next
+key command acts on it.  A double click makes no region, so drop the
+one that the click started."
+  (interactive "e")
+  (unless (tired--click-row event)
+    (user-error "No entry under the mouse"))
+  (mouse-set-point event)
+  (deactivate-mark)
+  (tired-toggle-subdir))
+
+(defun tired--click-selects-row (&rest _)
+  "Return nil, so one click selects a row and follows no link.
+`tabulated-list-mode' binds `follow-link' to `mouse-face', and that
+binding turns a click on a marked row into a click on its other
+binding.  A Tired row needs one click to move point, a second click
+to toggle the row and a drag to make a region, so no click opens an
+entry.  The middle button opens a row instead."
+  nil)
+
 (defun tired-browse-url-of-file (&optional secondary)
   "Ask a WWW browser to display the target files.
 Use `browse-url-secondary-browser-function' instead of
@@ -2285,6 +2363,11 @@ takes the file back from the browser."
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
   :parent tabulated-list-mode-map
+  ;; The mouse reads the row under the pointer, so a click still moves
+  ;; point and a drag still makes a region.
+  "<mouse-2>" #'tired-mouse-find-file-other-window
+  "<double-mouse-1>" #'tired-mouse-toggle
+  "<follow-link>" #'tired--click-selects-row
   "RET" #'tired-find-file
   "o" #'tired-find-file-other-window
   "^" #'tired-up-directory

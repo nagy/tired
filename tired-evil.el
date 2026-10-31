@@ -52,6 +52,12 @@
 ;; keeps the evil replace state out of a read-only listing.  The visual
 ;; table uses the same `m' and `R', and it stays short because visual
 ;; state needs its text objects.
+;;
+;; The middle button opens the row under the pointer, because a
+;; read-only listing has nothing to paste.  Evil binds `down-mouse-1' to
+;; `evil-mouse-drag-region', which keeps the drag that makes a region,
+;; and that command turns a double click into a text selection, so a
+;; double click does not toggle a row here.  TAB and `e' toggle it.
 
 ;;; Code:
 
@@ -62,6 +68,7 @@
   '(;; Opening a row.
     ("RET" . tired-find-file)
     ("o" . tired-find-file-other-window)
+    ("<mouse-2>" . tired-mouse-find-file-other-window)
     ("f" . tired-find-file)
     ("-" . tired-up-directory)
     ("^" . tired-up-directory)
