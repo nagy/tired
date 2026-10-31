@@ -5,7 +5,7 @@
 ;; Author: Daniel Nagy
 ;; URL: https://github.com/nagy/tired
 ;; Version: 0.1.0
-;; Keywords: files
+;; Keywords: files convenience
 ;; Package-Requires: ((emacs "31.1") (evil "1.14"))
 
 ;; This file is free software: you can redistribute it and/or modify
