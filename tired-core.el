@@ -1403,15 +1403,28 @@ The row is a `tired-entry' or a `tired-section'."
                     (and (tired--selected-p entry) entry)))
                 (tired--display-rows nil))))
 
+(defun tired--entry-size (entry)
+  "Return the byte count that ENTRY adds to a total.
+A directory adds its whole subtree, the way a selection should name
+the bytes that it holds.  The sum reads no `tired-directory-size',
+because that option governs the size column alone.  A directory on a
+remote host adds nothing, because a walk over the network costs one
+round trip per file."
+  (cond
+   ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
+   ((file-remote-p (tired-entry-path entry)) 0)
+   (t (tired--directory-total (tired-entry-path entry)))))
+
 (defun tired--entries-size (entries)
-  "Return the total size of the non-directory ENTRIES in bytes."
+  "Return the total size of ENTRIES in bytes.
+A directory counts its whole subtree, and a remote directory counts
+nothing."
   (let ((total 0))
     (dolist (entry entries total)
-      (unless (tired-entry-dirp entry)
-        (setq total (+ total (or (tired-entry-size entry) 0)))))))
+      (setq total (+ total (tired--entry-size entry))))))
 
 (defun tired--selection-size ()
-  "Return the total size of the selected non-directory entries in bytes."
+  "Return the total size of the selected entries in bytes."
   (tired--entries-size (tired--selected-entries)))
 
 (defun tired--selection-targets ()

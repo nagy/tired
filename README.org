@@ -157,8 +157,10 @@ file.  It has no key of its own.
 =N= narrows the listing to a snapshot of the selection plus the
 directories that contain the selected entries.  An active region
 joins the selection first.  =N= again widens it.  The mode line shows
-the total size of the selected non-directory entries next to the
-selection count.
+the selection count and the total size of the selected rows.  A
+directory adds its whole subtree, and a remote directory adds
+nothing, because a walk over the network costs one round trip per
+file.  A region reports the same size.
 
 * Mouse
 

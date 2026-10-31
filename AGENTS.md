@@ -116,6 +116,8 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
    `tired--apply-to-rows` runs one view function over the targets and
    keeps the selection, because a user selects a directory, inserts it
    and then adds a child row.  A file command clears both sources.
+   The mode line prints the count and the byte sum of the selection or
+   the region through `tired--entries-size'.
 8. `tired--sync-watches` watches the root, every inserted directory,
    every expanded file and every skipped chain level.  `tired--file-changed`
    debounces into `tired--auto-revert-now`, and `kill-buffer-hook` stops
@@ -222,6 +224,13 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   leaves it in place.  A menu `:active` form and an interactive spec
   read `tired--selection-targets`, so a canceled prompt changes no
   state.
+- `tired--entries-size` counts a directory by its subtree, and it
+  reads no `tired-directory-size`, because that option governs the
+  size column alone.  A remote directory adds nothing.  The walk goes
+  through `tired--directory-total', so `tired--size-cache' serves a
+  second read inside `tired-size-cache-ttl'.  The mode line still
+  rebuilds on a region change, through `post-command-hook', and a new
+  directory inside the region starts one walk per cache window.
 - Evil shadows `i` (text objects), `e` and `E` (word motion) and `TAB`
   (jump forward) in visual state.  Do not add `tired-insert-subdir`,
   `tired-expand-file`, `tired-collapse-file` or `tired-toggle-subdir`

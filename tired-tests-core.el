@@ -1395,12 +1395,22 @@ The file row may lie inside the same region, and it joins once."
     (should (equal (tired-tests--names) '("alpha.txt" "beta.txt")))))
 
 (ert-deftest tired-mode-line-reports-the-region-size ()
-  "The mode line gives the region the count and the size of a selection."
+  "The mode line gives the region the count and the size of a selection.
+A directory in the region adds its whole subtree, as a selected
+directory does."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--mark-row-range "alpha.txt" "beta.txt")
     (tired--update-mode-line)
-    (should (string-match-p "2 in region, 43" (tired--mode-line)))))
+    (should (string-match-p "2 in region, 43" (tired--mode-line)))
+    (deactivate-mark)
+    (tired-tests--mark-row-range "sub" ".hidden")
+    (tired--update-mode-line)
+    (should (string-match-p "2 in region, 10" (tired--mode-line)))
+    (deactivate-mark)
+    (tired-tests--mark-row-range ".hidden" "beta.txt")
+    (tired--update-mode-line)
+    (should (string-match-p "3 in region, 44" (tired--mode-line)))))
 
 (ert-deftest tired-redraw-restores-the-mark-by-path ()
   "Refresh and sort keep the mark on the same entry."
@@ -1557,8 +1567,8 @@ The same substitution rules apply to the header line."
                          #'string<)
                    '(".hidden" "beta.txt" "link" "sub")))))
 
-(ert-deftest tired-selection-size-sums-non-directories ()
-  "The selection size adds file sizes and skips directories."
+(ert-deftest tired-selection-size-counts-a-directory-subtree ()
+  "The selection size adds file sizes and each directory subtree."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "alpha.txt")
@@ -1567,8 +1577,8 @@ The same substitution rules apply to the header line."
     (tired-select-toggle)
     (tired-tests--goto "sub")
     (tired-select-toggle)
-    (should (= 43 (tired--selection-size)))
-    (should (string-match-p "3 selected" (tired--mode-line)))))
+    (should (= 52 (tired--selection-size)))
+    (should (string-match-p "3 selected, 52" (tired--mode-line)))))
 
 (ert-deftest tired-narrow-shows-selection-and-widens ()
   "Narrowing hides unselected entries and widening restores them."
