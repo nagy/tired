@@ -1396,40 +1396,55 @@ the buffer point of a window that lost the selection lags behind."
       (tired--row-at (window-point window))
     (tired--row-at-point)))
 
-(defun tired--window-rows ()
-  "Return one (WINDOW . ROW) pair per window that shows the listing.
-ROW is the row at that window's point, or nil when the window sits on
-a line without a row."
-  (let (pairs)
-    (dolist (window (get-buffer-window-list nil t))
-      (push (cons window (tired--row-at (window-point window))) pairs))
-    (nreverse pairs)))
+(defun tired--row-position (row)
+  "Return the buffer position of the line that shows ROW.
+Return nil when the listing no longer shows ROW."
+  (save-excursion
+    (when (tired--goto-row row)
+      (point))))
 
-(defun tired--restore-window-rows (pairs)
-  "Move each window in PAIRS back to the row it showed before a reprint.
-`tabulated-list-print' erases the buffer, and that erase collapses the
-point marker of every window that shows the listing, so a window that
-lost the selection would return to the first line.  A window whose row
-vanished keeps its own point."
-  (dolist (pair pairs)
-    (let ((window (car pair))
-          (row (cdr pair)))
+(defun tired--window-views ()
+  "Return one view per window that shows the listing.
+A view is a list of the window, the row at its point and the row at
+its display start.  Either row is nil when its line holds no row."
+  (let (views)
+    (dolist (window (get-buffer-window-list nil t))
+      (push (list window
+                  (tired--row-at (window-point window))
+                  (tired--row-at (window-start window)))
+            views))
+    (nreverse views)))
+
+(defun tired--restore-window-views (views)
+  "Put every window in VIEWS back to the view it showed before a reprint.
+`tabulated-list-print' erases the buffer, and the erase collapses both
+the point marker and the display start marker of each window that
+shows the listing.  Point would then sit at the bottom of a window
+that starts at the first line.  Set the window point first, then the
+window start, so point keeps its place inside the window.  A window
+whose point vanished keeps its own point."
+  (dolist (view views)
+    (let ((window (car view))
+          (point-row (nth 1 view))
+          (start-row (nth 2 view)))
       (when (and (window-live-p window)
-                 (eq (window-buffer window) (current-buffer))
-                 row)
-        (save-excursion
-          (when (tired--goto-row row)
-            (set-window-point window (point))))))))
+                 (eq (window-buffer window) (current-buffer)))
+        (let ((point-position (and point-row (tired--row-position point-row)))
+              (start-position (and start-row (tired--row-position start-row))))
+          (when point-position
+            (set-window-point window point-position)
+            (when (and start-position (< start-position point-position))
+              (set-window-start window start-position))))))))
 
 (defun tired--redraw (&optional window)
   "Redraw the listing from the cached entries.
 WINDOW is the window that shows the buffer, or nil for the selected
 window.  Its width limits the name column.  The redraw keeps the
-point of every window that shows the listing."
+point and the scroll position of every window that shows the listing."
   (let* ((window (or window (selected-window)))
          (point-entry (tired--point-row window))
          (mark-entry (tired--row-at (mark t)))
-         (window-rows (tired--window-rows)))
+         (views (tired--window-views)))
     (setq tabulated-list-format
           (tired--format (tired--name-column-width window)))
     (tabulated-list-init-header)
@@ -1440,11 +1455,20 @@ point of every window that shows the listing."
                 tired--header-base))
     (tabulated-list-print t)
     (tired--goto-entry point-entry)
-    (tired--restore-window-rows window-rows)
+    (tired--restore-window-views views)
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--sync-watches)
     (force-mode-line-update)))
+
+(defun tired--width-changed-p (window)
+  "Return non-nil when WINDOW needs a different name column width.
+The size hook fires once per changed window of a frame, and it also
+fires when the echo area grows.  A redraw that finds the same width
+has nothing to do, and its reprint would only cost the point and the
+scroll position of the window."
+  (/= (tired--name-column-width window)
+      (nth 1 (aref tabulated-list-format 0))))
 
 (defun tired--window-size-changed (frame)
   "Redraw Tired listings in the windows of FRAME.
@@ -1452,7 +1476,8 @@ A resize changes the space available to the name column."
   (dolist (window (window-list frame 'nomini))
     (with-current-buffer (window-buffer window)
       (when (and (derived-mode-p 'tired-mode)
-                 tired--directory)
+                 tired--directory
+                 (tired--width-changed-p window))
         (tired--redraw window)))))
 
 (add-hook 'window-size-change-functions #'tired--window-size-changed)

@@ -276,6 +276,18 @@ a symlink, and removes every Tired buffer it opened."
         (should (= (- 80 tired--fixed-column-width)
                    (nth 1 (aref tabulated-list-format 0))))))))
 
+(ert-deftest tired-window-size-change-skips-an-unchanged-width ()
+  "A size hook call with the same width redraws nothing.
+The hook also runs when the echo area grows, and that growth leaves
+the width of the listing untouched."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "beta.txt")
+    (cl-letf (((symbol-function 'tired--redraw)
+               (lambda (&rest _) (error "Unexpected redraw"))))
+      (tired--window-size-changed (selected-frame)))
+    (should (equal "beta.txt" (tired-entry-name (tired--row-at-point))))))
+
 (ert-deftest tired-filter-matches-case-insensitively ()
   "A filter keeps only matching names."
   (tired-tests--with-fixture
@@ -1455,6 +1467,26 @@ and it puts that window point back after the reprint."
         (delete-window other)
         (when (get-buffer " *tired-tests-other*")
           (kill-buffer " *tired-tests-other*"))))))
+
+(ert-deftest tired-redraw-keeps-the-window-start ()
+  "A redraw keeps the scroll position of a long listing.
+The reprint erases the buffer, and the erase also collapses the
+display start marker, so point would land at the bottom of a window
+that starts at the first line."
+  (tired-tests--with-fixture
+    (dotimes (index 40)
+      (tired-tests--write (format "n%02d.txt" index) "x"))
+    (tired root)
+    (let ((window (selected-window)))
+      (goto-char (point-min))
+      (forward-line 9)
+      (set-window-start window (point))
+      (goto-char (point-min))
+      (forward-line 29)
+      (set-window-point window (point))
+      (tired--redraw window)
+      (should (= 10 (line-number-at-pos (window-start window))))
+      (should (= 30 (line-number-at-pos (window-point window)))))))
 
 (ert-deftest tired-mode-line-is-empty-without-state ()
   "A plain listing shows no bracket group in the mode line."

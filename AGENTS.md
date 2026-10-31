@@ -184,15 +184,20 @@ Data flow:
    expand, fold) call `tired--redraw`, not `tired-refresh`.
 10. `tired--window-size-changed` runs from `window-size-change-functions`
     and redraws every visited Tired buffer with the width of its own
-    window, so a resize refits the name column.  The hook also fires
-    when the echo area grows, for example on `M-x`, and the selected
-    window then holds the minibuffer.  `tired--redraw` therefore reads
-    the point row through `tired--point-row`, which takes the window
-    point of a window that lost the selection, and
-    `tired--restore-window-rows` puts every window point marker back
-    after the print.  A marker needs that repair, because
-    `tabulated-list-print` erases the buffer and the erase collapses
-    each window point marker to the first line.
+    window, so a resize refits the name column.  The hook fires once
+    per changed window of a frame, and it also fires when the echo
+    area grows, for example on `M-x`.  `tired--width-changed-p`
+    therefore skips a window whose name column width already matches,
+    so an echo area growth redraws nothing.  A real redraw still runs
+    while the selected window holds the minibuffer, so `tired--redraw`
+    reads the point row through `tired--point-row`, which takes the
+    window point of a window that lost the selection.  It then calls
+    `tired--restore-window-views`, which puts the point and the display
+    start of every window back.  Both markers need that repair,
+    because `tabulated-list-print` erases the buffer and the erase
+    collapses each one of them to the first line.  A second redraw in
+    the same display cycle would read the collapsed start back, so the
+    width guard also keeps the saved view intact.
 11. `tired--sync-watches` keeps one file notification watch per path in
     `tired--watch-paths`: the root, every inserted directory and every
     expanded file.  A file needs its own watch because a directory watch
@@ -547,9 +552,12 @@ Evil integration:
   on that entry's row.  Set the mark marker with `set-marker`, not
   `push-mark`, or every redraw grows the mark ring.  A deleted row
   leaves the mark where the reprint put it.  A window point marker
-  collapses the same way, and `tired--restore-window-rows` repairs it
+  collapses the same way, and `tired--restore-window-views` repairs it
   with `set-window-point`, because the display copies that marker back
-  into the buffer point when the window regains the selection.
+  into the buffer point when the window regains the selection.  The
+  display start marker collapses too, and `set-window-start` puts it
+  back, or point would sit at the bottom of a window that starts at
+  the first line.  Set the window point before the window start.
 - `tired--region-entries` keeps the row on which the region ends out,
   because the region ends at that line's start.  Without the test the
   shift-down gesture would cover one row too many.  The region needs
