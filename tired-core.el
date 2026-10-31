@@ -95,6 +95,30 @@ A delay coalesces bursts of events, such as a build writing many
 files, into one refresh."
   :type 'number)
 
+(defcustom tired-display-buffer-action 'display-buffer-same-window
+  "Display action that `tired' uses for the listing.
+The value takes the form that `display-buffer' accepts: one action
+function or a list of a function and an alist.  The default replaces
+the current buffer, like `dired'.  Set it to a pop-up action to give
+the listing its own window, and add a `display-buffer-alist' entry
+for a rule that depends on the buffer name."
+  :type '(choice (function-item display-buffer-same-window)
+                 (function-item display-buffer-pop-up-window)
+                 (function-item display-buffer-reuse-window)
+                 (function :tag "Action function")
+                 (repeat :tag "Action list" (sexp :tag "Action"))))
+
+(defcustom tired-other-window-action
+  '(display-buffer-use-some-window (inhibit-same-window . t))
+  "Display action that `tired-other-window' uses for the listing.
+The default reuses another window of the frame and never the
+selected one.  The value takes the form that `display-buffer'
+accepts."
+  :type '(choice (function-item display-buffer-pop-up-window)
+                 (function-item display-buffer-reuse-window)
+                 (function :tag "Action function")
+                 (repeat :tag "Action list" (sexp :tag "Action"))))
+
 (defcustom tired-filter-delay 0.15
   "Seconds to wait before a typed filter redraws the listing.
 A redraw walks the tree and prints every row, so a fast typist would
@@ -1805,22 +1829,35 @@ no command changes without the user's consent."
     (setq find-directory-functions
           (delq #'tired-noselect find-directory-functions))))
 
+(defun tired--show-buffer (buffer action)
+  "Show BUFFER through ACTION, select its window and return BUFFER.
+Select the window that `display-buffer' chose, so a caller such as
+`tired-jump' can move point in the listing.  The command returns the
+buffer, as `dired' does, also when ACTION picks no window."
+  (let ((window (display-buffer buffer action)))
+    (when (window-live-p window)
+      (select-window window))
+    buffer))
+
 ;;;###autoload
 (defun tired (directory)
   "Show DIRECTORY in a Tired buffer.
 Interactively, offer `default-directory' as the default.  This
 command is the short way to open a listing, in the manner of
-`dired'."
+`dired'.  The listing goes through `tired-display-buffer-action'."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
-  (pop-to-buffer-same-window (tired-noselect directory)))
+  (tired--show-buffer (tired-noselect directory)
+                       tired-display-buffer-action))
 
 ;;;###autoload
 (defun tired-other-window (directory)
-  "Show DIRECTORY in a Tired buffer in another window."
+  "Show DIRECTORY in a Tired buffer in another window.
+The listing goes through `tired-other-window-action'."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
-  (switch-to-buffer-other-window (tired-noselect directory)))
+  (tired--show-buffer (tired-noselect directory)
+                       tired-other-window-action))
 
 (defun tired-up-directory ()
   "Open the parent of the current directory."

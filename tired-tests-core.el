@@ -60,6 +60,34 @@
   (tired-tests--with-fixture
     (should (eq (tired-noselect root) (tired-noselect root)))))
 
+(ert-deftest tired-passes-the-display-action-to-display-buffer ()
+  "Each command hands its own action to `display-buffer'."
+  (tired-tests--with-fixture
+    (let ((seen nil)
+          (tired-display-buffer-action 'display-buffer-same-window)
+          (tired-other-window-action '(display-buffer-use-some-window
+                                       (inhibit-same-window . t))))
+      (cl-letf (((symbol-function 'display-buffer)
+                 (lambda (buffer action)
+                   (push (list buffer action) seen)
+                   (selected-window))))
+        (tired root)
+        (tired-other-window root))
+      (setq seen (nreverse seen))
+      (should (equal (nth 1 (nth 0 seen)) 'display-buffer-same-window))
+      (should (equal (nth 1 (nth 1 seen))
+                     '(display-buffer-use-some-window
+                       (inhibit-same-window . t)))))))
+
+(ert-deftest tired-display-buffer-action-is-a-user-option ()
+  "Both display options carry a docstring and start set."
+  (dolist (variable '(tired-display-buffer-action
+                      tired-other-window-action))
+    (should (custom-variable-p variable))
+    (should (default-value variable))
+    (should (stringp (documentation-property variable
+                                             'variable-documentation)))))
+
 (ert-deftest tired-find-file-mode-toggles-find-directory-functions ()
   "`tired-find-file-mode' adds and removes the finder."
   (should-not tired-find-file-mode)

@@ -144,6 +144,10 @@ library, as `tired-mode-map` does, it adds a `declare-function`.
   `tired-evil-visual-keys` when it reads the region.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
   shadows it.
+- `tired` and `tired-other-window` go through `tired--display`: it
+  hands `tired-display-buffer-action` or `tired-other-window-action` to
+  `display-buffer` and then selects the returned window, because
+  `tired-jump` moves point in the listing after the call.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the

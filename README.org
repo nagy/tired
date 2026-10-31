@@ -51,6 +51,18 @@ the listing, in the manner of =M-x dired=.  =M-x tired-other-window=
 does the same in another window.  =tired-noselect= returns the buffer
 without showing it, the way =dired-noselect= does.
 
+The two commands hand their window choice to `display-buffer'.
+=tired-display-buffer-action= holds the action for =tired=, and
+=tired-other-window-action= holds the action for
+=tired-other-window=.  Each value takes the form that
+`display-buffer' accepts, so a user decides where the listing lands.
+
+#+begin_src elisp
+  ;; Reuse a window, and pop up a new one when no window fits.
+  (setq tired-display-buffer-action
+        '(display-buffer-reuse-window display-buffer-pop-up-window))
+#+end_src
+
 Loading =tired= changes nothing global.  =M-x tired-find-file-mode=
 turns the =find-file= integration on: =find-file=,
 =find-file-other-window=, =find-alternate-file= and a directory
