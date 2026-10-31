@@ -180,7 +180,11 @@ Data flow:
    so a buffer-local `post-command-hook' calls
    `tired--mode-line-maybe-update', which compares
    `tired--region-signature' against the signature behind the
-   cache.
+   cache.  `tired--escape-mode-line` doubles each `%` in the filter
+   text and in the directory title, because the mode line and the
+   header line read one sign as a substitution start.  Do not escape
+   `tired--header-base`: it already holds the `%` constructs that
+   `tabulated-list-init-header` wrote.
    `tired--selection-targets` reads the
    selection first, then `tired--region-entries`, then the row at point;
    a command that acts on the region deactivates it.  A section row

@@ -1127,6 +1127,14 @@ column from the current listing."
    (list (tired--column-label "Modified" 'modified) 17 nil)
    (list (tired--column-label "Mode" 'mode) 10 nil)))
 
+(defun tired--escape-mode-line (text)
+  "Return TEXT with every percent sign doubled.
+The mode line and the header line read `%' as the start of a
+substitution, so a literal sign needs two.  A filter string and a
+directory name can hold any character, and `%b' in a filter would
+print the buffer name."
+  (replace-regexp-in-string "%" "%%" text t t))
+
 (defun tired--header-title ()
   "Return the directory title shown in the header line."
   (concat (abbreviate-file-name tired--directory)
@@ -1203,7 +1211,8 @@ region count changes with no redraw."
       (setq mode-line-format
             (if (string-empty-p text)
                 tired--mode-line-base
-              (append tired--mode-line-base (list text))))))
+              (append tired--mode-line-base
+                      (list (tired--escape-mode-line text)))))))
   (force-mode-line-update))
 
 (defun tired--region-signature ()
@@ -1527,7 +1536,9 @@ point and the scroll position of every window that shows the listing."
           (tabulated-list-init-header)
           (setq tired--header-base header-line-format)
           (setq header-line-format
-                (list (propertize (tired--header-title) 'face 'bold)
+                (list (propertize (tired--escape-mode-line
+                                   (tired--header-title))
+                                  'face 'bold)
                       "  "
                       tired--header-base))
           (tabulated-list-print t))

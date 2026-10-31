@@ -1221,6 +1221,23 @@ A redraw does not run for a region change, so the buffer-local
     (run-hooks 'post-command-hook)
     (should (string-match-p "2 in region" (car (last mode-line-format))))))
 
+(ert-deftest tired-mode-line-escapes-a-percent-sign ()
+  "A filter with a percent sign survives the mode line reader.
+The reader takes one sign as the start of a substitution, so a
+literal one needs two."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired--apply-filter "50%")
+    (should (string-match-p "50%%" (car (last mode-line-format))))))
+
+(ert-deftest tired-header-line-escapes-a-percent-sign ()
+  "A filter with a percent sign survives the header line reader.
+The same substitution rules apply to the header line."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired--apply-filter "50%")
+    (should (string-match-p "50%%" (car header-line-format)))))
+
 (ert-deftest tired-select-invert-flips-visible-entries ()
   "Inverting selects every visible entry that was not selected."
   (tired-tests--with-fixture
