@@ -76,6 +76,16 @@ as well.  The mode line reports how many entries the rules hide.
 `tired-toggle-hidden' shows the entries that the rules hide."
   :type '(repeat regexp))
 
+(defcustom tired-sort-by-extension t
+  "When non-nil, sort a name by its file extension before its name.
+The name sort compares extensions the way `ls -X' does and then
+compares the whole name, so files of one kind group together.  The
+comparison folds case, so a `.txt' group holds a `.TXT' file too.  A
+name without an extension sorts before every extension, and a
+dotfile counts as extensionless.  Directories stay first.  The
+other sort keys keep the plain name order, in the tie-break too."
+  :type 'boolean)
+
 (defcustom tired-date-format "%Y-%m-%d %H:%M"
   "Format string for the modification time column.
 See `format-time-string' for the available conversions."
@@ -493,10 +503,28 @@ reads the last component matches here as it does on a real row."
   (and (tired--in-narrow-p entry)
        (tired--name-visible-p entry)))
 
+(defun tired--sort-extension (entry)
+  "Return the extension of ENTRY, folded to lower case.
+A name without an extension returns an empty string, so it sorts
+before every real extension."
+  (downcase (or (file-name-extension (tired-entry-name entry)) "")))
+
+(defun tired--name-before-p (a b)
+  "Return non-nil when A sorts before B by name.
+With `tired-sort-by-extension' set, the extension decides first and
+the whole name decides inside a group of equal extensions."
+  (if tired-sort-by-extension
+      (let ((left (tired--sort-extension a))
+            (right (tired--sort-extension b)))
+        (cond ((string< left right) t)
+              ((string< right left) nil)
+              (t (string< (tired-entry-name a) (tired-entry-name b)))))
+    (string< (tired-entry-name a) (tired-entry-name b))))
+
 (defun tired--key-before-p (key a b)
   "Return non-nil when A sorts before B by KEY, ignoring direction."
   (pcase key
-    ('name (string< (tired-entry-name a) (tired-entry-name b)))
+    ('name (tired--name-before-p a b))
     ('size (< (tired-entry-size a) (tired-entry-size b)))
     ('modified (< (tired-entry-mtime a) (tired-entry-mtime b)))
     ('mode (string< (tired-entry-mode a) (tired-entry-mode b)))

@@ -89,6 +89,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `tired--inserted` the directories whose children show.
 2. `tired--sorted-directory-entries` filters and sorts one directory in
    Elisp (`tired--lessp`), so directories stay first under every key.
+   With `tired-sort-by-extension` set, `tired--name-before-p` compares
+   the case-folded extension first, the way `ls -X` does, and the whole
+   name second.
 3. `tired--display-rows` walks depth-first and returns `(ROW . DEPTH)`
    conses.  A `file-truename` set stops symlink cycles.
    `tired--directory-entry-p` decides whether a row takes children and

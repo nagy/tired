@@ -165,11 +165,11 @@ default `tired-file-handlers' names a void section handler.
           (should-not (re-search-forward "^;;;###autoload" nil t)))))))
 
 (ert-deftest tired-listing-puts-directories-first ()
-  "Directories sort before files, and files sort by name."
+  "Directories sort before files, and files group by extension."
   (tired-tests--with-fixture
     (tired root)
     (should (equal (tired-tests--names)
-                   '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))))
+                   '("sub" ".hidden" "link" "alpha.txt" "beta.txt")))))
 
 (ert-deftest tired-entries-carry-file-attributes ()
   "Each entry records its type, size and mode."
@@ -193,7 +193,7 @@ default `tired-file-handlers' names a void section handler.
     (tired root)
     (tired-toggle-dotfiles)
     (should (equal (tired-tests--names)
-                   '("sub" "alpha.txt" "beta.txt" "link")))
+                   '("sub" "link" "alpha.txt" "beta.txt")))
     (tired-toggle-dotfiles)
     (should (member ".hidden" (tired-tests--names)))))
 
@@ -251,6 +251,24 @@ default `tired-file-handlers' names a void section handler.
     (should (equal (car (tired-tests--names)) "sub"))
     (tired-sort 'name)
     (should (equal (car (tired-tests--names)) "sub"))))
+
+(ert-deftest tired-name-sort-groups-files-by-extension ()
+  "`tired-sort-by-extension' groups files by extension, then by name.
+A name without an extension leads the file group, a dotfile counts
+as extensionless, and an upper-case extension joins its lower-case
+twin.  The option nil keeps the plain name order."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* a\n")
+    (tired-tests--write "alpha.TXT" "x")
+    (tired root)
+    (should (equal (tired-tests--names)
+                   '("sub" ".hidden" "link" "notes.org" "alpha.TXT"
+                     "alpha.txt" "beta.txt")))
+    (let ((tired-sort-by-extension nil))
+      (tired-refresh)
+      (should (equal (tired-tests--names)
+                     '("sub" ".hidden" "alpha.TXT" "alpha.txt"
+                       "beta.txt" "link" "notes.org"))))))
 
 (ert-deftest tired-header-click-sorts-by-a-column ()
   "A click on a header label sorts the listing by its column."
@@ -1127,13 +1145,11 @@ key map alone."
     (unwind-protect
         (progn
           (font-lock-ensure)
-          (goto-char (point-min))
-          (search-forward "sub")
+          (tired-tests--goto "sub")
           (should (eq 'tired-directory-face
-                      (get-text-property (match-beginning 0) 'font-lock-face)))
-          (goto-char (point-min))
-          (search-forward "alpha.txt")
-          (should (eq 'bold (get-text-property (match-beginning 0) 'face))))
+                      (get-text-property (point) 'font-lock-face)))
+          (tired-tests--goto "alpha.txt")
+          (should (eq 'bold (get-text-property (point) 'face))))
       (let ((noninteractive nil))
         (font-lock-mode -1)))))
 
@@ -1218,8 +1234,8 @@ key map alone."
     (tired-insert-subdir)
     ;; `deep` holds one file, so it collapses into one row.
     (should (equal (tired-tests--names)
-                   '("sub" "deep/leaf.txt" "inner.txt" "loop"
-                     ".hidden" "alpha.txt" "beta.txt" "link")))
+                   '("sub" "deep/leaf.txt" "loop" "inner.txt"
+                     ".hidden" "link" "alpha.txt" "beta.txt")))
     (should (equal (mapcar #'cdr (tired--display-rows t))
                    '(0 1 1 1 0 0 0 0)))
     (should (string-prefix-p
@@ -1240,8 +1256,8 @@ key map alone."
       (tired-tests--goto "deep")
       (tired-insert-subdir)
       (should (equal (tired-tests--names)
-                     '("sub" "deep" "leaf.txt" "inner.txt" "loop"
-                       ".hidden" "alpha.txt" "beta.txt" "link")))
+                     '("sub" "deep" "leaf.txt" "loop" "inner.txt"
+                       ".hidden" "link" "alpha.txt" "beta.txt")))
       (should (equal (mapcar #'cdr (tired--display-rows t))
                      '(0 1 2 1 1 0 0 0 0))))))
 
@@ -1254,7 +1270,7 @@ key map alone."
     (should (member "inner.txt" (tired-tests--names)))
     (tired-toggle-subdir)
     (should (equal (tired-tests--names)
-                   '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))))
+                   '("sub" ".hidden" "link" "alpha.txt" "beta.txt")))))
 
 (ert-deftest tired-remove-subdir-drops-descendants ()
   "Removing a section drops nested inserted sections as well."
@@ -1269,7 +1285,7 @@ key map alone."
       (tired-remove-subdir)
       (should (= 0 (hash-table-count tired--inserted)))
       (should (equal (tired-tests--names)
-                     '("sub" ".hidden" "alpha.txt" "beta.txt" "link"))))))
+                     '("sub" ".hidden" "link" "alpha.txt" "beta.txt"))))))
 
 (ert-deftest tired-insert-subdir-rejects-files ()
   "Inserting a file signals a user error."
@@ -1341,12 +1357,12 @@ key map alone."
   (tired-tests--with-fixture
     (tired root)
     (transient-mark-mode 1)
-    (tired-tests--goto "alpha.txt")
-    (beginning-of-line)
-    (push-mark (point) t t)
     (tired-tests--goto "link")
     (beginning-of-line)
-    (should (equal (tired-tests--target-names) '("alpha.txt" "beta.txt")))))
+    (push-mark (point) t t)
+    (tired-tests--goto "alpha.txt")
+    (beginning-of-line)
+    (should (equal (tired-tests--target-names) '("link")))))
 
 (ert-deftest tired-region-loses-to-the-selection ()
   "An explicit selection wins over the active region."
@@ -1433,12 +1449,12 @@ The file row may lie inside the same region, and it joins once."
   "Clear drops both target sources, so a region never survives it."
   (tired-tests--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-tests--mark-row-range "link" "alpha.txt")
     (should (use-region-p))
     (tired-select-none)
     (should-not (use-region-p))
     (should-not tired--selection)
-    (should (equal (tired-tests--target-names) '("link")))))
+    (should (equal (tired-tests--target-names) '("beta.txt")))))
 
 (ert-deftest tired-narrow-to-selection-accepts-a-region ()
   "Narrow reads the region when the selection stays empty."
@@ -1464,7 +1480,7 @@ directory does."
     (deactivate-mark)
     (tired-tests--mark-row-range ".hidden" "beta.txt")
     (tired--update-mode-line)
-    (should (string-match-p "3 in region, 44" (tired--mode-line)))))
+    (should (string-match-p "4 in region, 53" (tired--mode-line)))))
 
 (ert-deftest tired-redraw-restores-the-mark-by-path ()
   "Refresh and sort keep the mark on the same entry."
@@ -1561,7 +1577,7 @@ printer walked it again, so a redraw cost two walks."
   "The mode line reports the region when the selection is empty."
   (tired-tests--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-tests--mark-row-range "link" "alpha.txt")
     (should (string-match-p "2 in region" (tired--mode-line)))
     (tired-select-toggle)
     (should-not (string-match-p "in region" (tired--mode-line)))))
@@ -1905,8 +1921,8 @@ reaches the network."
     (tired-tests--goto "solo/inner")
     (tired-insert-subdir)
     (should (equal (tired-tests--names)
-                   '("solo/inner" "sub" ".hidden" "alpha.txt"
-                     "beta.txt" "link")))))
+                   '("solo/inner" "sub" ".hidden" "link" "alpha.txt"
+                     "beta.txt")))))
 
 (ert-deftest tired-collapse-stops-at-a-hidden-link ()
   "A hidden name in the middle of a chain cancels the collapse."

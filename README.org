@@ -17,6 +17,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   inherits `parenthesis'
 - Name column fits the longest entry, clamped to the window width
 - Directories first, then sort by name, size, modification time or mode
+- The name sort groups files by extension, as `ls -X` does, and
+  `tired-sort-by-extension' turns the grouping off
 - Insert subdirectories as nested, indented sections
 - Expand a file into sections: org headings, Emacs Lisp top-level
   forms, Rust items and Markdown headings through tree-sitter, and
@@ -664,7 +666,12 @@ The Rust section test skips itself when no grammar is present.  Point
   an entry or a section, and the tree walk emits both.
 - Rows are vectors, as Emacs 31 `tabulated-list-print-entry' requires.
 - Sorting happens in Elisp, not in =tabulated-list=.  Directories stay
-  first in both sort directions.
+  first in both sort directions.  The name sort compares the file
+  extension first and the whole name second, so files of one kind
+  group together.  `tired-sort-by-extension', on by default, turns
+  that grouping off, and the extension compare folds case.  The size,
+  modification time and mode keys keep the plain name order, in the
+  tie-break too.
 - See =docs/adr/= for the recorded decisions.
 
 * License

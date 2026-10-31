@@ -398,10 +398,10 @@ carries the process id.  A set option wins."
     (tired-tests--with-trash
       (tired root)
       (tired-goto-last-entry)
-      (should (equal (tired-entry-name (tired--row-at-point)) "link"))
+      (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))
       (tired-delete)
       (should (tired-entry-p (tired--row-at-point)))
-      (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt")))))
+      (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt")))))
 
 (ert-deftest tired-delete-of-the-only-entry-empties-the-listing ()
   "Delete of the only row leaves an empty listing and no error."
@@ -424,10 +424,10 @@ carries the process id.  A set option wins."
   (tired-tests--with-fixture
     (tired root)
     (tired-goto-last-entry)
-    (should (equal (tired-entry-name (tired--row-at-point)) "link"))
-    (delete-file (expand-file-name "link" root))
+    (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))
+    (delete-file (expand-file-name "beta.txt" root))
     (tired-refresh)
-    (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))))
+    (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt"))))
 
 (ert-deftest tired-delete-of-a-directory-leaves-point-on-the-next-entry ()
   "Delete of a directory with rows below it moves point past its subtree."
@@ -450,19 +450,22 @@ carries the process id.  A set option wins."
       (tired-toggle-subdir)
       (tired-tests--goto-section "Intro")
       (tired-delete)
-      (should (equal (tired-entry-name (tired--row-at-point)) "zeta.txt")))))
+      (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt")))))
 
 (ert-deftest tired-delete-of-the-last-expanded-file-keeps-the-row-above ()
-  "Delete of the last expanded file stops on the row that remains."
+  "Delete of the last expanded file stops on the row that remains.
+The plain name order puts the Org file below every other file, so
+the test binds `tired-sort-by-extension' to nil."
   (tired-tests--with-fixture
     (tired-tests--with-trash
       (tired-tests--write "notes.org" "* Intro\n* Body\n")
-      (tired root)
-      (tired-tests--goto "notes.org")
-      (tired-toggle-subdir)
-      (tired-tests--goto-section "Intro")
-      (tired-delete)
-      (should (equal (tired-entry-name (tired--row-at-point)) "link")))))
+      (let ((tired-sort-by-extension nil))
+        (tired root)
+        (tired-tests--goto "notes.org")
+        (tired-toggle-subdir)
+        (tired-tests--goto-section "Intro")
+        (tired-delete)
+        (should (equal (tired-entry-name (tired--row-at-point)) "link"))))))
 
 (ert-deftest tired-delete-reports-partial-failure ()
   "A vanished target does not stop the remaining targets."
