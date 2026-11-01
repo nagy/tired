@@ -30,6 +30,8 @@
 
 (require 'tired-tests-sections)
 
+(require 'tired-tests-elements)
+
 (require 'tired-tests-file-ops)
 
 (require 'tired-tests-export)

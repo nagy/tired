@@ -884,8 +884,9 @@ export reuses one buffer per format and directory, so a second call
 replaces the old text.  An export that a selection or a region limits
 always gets a new buffer, because another target set holds other rows.
 
-The CSV export prints the four listing columns.  A path is relative to
-the shown directory.  The size is a byte count, or 0 for a directory,
+The CSV export prints the four disk columns.  The Elements count stays
+out, because it is a derived number that needs its own read.  A path is
+relative to the shown directory.  The size is a byte count, or 0 for a directory,
 because a recursive total costs one walk per directory.  RFC 4180
 quotes a field that holds a comma or a quote.
 
@@ -896,7 +897,7 @@ sub/inner.txt,5,2026-10-31T19:08:14+00:00,-rw-r--r--
 alpha.txt,3,2026-10-31T19:08:14+00:00,-rw-r--r--
 #+end_src
 
-The text export keeps the listing columns and prints the path of
+The text export keeps the four disk columns and prints the path of
 every entry relative to the shown directory in the name column.  The
 column starts at the listing root, as the CSV and the JSON do.  A
 grep finds a path on one line:

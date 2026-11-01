@@ -35,8 +35,9 @@ README before you document a command.
 - `tired-tests.el` — loads the suites
 - `tired-tests-fixtures.el` — shared fixtures, helpers and setup
 - `tired-tests-core.el`, `tired-tests-sections.el`,
-  `tired-tests-file-ops.el`, `tired-tests-export.el`,
-  `tired-tests-evil.el` — one suite per library
+  `tired-tests-elements.el`, `tired-tests-file-ops.el`,
+  `tired-tests-export.el`, `tired-tests-evil.el` — one suite per
+  library
 - `flake.nix`, `README.org`, `GLOSSARY.md`, `docs/adr/`, `LICENSE`
 
 ## Build & test
@@ -674,7 +675,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   heading sets the top level, and a later shallower one joins it, so
   the number equals the rows that print at depth zero.  A count of the
   minimum level alone disagrees with the tree that TAB shows.
-- Batch Emacs runs no idle timer, so a test that waits for a count
-  binds `tired--elements-always`, binds `tired-elements-budget` to nil,
-  calls `tired--elements-run` and then calls `tired--elements-reprint`.
-  A test that needs the real timer stubs `tired--elements-schedule`.
+- Batch Emacs runs no idle timer and no reprint timer.
+  `tired-tests--with-fixture` binds a private element cache and an empty
+  queue, stubs the two schedulers and sets `tired--elements-always`, so
+  no test leaks a timer.  `tired-tests--flush-elements` calls
+  `tired--elements-run` and then `tired--elements-reprint`.  A test that
+  needs the real scheduler stubs `run-with-idle-timer` itself.

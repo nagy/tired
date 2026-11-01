@@ -22,7 +22,7 @@
 ;;; Commentary:
 
 ;; Three commands write the current view to a read-only buffer:
-;; `tired-export-csv' writes the four listing columns,
+;; `tired-export-csv' writes the four disk columns,
 ;; `tired-export-text' writes the view with a relative path on every
 ;; line, and `tired-export-json' writes the array that `rclone lsjson'
 ;; prints.  Each command reads the transient selection first, then the
@@ -64,7 +64,7 @@ TIME reports the epoch."
 
 (defun tired--export-text (entries)
   "Return ENTRIES as aligned text with a relative path on every line.
-The path is relative to the shown directory.  The other three
+The path is relative to the shown directory.  The other three disk
 columns follow the path in the order of the listing.  The path
 column grows to the longest path, so no path wraps and a later grep
 finds the whole path on one line."
@@ -102,8 +102,9 @@ break, and double every inner quote, as RFC 4180 asks."
 
 (defun tired--export-csv (entries)
   "Return ENTRIES as CSV text with a header row.
-The header names the four columns of the listing.  A path is
-relative to the shown directory, and a directory reports size 0."
+The header names the four disk columns of the listing.  The Elements
+count stays out, because it is a derived number.  A path is relative
+to the shown directory, and a directory reports size 0."
   (mapconcat
    #'identity
    (cons "Name,Size,Modified,Mode"
@@ -226,16 +227,17 @@ the export buffer."
 
 (defun tired-export-csv ()
   "Export the targets or the whole view as CSV.
-Write a read-only buffer with one row per entry and the four
-listing columns.  A path is relative to the shown directory."
+Write a read-only buffer with one row per entry and the four disk
+columns.  The Elements count stays out, because it is derived.  A
+path is relative to the shown directory."
   (interactive)
   (tired--export 'csv))
 
 (defun tired-export-text ()
   "Export the targets or the whole view as aligned plain text.
-The text mirrors the listing columns, but every line starts with
-the path of its entry relative to the shown directory instead of
-an indented name."
+The text mirrors the four disk columns of the listing, but every
+line starts with the path of its entry relative to the shown
+directory instead of an indented name."
   (interactive)
   (tired--export 'text))
 

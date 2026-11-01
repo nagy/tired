@@ -65,33 +65,45 @@ a symlink, and removes every Tired buffer it opened."
           ;; no budget.
           (tired--size-cache (make-hash-table :test #'equal))
           (tired--size-always t)
-          (tired-directory-size-budget nil))
-     (unwind-protect
-         (progn
-           (with-temp-file (expand-file-name "alpha.txt") (insert "abc"))
-           (with-temp-file (expand-file-name "beta.txt")
-             (insert (make-string 40 ?x)))
-           (with-temp-file (expand-file-name ".hidden") (insert "h"))
-           (make-directory (expand-file-name "sub/deep") t)
-           (with-temp-file (expand-file-name "sub/inner.txt")
-             (insert "inner"))
-           (with-temp-file (expand-file-name "sub/deep/leaf.txt")
-             (insert "leaf"))
-           (make-symbolic-link "alpha.txt" (expand-file-name "link"))
-           ;; A directory symlink that points back at the root.  The
-           ;; listing guard must not recurse through it.
-           (make-symbolic-link root (expand-file-name "sub/loop"))
-           ,@body)
-       (dolist (buffer (buffer-list))
-         (with-current-buffer buffer
-           (when (and (string-prefix-p "*Tired Export " (buffer-name))
-                      (string-prefix-p root (or default-directory "")))
-             (kill-buffer buffer))
-           (when (and (derived-mode-p 'tired-mode)
-                      tired--directory
-                      (string-prefix-p root tired--directory))
-             (kill-buffer buffer))))
-       (delete-directory root t))))
+          (tired-directory-size-budget nil)
+          ;; The element cache and the idle queue are global too.
+          ;; Stub the two schedulers, because batch Emacs runs no idle
+          ;; timer and a test flushes the queue itself.
+          (tired--elements-cache (make-hash-table :test #'equal))
+          (tired--elements-queued (make-hash-table :test #'equal))
+          (tired--elements-jobs nil)
+          (tired--elements-dirty nil)
+          (tired--elements-always t)
+          (tired-elements-budget nil))
+     (cl-letf (((symbol-function 'tired--elements-schedule) #'ignore)
+               ((symbol-function 'tired--elements-reprint-schedule)
+                #'ignore))
+       (unwind-protect
+           (progn
+             (with-temp-file (expand-file-name "alpha.txt") (insert "abc"))
+             (with-temp-file (expand-file-name "beta.txt")
+               (insert (make-string 40 ?x)))
+             (with-temp-file (expand-file-name ".hidden") (insert "h"))
+             (make-directory (expand-file-name "sub/deep") t)
+             (with-temp-file (expand-file-name "sub/inner.txt")
+               (insert "inner"))
+             (with-temp-file (expand-file-name "sub/deep/leaf.txt")
+               (insert "leaf"))
+             (make-symbolic-link "alpha.txt" (expand-file-name "link"))
+             ;; A directory symlink that points back at the root.  The
+             ;; listing guard must not recurse through it.
+             (make-symbolic-link root (expand-file-name "sub/loop"))
+             ,@body)
+         (dolist (buffer (buffer-list))
+           (with-current-buffer buffer
+             (when (and (string-prefix-p "*Tired Export " (buffer-name))
+                        (string-prefix-p root (or default-directory "")))
+               (kill-buffer buffer))
+             (when (and (derived-mode-p 'tired-mode)
+                        tired--directory
+                        (string-prefix-p root tired--directory))
+               (kill-buffer buffer))))
+         (delete-directory root t)))))
 
 (defvar tired-tests--window-shown nil
   "When non-nil, the size gate reads the listing as shown.
