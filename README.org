@@ -14,7 +14,9 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Size column colored by `tired-file-size', which inherits `default'
 - Directory slash colored by `tired-directory-suffix-face', which
   inherits `parenthesis'
-- Name column fits the longest entry, clamped to the window width
+- Name column fits the longest entry, clamped to the window width.  The
+  window that renders the listing decides that width, and a second
+  window of another size keeps the column stable
 - Directories first, then sort by name, size, modification time or mode
 - `tired-group-directories' keeps that directory group, and nil
   interleaves directories and files

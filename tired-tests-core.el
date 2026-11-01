@@ -456,6 +456,89 @@ the width of the listing untouched."
       (tired--window-size-changed (selected-frame)))
     (should (equal "beta.txt" (tired-entry-name (tired--row-at-point))))))
 
+(ert-deftest tired-name-column-keeps-the-window-that-shows-the-listing ()
+  "A redraw sizes the column from the window that renders the listing.
+The selected window can show another buffer in another frame, and its
+width would restyle the columns of a buffer that it never draws."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
+    (tired root)
+    (let ((listing (selected-window))
+          (other (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer other
+                               (get-buffer-create " *tired-tests-other*"))
+            (select-window other)
+            (cl-letf (((symbol-function 'window-width)
+                       (lambda (&optional window _pixelwise)
+                         (if (eq (or window (selected-window)) listing)
+                             120
+                           60))))
+              (with-current-buffer (window-buffer listing)
+                (tired-refresh)
+                (should (= 60 (nth 1 (aref tabulated-list-format 0)))))))
+        (select-window listing)
+        (delete-window other)
+        (when (get-buffer " *tired-tests-other*")
+          (kill-buffer " *tired-tests-other*"))))))
+
+(ert-deftest tired-window-size-change-ignores-a-window-without-the-listing ()
+  "A size event from a window that does not decide the width repaints
+nothing.  Another window of another size keeps the column that the
+pinned window asked for."
+  (tired-tests--with-fixture
+    (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
+    (tired root)
+    (let ((listing (selected-window))
+          (other (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer other
+                               (get-buffer-create " *tired-tests-other*"))
+            (cl-letf (((symbol-function 'window-width)
+                       (lambda (&optional window _pixelwise)
+                         (if (eq (or window (selected-window)) listing)
+                             120
+                           60))))
+              (with-current-buffer (window-buffer listing)
+                (tired-refresh)
+                (should (= 60 (nth 1 (aref tabulated-list-format 0))))
+                (should-not (tired--width-changed-p other)))))
+        (delete-window other)
+        (when (get-buffer " *tired-tests-other*")
+          (kill-buffer " *tired-tests-other*"))))))
+
+(ert-deftest tired-size-redraw-reuses-the-pinned-window ()
+  "The idle size pass keeps the window that rendered the listing.
+The pass once read `get-buffer-window' with ALL-FRAMES set, so it took
+an arbitrary window from any frame, and the column then followed the
+width of that window."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((listing (selected-window))
+          (other (split-window))
+          (seen 'none))
+      (unwind-protect
+          (progn
+            (set-window-buffer other
+                               (get-buffer-create " *tired-tests-other*"))
+            (select-window other)
+            (with-current-buffer (window-buffer listing)
+              (setq tired--size-deferred t)
+              (cl-letf (((symbol-function 'tired--redraw)
+                         (lambda (&optional window) (setq seen window)))
+                        ;; An arbitrary pick names the window that the
+                        ;; old pass would have sized the column from.
+                        ((symbol-function 'get-buffer-window)
+                         (lambda (&rest _) other)))
+                (tired--size-redraw (current-buffer))
+                (should (eq seen listing)))))
+        (select-window listing)
+        (delete-window other)
+        (when (get-buffer " *tired-tests-other*")
+          (kill-buffer " *tired-tests-other*"))))))
+
 (ert-deftest tired-filter-matches-case-insensitively ()
   "A filter keeps only matching names."
   (tired-tests--with-fixture

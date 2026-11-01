@@ -129,7 +129,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    prunes dead state and then redraws.  A redraw binds
    `tired--size-deadline` from `tired-directory-size-budget` and
    `tired--size-walks` at zero, so a size walk stops when the budget
-   ends.
+   ends.  The name column width comes from `tired--pin-width-window`,
+   which pins the window that renders the listing in
+   `tired--width-window` and returns it.
 7. Selection and region share one target path.  `tired--selection`
    holds paths and `tired--selection-set` mirrors it.
    `tired--targets` commits an active region into the selection, then
@@ -421,6 +423,22 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   every caller tests the value: a nil total prints an empty cell, keeps
   the plain directory face and counts as no byte.  A cached total still
   serves a hidden listing, because the cache read costs nothing.
+- `tabulated-list-format` is buffer-local and permanent-local, so one
+  name column width serves every window and every frame that shows the
+  listing.  `tired--pin-width-window` pins the window that renders the
+  listing in `tired--width-window`, and `tired--redraw-buffer` calls it.
+  The pin serves every later redraw, including the idle size pass, so a
+  timer or a frame event never restyles the columns from a window of
+  another size.  The selected window alone is no answer: it can show
+  another buffer in another frame, with another width.  Only a window
+  that decides the width repaints through `tired--width-changed-p`, so a
+  frame that holds the listing in a window of another size keeps the
+  column that the pin asked for.  Do not call `get-buffer-window` with
+  ALL-FRAMES set to pick the width, and do not re-pin from
+  `window-selection-change-functions`, or a mouse move between frames
+  restyles the column again.  A window that does not show the listing
+  never pins itself, so `tired-noselect` keeps its stale pin out of the
+  way until a window shows the buffer.
 - `tired-noselect` redraws before a window exists, so its sizes stay
   unwalked.  A buffer-local `window-buffer-change-functions` entry calls
   `tired--window-buffer-changed`, which schedules a redraw through

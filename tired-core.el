@@ -1324,6 +1324,40 @@ a window or for the budget of the next redraw."
         (let ((tired--size-stamp (float-time)))
           (tired--subtree-size directory))))))
 
+(defvar-local tired--width-window nil
+  "Window that decides the name column width, or nil before a redraw.
+`tabulated-list-format' belongs to the buffer, so one width serves
+every window and every frame that shows the listing.  A redraw pins
+the window that renders the listing here, and a later redraw reads
+the pin, so a timer or a frame event never restyles the columns from
+a window of another size.")
+
+(defun tired--width-window (&optional hint)
+  "Return the window that decides the name column width.
+Prefer the pin in `tired--width-window' while it still shows the
+listing, then HINT while it shows the listing, then the selected
+window while it shows it, then the first window that shows it.
+The selected window alone is no answer: it can show another buffer
+in another frame, with another width, and the buffer holds one
+`tabulated-list-format' for every window."
+  (let ((shown (get-buffer-window-list (current-buffer) nil t)))
+    (cond
+     ((memq tired--width-window shown) tired--width-window)
+     ((memq hint shown) hint)
+     ((memq (selected-window) shown) (selected-window))
+     ((car shown))
+     (t (selected-window)))))
+
+(defun tired--pin-width-window (&optional hint)
+  "Pin the window that decides the name column width, and return it.
+HINT is the window that a caller offers, or nil.  A window that
+does not show the listing stays unpinned, so a listing that no
+window shows keeps a stale pin out of its way."
+  (let ((window (tired--width-window hint)))
+    (when (memq window (get-buffer-window-list (current-buffer) nil t))
+      (setq tired--width-window window))
+    window))
+
 (defun tired--schedule-size-redraw (&optional delay)
   "Redraw the listing after DELAY seconds to walk a deferred size.
 DELAY defaults to `tired--size-redraw-delay'.  A zero delay moves the
@@ -1348,7 +1382,7 @@ then schedules one more pass."
       (when (and (derived-mode-p 'tired-mode)
                  tired--size-deferred
                  (tired--size-window-p))
-        (tired--redraw (get-buffer-window buffer t))))))
+        (tired--redraw (tired--width-window))))))
 
 (defun tired--window-buffer-changed (_window)
   "Redraw the listing after a window starts to show it.
@@ -2030,14 +2064,15 @@ nothing."
 
 (defun tired--redraw-buffer (&optional window)
   "Redraw the listing from the cached entries.
-WINDOW is the window that shows the buffer, or nil for the selected
-window.  Its width limits the name column.  The redraw keeps the
-point and the scroll position of every window that shows the listing.
+WINDOW is the window that shows the buffer, or nil for the pin in
+`tired--width-window'.  Its width limits the name column.  The
+redraw keeps the point and the scroll position of every window that
+shows the listing.
 The redraw walks a directory size until `tired-directory-size-budget'
 ends, and `tired--size-deferred' then sends a later pass over the
 rows that it left unwalked."
   (setq tired--size-deferred nil)
-  (let* ((window (or window (selected-window)))
+  (let* ((window (tired--pin-width-window window))
          (tired--size-walks 0)
          (tired--size-deadline
           (and tired-directory-size-budget
@@ -2087,12 +2122,15 @@ The size hook fires once per changed window of a frame, and it also
 fires when the echo area grows.  A redraw that finds the same width
 has nothing to do, and its reprint would only cost the point and the
 scroll position of the window."
-  (/= (tired--name-column-width window)
+  (/= (tired--name-column-width (tired--width-window window))
       (nth 1 (aref tabulated-list-format 0))))
 
 (defun tired--window-size-changed (frame)
   "Redraw Tired listings in the windows of FRAME.
-A resize changes the space available to the name column."
+A resize changes the space available to the name column.  Only a
+window that decides the width repaints: a frame that holds the
+listing in a window of another size keeps the column that the
+pinned window asked for."
   (dolist (window (window-list frame 'nomini))
     (with-current-buffer (window-buffer window)
       (when (and (derived-mode-p 'tired-mode)
