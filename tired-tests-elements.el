@@ -247,6 +247,105 @@ The header row counts, and a blank line stays out."
       (tired-tests--flush-elements))
     (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))))
 
+;;; Parquet
+
+(defun tired-tests--leb128 (value)
+  "Return VALUE as a list of unsigned LEB128 bytes."
+  (let (bytes)
+    (while (> value 127)
+      (push (logior 128 (logand value 127)) bytes)
+      (setq value (ash value -7)))
+    (nreverse (push value bytes))))
+
+(defun tired-tests--parquet-footer (rows)
+  "Return a minimal Thrift `FileMetaData' footer with ROWS."
+  (apply #'unibyte-string
+         (append
+          (list #x15) (tired-tests--leb128 2)     ; field 1, version 1
+          (list #x19 #x1C)                        ; field 2, schema of 1
+          (list #x18 #x01 ?x #x00)                ; SchemaElement {name "x"}
+          (list #x16) (tired-tests--leb128 (* 2 rows))
+          (list #x00))))
+
+(defun tired-tests--parquet-content (footer &optional tail-magic)
+  "Return a Parquet file body with FOOTER and TAIL-MAGIC."
+  (let ((length (length footer)))
+    (concat "PAR1" footer
+            (unibyte-string (logand length #xff)
+                            (logand (ash length -8) #xff) 0 0)
+            (or tail-magic "PAR1"))))
+
+(defmacro tired-tests--write-bytes (name content)
+  "Write CONTENT, a unibyte string, to NAME inside `root'."
+  (declare (indent 1) (debug t))
+  `(let ((coding-system-for-write 'no-conversion))
+     (with-temp-file (expand-file-name ,name root)
+       (set-buffer-multibyte nil)
+       (insert ,content))))
+
+(ert-deftest tired-elements-parquet-counts-the-rows ()
+  "A Parquet file counts the rows of its footer."
+  (tired-tests--with-fixture
+    (tired-tests--write-bytes "a.parquet"
+      (tired-tests--parquet-content (tired-tests--parquet-footer 42)))
+    (tired root)
+    (tired-tests--flush-elements)
+    (should (= 42 (tired--elements-value (tired-tests--entry "a.parquet"))))
+    (should (equal "42" (tired-tests--elements-cell "a.parquet")))))
+
+(ert-deftest tired-elements-parquet-keeps-a-foreign-file-out ()
+  "A bad tail magic, a short file and an impossible length count nothing."
+  (tired-tests--with-fixture
+    (tired-tests--write-bytes "a.parquet"
+      (tired-tests--parquet-content (tired-tests--parquet-footer 7) "PARE"))
+    (tired-tests--write-bytes "b.parquet" "PAR1")
+    (tired-tests--write-bytes "c.parquet"
+      (concat "PAR1" "x" (unibyte-string 200 0 0 0) "PAR1"))
+    (tired root)
+    (tired-tests--flush-elements)
+    (should-not (tired--elements-value (tired-tests--entry "a.parquet")))
+    (should-not (tired--elements-value (tired-tests--entry "b.parquet")))
+    (should-not (tired--elements-value (tired-tests--entry "c.parquet")))))
+
+(ert-deftest tired-elements-parquet-survives-a-chunk-boundary ()
+  "A footer larger than one chunk parses over several steps."
+  (tired-tests--with-fixture
+    (tired-tests--write-bytes "a.parquet"
+      (tired-tests--parquet-content (tired-tests--parquet-footer 1234)))
+    (let ((tired-elements-chunk-size 4))
+      (tired root)
+      (tired-tests--flush-elements))
+    (should (= 1234 (tired--elements-value (tired-tests--entry "a.parquet"))))))
+
+(ert-deftest tired-elements-parquet-skips-every-schema-field ()
+  "The skipper walks a schema of every Thrift type."
+  (let ((footer (apply #'unibyte-string
+                       (append
+                        (list #x15 #x02)                  ; version 1
+                        (list #x19 #x1C)                  ; schema of 1
+                        (list #x18 #x01 ?x)               ; name "x"
+                        (list #x15 #x06)                  ; i32 3
+                        (list #x16) (tired-tests--leb128 600) ; i64 300
+                        (list #x17 0 0 0 0 0 0 0 0)       ; double
+                        (list #x19 #x25 #x02 #x04)        ; list<i32> 2
+                        (list #x1B #x01 #x58 #x0E #x01 ?y) ; map<i32,binary>
+                        (list #x1C #x00)                  ; nested struct
+                        (list #x11)                       ; bool true
+                        (list #x00)                       ; end SchemaElement
+                        (list #x16) (tired-tests--leb128 200000) ; rows 100000
+                        (list #x00)))))
+    (should (= 100000 (tired--parquet-count footer))))
+  (should (eq 'eof (condition-case nil
+                       (tired--parquet-count (unibyte-string #x15))
+                     (tired--thrift-eof 'eof))))
+  (should (eq 'invalid (condition-case nil
+                           (tired--parquet-count (unibyte-string #x1F))
+                         (tired--thrift-invalid 'invalid)))))
+
+(ert-deftest tired-elements-parquet-returns-nil-without-a-row-count ()
+  "A footer that ends before field 3 has no count."
+  (should-not (tired--parquet-count (unibyte-string #x15 #x02 #x00))))
+
 ;;; The section fallback
 
 (ert-deftest tired-elements-sections-count-the-top-level ()

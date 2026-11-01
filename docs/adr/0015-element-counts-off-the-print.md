@@ -70,7 +70,10 @@ top level.  The Markdown dissector keeps one bucket per level and
 applies the same rule, so the column agrees with the tree that TAB
 shows.  The CSV dissector counts records rather than lines, because a
 quoted field may hold a newline, and a record that starts with `#` is a
-comment.
+comment.  The Parquet dissector reads the tail, then the footer prefix,
+and parses Thrift compact protocol up to `num_rows`.  The row groups
+follow the count, so they stay unread, and a page codec never reaches
+the number.
 
 A sort on the column places an unknown count last in both directions.
 A sort that reads a count that is still pending moves its row when the

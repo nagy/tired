@@ -48,9 +48,9 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Optional recursive size of a directory
 - Elements column that counts the children of a directory, the items of
   a JSON array or object, the top-level Markdown headings, the
-  uncommented rows of a CSV file, or the top-level sections of any file
-  with a handler, filled in the idle state through a hook that the user
-  extends
+  uncommented rows of a CSV file, the row count of a Parquet footer, or
+  the top-level sections of any file with a handler, filled in the idle
+  state through a hook that the user extends
 - Optional evil bindings in =tired-evil.el=, with the evil motions kept
 - Native Elisp listing, no external process
 - A `thing-at-point' provider for `filename' and `existing-filename',
@@ -517,6 +517,7 @@ items that a row holds:
 | JSON file                     | The items of a top-level array, or the keys of a top-level object |
 | Markdown file                 | The headings at the top level of the tree   |
 | CSV file                      | The rows that do not start with `#`, the header included |
+| Parquet file                  | The rows of its footer, never a data page   |
 | Any other file with a handler | The sections that print at depth zero       |
 | Section row                   | Nothing, because a section is not a file    |
 
@@ -528,7 +529,11 @@ a file whose first heading is `##` counts its `##` headings, and a later
 does in the tree.  A CSV file counts the rows that do not start with a
 `#` character, and the header row counts too.  A quoted field may hold
 a comma or a newline, so a `#` inside one never starts a comment, and a
-blank line stays out.  Every other file with a handler counts through that
+blank line stays out.  A Parquet file counts the rows of its footer:
+the dissector reads the last eight bytes, then the start of the footer,
+and stops at the row count.  It reads no data page, so a page codec
+such as ZSTD never reaches the number, and two range reads fill the
+cell.  Every other file with a handler counts through that
 handler: Org top-level headings, Emacs Lisp top-level forms, Rust
 items, Cargo tables, and SQLite tables and views.  A file without a
 handler keeps an empty cell, and so does a remote path, because every
@@ -560,8 +565,9 @@ seconds:
 #+end_src
 
 The section fallback parses a whole file in one step, so it runs only
-below =tired-elements-sync-limit= bytes.  A larger file keeps an empty
-cell until the user expands it:
+below =tired-elements-sync-limit= bytes.  The Parquet dissector holds
+its footer under the same bound.  A larger file keeps an empty cell
+until the user expands it:
 
 #+begin_src elisp
   (setq tired-elements-sync-limit 1000000)

@@ -38,6 +38,7 @@
     tired-elements-json
     tired-elements-markdown
     tired-elements-csv
+    tired-elements-parquet
     tired-elements-sections)
   "Abnormal hook that counts the elements of one path.
 Each function receives the absolute file name and returns nil when
@@ -47,7 +48,8 @@ non-nil result wins, so a cheap test belongs before an expensive
 read.  `tired-elements-directory' counts the immediate children of a
 directory, `tired-elements-json' counts a top-level JSON container,
 `tired-elements-markdown' counts the top-level Markdown headings,
-`tired-elements-csv' counts the uncommented rows of a CSV file, and
+`tired-elements-csv' counts the uncommented rows of a CSV file,
+`tired-elements-parquet' reads the row count of a Parquet footer, and
 `tired-elements-sections' counts the sections at depth zero of any
 other file that a handler claims."
   :type 'hook
@@ -68,8 +70,10 @@ Only a dissector that reads a file in steps uses the value."
 
 (defcustom tired-elements-sync-limit 1000000
   "Largest file, in bytes, that the section fallback parses.
+The Parquet dissector holds its footer under the same bound.
 `tired-file-sections' parses a whole file in one call, so a larger
-file keeps an empty cell instead of blocking the idle pass."
+file keeps an empty cell instead of blocking the idle pass, and a
+footer beyond the bound keeps no count."
   :type '(integer 0 *)
   :group 'tired)
 
@@ -367,6 +371,18 @@ time or its size."
 
 ;;; Readers
 
+(defun tired--elements-read-range (path start end)
+  "Return the bytes of PATH from START to END as a unibyte string.
+`insert-file-contents-literally' seeks on a local file, so a range
+read costs the bytes that the caller asks for and never the whole
+file.  A dissector that reads a tail or a header uses this helper,
+and `tired--elements-read' wraps it for a forward walk."
+  (when (< start end)
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally path nil start end)
+      (buffer-string))))
+
 (defun tired--elements-read (job)
   "Return the next chunk of JOB as a unibyte string, or nil.
 Read with `insert-file-contents-literally', so a dissector sees the
@@ -377,11 +393,8 @@ file, so one step costs one read, whatever the size of the file."
                    (+ offset tired-elements-chunk-size))))
     (when (< offset end)
       (setf (tired--elements-job-offset job) end)
-      (with-temp-buffer
-        (set-buffer-multibyte nil)
-        (insert-file-contents-literally (tired--elements-job-path job)
-                                        nil offset end)
-        (buffer-string)))))
+      (tired--elements-read-range (tired--elements-job-path job)
+                                  offset end))))
 
 ;;; JSON
 
@@ -765,6 +778,231 @@ for another name, so the next dissector decides."
     (tired--elements-job-create
      :step #'tired--csv-step
      :state (tired--csv-state-create :start t :field t))))
+
+;;; Thrift
+
+(define-error 'tired--thrift-eof "Thrift reader reached the end of its data")
+(define-error 'tired--thrift-invalid "Invalid Thrift data")
+
+(cl-defstruct (tired--thrift (:constructor tired--thrift-create))
+  "Reader over a unibyte STRING for the Thrift compact protocol.
+POSITION points at the next byte."
+  string
+  (position 0))
+
+(defconst tired--thrift-depth-limit 64
+  "Nesting depth that `tired--thrift-skip' accepts.
+A crafted file must not exhaust the stack.")
+
+(defun tired--thrift-byte (reader)
+  "Return the next byte of READER and advance it.
+Signal `tired--thrift-eof' when no byte remains."
+  (let ((position (tired--thrift-position reader)))
+    (when (>= position (length (tired--thrift-string reader)))
+      (signal 'tired--thrift-eof nil))
+    (setf (tired--thrift-position reader) (1+ position))
+    (aref (tired--thrift-string reader) position)))
+
+(defun tired--thrift-varint (reader)
+  "Return the unsigned LEB128 integer at READER."
+  (let ((result 0)
+        (shift 0)
+        (done nil))
+    (while (not done)
+      (let ((byte (tired--thrift-byte reader)))
+        (setq result (logior result (ash (logand byte #x7f) shift)))
+        (if (zerop (logand byte #x80))
+            (setq done t)
+          (setq shift (+ shift 7))
+          (when (> shift 63)
+            (signal 'tired--thrift-invalid nil)))))
+    result))
+
+(defun tired--thrift-zigzag (reader)
+  "Return the zigzag-encoded integer at READER."
+  (let ((value (tired--thrift-varint reader)))
+    (logxor (ash value -1) (- (logand value 1)))))
+
+(defun tired--thrift-skip-bytes (reader count)
+  "Advance READER over COUNT bytes.
+Signal `tired--thrift-eof' when fewer bytes remain and
+`tired--thrift-invalid' for a negative COUNT."
+  (when (< count 0)
+    (signal 'tired--thrift-invalid nil))
+  (let ((end (+ (tired--thrift-position reader) count)))
+    (when (> end (length (tired--thrift-string reader)))
+      (signal 'tired--thrift-eof nil))
+    (setf (tired--thrift-position reader) end)))
+
+(defun tired--thrift-skip (reader type depth)
+  "Advance READER over one value of compact TYPE.
+DEPTH counts the open containers, and a deep nesting signal an
+invalid struct."
+  (when (> depth tired--thrift-depth-limit)
+    (signal 'tired--thrift-invalid nil))
+  (pcase type
+    ((or 1 2) nil)
+    (3 (tired--thrift-skip-bytes reader 1))
+    ((or 4 5 6) (tired--thrift-varint reader))
+    (7 (tired--thrift-skip-bytes reader 8))
+    (8 (tired--thrift-skip-bytes reader (tired--thrift-varint reader)))
+    ((or 9 10)
+     (let* ((header (tired--thrift-byte reader))
+            (size (ash header -4))
+            (element (logand header #x0f)))
+       (when (= size 15)
+         (setq size (tired--thrift-varint reader)))
+       (dotimes (_ size)
+         (if (memq element '(1 2))
+             (tired--thrift-skip-bytes reader 1)
+           (tired--thrift-skip reader element (1+ depth))))))
+    (11
+     (let ((size (tired--thrift-varint reader)))
+       (when (> size 0)
+         (let* ((types (tired--thrift-byte reader))
+                (key (ash types -4))
+                (value (logand types #x0f)))
+           (dotimes (_ size)
+             (tired--thrift-skip reader key (1+ depth))
+             (tired--thrift-skip reader value (1+ depth)))))))
+    (12 (tired--thrift-skip-struct reader (1+ depth)))
+    (_ (signal 'tired--thrift-invalid nil))))
+
+(defun tired--thrift-skip-struct (reader depth)
+  "Advance READER over one struct at DEPTH."
+  (let ((previous 0)
+        (done nil))
+    (while (not done)
+      (let* ((header (tired--thrift-byte reader))
+             (type (logand header #x0f)))
+        (if (zerop type)
+            (setq done t)
+          (let* ((delta (ash header -4))
+                 (field (if (zerop delta)
+                            (tired--thrift-zigzag reader)
+                          (+ previous delta))))
+            (setq previous field)
+            (tired--thrift-skip reader type depth)))))))
+
+;;; Parquet
+
+(cl-defstruct (tired--parquet-state (:constructor tired--parquet-state-create))
+  "Scanner state for the footer of a Parquet file.
+PHASE holds `tail' before the last eight bytes read and `footer'
+afterwards.  START and LENGTH locate the Thrift footer, and BUFFER
+holds the footer bytes that the scan reads so far."
+  phase
+  start
+  (length 0)
+  (buffer ""))
+
+(defun tired--parquet-le32 (string)
+  "Return the little-endian 32-bit integer in the first four bytes of STRING."
+  (+ (aref string 0)
+     (ash (aref string 1) 8)
+     (ash (aref string 2) 16)
+     (ash (aref string 3) 24)))
+
+(defun tired--parquet-count (string)
+  "Return the row count of the Thrift FileMetaData in STRING, or nil.
+Stop at field 3, so the row groups stay unread.  Signal
+`tired--thrift-eof' when STRING ends before the count."
+  (let ((reader (tired--thrift-create :string string))
+        (previous 0)
+        (result nil)
+        (done nil))
+    (while (not done)
+      (let* ((header (tired--thrift-byte reader))
+             (type (logand header #x0f)))
+        (if (zerop type)
+            (setq done t)
+          (let* ((delta (ash header -4))
+                 (field (if (zerop delta)
+                            (tired--thrift-zigzag reader)
+                          (+ previous delta))))
+            (if (= field 3)
+                (setq done t
+                      result (and (= type 6) (tired--thrift-zigzag reader)))
+              (tired--thrift-skip reader type 1))
+            (setq previous field)))))
+    result))
+
+(defun tired--parquet-tail (job state)
+  "Read the fixed tail of the file of JOB and locate its footer in STATE.
+Return `:more' when the footer wait, or `:done'."
+  (let* ((size (or (tired--elements-job-size job) 0))
+         (tail (and (>= size 12)
+                    (tired--elements-read-range
+                     (tired--elements-job-path job) (- size 8) size)))
+         (length (and tail
+                      (= (aref tail 4) ?P) (= (aref tail 5) ?A)
+                      (= (aref tail 6) ?R) (= (aref tail 7) ?1)
+                      (tired--parquet-le32 tail))))
+    (if (or (null length)
+            (< length 0)
+            (> length (- size 12)))
+        (progn
+          (setf (tired--elements-job-count job) nil)
+          :done)
+      (setf (tired--parquet-state-phase state) 'footer
+            (tired--parquet-state-start state) (- size 8 length)
+            (tired--parquet-state-length state) length
+            (tired--parquet-state-buffer state) "")
+      :more)))
+
+(defun tired--parquet-footer (job state)
+  "Read one piece of the footer of the file of JOB and parse STATE.
+Hold the growing footer in the state and parse it again, so a schema
+larger than one chunk needs no resumable Thrift reader.  A footer
+that `tired-elements-sync-limit' stops keeps no count."
+  (let* ((path (tired--elements-job-path job))
+         (start (tired--parquet-state-start state))
+         (length (tired--parquet-state-length state))
+         (buffer (tired--parquet-state-buffer state))
+         (have (length buffer)))
+    (if (> have tired-elements-sync-limit)
+        (progn
+          (setf (tired--elements-job-count job) nil)
+          :done)
+      (let* ((take (min (- length have)
+                        (max tired-elements-chunk-size (* 2 have))))
+             (buffer (concat buffer
+                             (tired--elements-read-range
+                              path (+ start have) (+ start have take)))))
+        (setf (tired--parquet-state-buffer state) buffer)
+        (let ((result (condition-case nil
+                          (tired--parquet-count buffer)
+                        (tired--thrift-eof 'eof)
+                        (tired--thrift-invalid 'invalid))))
+          (cond
+           ((integerp result)
+            (setf (tired--elements-job-count job) result)
+            :done)
+           ((or (eq result 'invalid)
+                (>= (length buffer) length))
+            (setf (tired--elements-job-count job) nil)
+            :done)
+           (t :more)))))))
+
+(defun tired--parquet-step (job)
+  "Advance JOB over the footer of its Parquet file.
+Return `:done' when the row count arrives or the file holds none."
+  (let ((state (tired--elements-job-state job)))
+    (if (eq (tired--parquet-state-phase state) 'tail)
+        (tired--parquet-tail job state)
+      (tired--parquet-footer job state))))
+
+(defun tired-elements-parquet (path)
+  "Return a count or a job for the Parquet file at PATH.
+The footer at the end of the file holds the row count, so the
+dissector reads the tail and the start of the footer and never a
+data page.  A codec such as ZSTD touches the pages alone, so it
+never reaches the count.  Return nil for another name."
+  (when (let ((case-fold-search t))
+          (string-match-p "\\.parquet\\'" path))
+    (tired--elements-job-create
+     :step #'tired--parquet-step
+     :state (tired--parquet-state-create :phase 'tail))))
 
 ;;; Sections
 

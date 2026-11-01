@@ -681,6 +681,17 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   unquoted quote stays a literal byte.  A comment record ignores every
   quote up to its newline, so an unbalanced quote never swallows the
   rest of the file.
+- A range read passes BEG first and END second.
+  `tired--elements-read-range' wraps the call, so a dissector that reads
+  a tail or a header names its offsets once.
+- The Parquet footer holds `num_rows` before `row_groups`, so
+  `tired--parquet-count' stops at field 3 and never walks a row group.
+  A footer larger than one chunk grows its buffer and parses again from
+  the start, so the Thrift reader needs no resumable state.  A compact
+  field id uses the delta in the header, and a zero delta costs a
+  zigzag varint instead.  A page codec such as ZSTD touches the pages
+  alone, so no codec reaches the count, and the tail magic `PARE` marks
+  an encrypted footer that the dissector refuses.
 - Batch Emacs runs no idle timer and no reprint timer.
   `tired-tests--with-fixture` binds a private element cache and an empty
   queue, stubs the two schedulers and sets `tired--elements-always`, so
