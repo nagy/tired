@@ -91,20 +91,23 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `directory-files-and-attributes`, so a file costs one stat and no
    second name expansion.  `tired--tables` holds the tables,
    `tired--inserted` the directories whose children show.
-2. `tired--sorted-directory-entries` filters and sorts one directory in
-   Elisp (`tired--lessp`), so directories stay first under every key.
-   With `tired-sort-by-extension` set, `tired--name-before-p` compares
-   the case-folded extension first, the way `ls -X` does, and the whole
-   name second.
+2. `tired--sorted-directory-rows` filters and sorts one directory in
+   Elisp.  It decorates every entry as a `tired-sort-row' with the sort
+   value and the name, so one redraw parses each extension once, and
+   `tired--lessp` compares the decorations.  Directories stay first
+   under every key while `tired-group-directories' holds.  With
+   `tired-sort-by-extension' set, the name value holds the case-folded
+   extension, the way `ls -X' does, and the name breaks a tie.
+   `tired--sorted-directory-entries` maps the same rows back to entries.
 3. `tired--display-rows` walks depth-first and returns `(ROW . DEPTH)`
    conses.  A `file-truename` set stops symlink cycles.
    `tired--directory-entry-p` decides whether a row takes children and
    counts a symlink that resolves to a directory.
 4. `tired--collapsed-display-entry` swaps a directory row for the leaf
-   of a single-entry chain, a file or a directory.  It runs after
-   sorting, so the row keeps the directory position, and it caches per
-   refresh in `tired--collapse-cache`, together with the directories
-   that the chain walk visited.
+   of a single-entry chain, a file or a directory.  It runs before the
+   sort, so the row sorts by the size, the time and the mode that it
+   shows, and it caches per refresh in `tired--collapse-cache`,
+   together with the directories that the chain walk visited.
 5. `tired-file-sections` picks a handler through `tired-file-handlers`,
    runs it in a temporary buffer, and turns the plists into
    `tired-section` structs.  The result caches in `tired--sections` by
@@ -384,9 +387,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   the call, or a section row signals `wrong-type-argument`.
 - Evil remaps `evil-replace` to `tired-rename`, so `r` renames a row and
   `R` keeps `tired-move`.
+- A sort key must read the value that the row prints, or the column
+  reads out of order.  `tired--sort-row` builds three subjects from one
+  entry: the table entry, the collapse clone and the sort value.  The
+  name key reads the table entry, so a chain row keeps the group and
+  the name place of its directory.  Size, time and mode read the clone.
+  The directory group tests the table entry, so `C=` never moves a row
+  across the group border.  The size key reads `tired--shown-size`,
+  the same function that fills the size cell, so a directory sorts by
+  the total that the column prints.
 - Use `tired--directory-entry-p`, not `tired-entry-dirp`, to decide
   whether a row takes children.  `DIRP` covers real directories only, and
-  the sort key, the size column and the directory face read it.
+  the sort group, the size column and the directory face read it.
 - An empty directory row takes `tired-ignored-face`, and its slash
   follows the name through `tired--directory-slash-face`.  Empty means
   that `tired--directory-total` returns zero, so `tired--name-face`

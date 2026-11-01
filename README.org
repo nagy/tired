@@ -17,6 +17,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   inherits `parenthesis'
 - Name column fits the longest entry, clamped to the window width
 - Directories first, then sort by name, size, modification time or mode
+- `tired-group-directories' keeps that directory group, and nil
+  interleaves directories and files
 - The name sort groups files by extension, as `ls -X` does, and
   `tired-sort-by-extension' turns the grouping off
 - Insert subdirectories as nested, indented sections
@@ -201,6 +203,14 @@ Every column header takes a click.  =mouse-1= on =Name=, =Size=,
 =Modified= or =Mode= sorts the listing by that column, and a click on
 the column that already sorts flips the direction, as =s= does.  The
 arrow in the label shows the current column and direction.
+
+Directories come first on every column.  Set
+`tired-group-directories' to nil to interleave directories and
+files, the way =dired= sorts by time:
+
+#+begin_src elisp
+  (setq tired-group-directories nil)
+#+end_src
 
 With `context-menu-mode' on, =mouse-3= on a row opens the Emacs
 context menu with the Tired commands at the end: visit, visit in
@@ -555,8 +565,11 @@ their reach.  A remote directory keeps its own row, because the walk
 reads one directory per level and a remote read costs a network
 round trip.
 
-The collapsed row keeps the directory's sort position, shows the
-attributes of the last entry, and acts as that entry.  =RET= opens a
+The collapsed row keeps the directory group, shows the attributes of
+the last entry, and acts as that entry.  A size, time or mode sort
+then places the row by the number that it shows, so the column reads
+in order.  A name sort keeps the place of the directory, because the
+leaf name must not regroup the row.  =RET= opens a
 file leaf, and opens a Tired buffer for a directory leaf.  =w= copies
 the real path.  The directory components of the row name take the
 directory face, and the last component takes the face that its own
@@ -790,13 +803,23 @@ The Rust section test skips itself when no grammar is present.  Point
 - A file section is a =tired-section= struct.  A listing row is either
   an entry or a section, and the tree walk emits both.
 - Rows are vectors, as Emacs 31 `tabulated-list-print-entry' requires.
-- Sorting happens in Elisp, not in =tabulated-list=.  Directories stay
-  first in both sort directions.  The name sort compares the file
+- Sorting happens in Elisp, not in =tabulated-list=.  A
+  `tabulated-list-sort-key' would sort the flat entry list, and that
+  sort breaks the per-level directory group and the inserted
+  subtree.  `tired--sorted-directory-rows' decorates one list per
+  level with the sort value and the name, so one redraw parses each
+  extension once.  `tired--lessp' compares the decorations.
+  Directories stay first in both sort directions while
+  `tired-group-directories' holds.  The name sort compares the file
   extension first and the whole name second, so files of one kind
   group together.  `tired-sort-by-extension', on by default, turns
   that grouping off, and the extension compare folds case.  The size,
   modification time and mode keys keep the plain name order, in the
   tie-break too.
+- A size sort reads `tired--shown-size', the same function that fills
+  the size cell, so a directory sorts by the recursive total that the
+  column prints.  A walk that `tired-directory-size-budget' cut short
+  shows no total, so the key falls back to the inode size.
 - See =docs/adr/= for the recorded decisions.
 
 * License

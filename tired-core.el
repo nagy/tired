@@ -86,6 +86,14 @@ dotfile counts as extensionless.  Directories stay first.  The
 other sort keys keep the plain name order, in the tie-break too."
   :type 'boolean)
 
+(defcustom tired-group-directories t
+  "When non-nil, sort every directory before every file.
+The rule holds for every sort column.  Set it to nil to interleave
+directories and files, the way `dired' sorts by time.  A collapsed
+chain row keeps the group of its entry, because the row stands for
+that entry."
+  :type 'boolean)
+
 (defcustom tired-date-format "%Y-%m-%d %H:%M"
   "Format string for the modification time column.
 See `format-time-string' for the available conversions."
@@ -519,40 +527,77 @@ A name without an extension returns an empty string, so it sorts
 before every real extension."
   (downcase (or (file-name-extension (tired-entry-name entry)) "")))
 
-(defun tired--name-before-p (a b)
-  "Return non-nil when A sorts before B by name.
-With `tired-sort-by-extension' set, the extension decides first and
-the whole name decides inside a group of equal extensions."
-  (if tired-sort-by-extension
-      (let ((left (tired--sort-extension a))
-            (right (tired--sort-extension b)))
-        (cond ((string< left right) t)
-              ((string< right left) nil)
-              (t (string< (tired-entry-name a) (tired-entry-name b)))))
-    (string< (tired-entry-name a) (tired-entry-name b))))
+(defun tired--shown-size (entry)
+  "Return the byte count that the size column shows for ENTRY, or nil.
+A file shows its own size.  A directory shows the total of its
+subtree when `tired-directory-size' holds and a walk reaches it.  A
+remote directory and a walk that `tired-directory-size-budget' cut
+short show nothing, so the value stays nil."
+  (cond
+   ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
+   ((not tired-directory-size) nil)
+   ((file-remote-p (tired-entry-path entry)) nil)
+   (t (tired--directory-total (tired-entry-path entry)))))
 
-(defun tired--key-before-p (key a b)
-  "Return non-nil when A sorts before B by KEY, ignoring direction."
-  (pcase key
-    ('name (tired--name-before-p a b))
-    ('size (< (tired-entry-size a) (tired-entry-size b)))
-    ('modified (< (tired-entry-mtime a) (tired-entry-mtime b)))
-    ('mode (string< (tired-entry-mode a) (tired-entry-mode b)))
-    (_ nil)))
+(defun tired--sort-value (entry)
+  "Return the value that `tired--sort-key' compares for ENTRY.
+The name value holds the folded extension, so a group of one
+extension stays together.  Without `tired-sort-by-extension' every
+name shares one empty extension, so the name alone decides."
+  (pcase tired--sort-key
+    ('name (if tired-sort-by-extension
+               (tired--sort-extension entry)
+             ""))
+    ('size (or (tired--shown-size entry) (tired-entry-size entry) 0))
+    ('modified (tired-entry-mtime entry))
+    ('mode (tired-entry-mode entry))
+    (_ (error "Unknown sort key: %S" tired--sort-key))))
+
+(cl-defstruct (tired-sort-row (:constructor tired--sort-row-create))
+  "One row while a listing level sorts.
+ENTRY holds the table entry, DISPLAY the collapse clone that the
+listing shows instead of it, VALUE the value of `tired--sort-key'
+and NAME the name that breaks a tie."
+  entry
+  display
+  value
+  name)
+
+(defun tired--sort-row (directory entry)
+  "Return the `tired-sort-row' for ENTRY inside DIRECTORY.
+The name key reads ENTRY, so a collapsed chain keeps the group and
+the order of its directory.  Every other key reads the row that the
+listing shows, so the order follows the size, the time and the mode
+that the row prints."
+  (let* ((clone (tired--collapsed-display-entry directory entry))
+         (subject (if (eq tired--sort-key 'name) entry (or clone entry))))
+    (tired--sort-row-create
+     :entry entry
+     :display clone
+     :value (tired--sort-value subject)
+     :name (tired-entry-name subject))))
 
 (defun tired--lessp (a b)
-  "Return non-nil when A must be listed before B.
-Directories always come first.  Within a group, entries follow
-`tired--sort-key' and `tired--sort-flip', with the name as the
-tie-breaker."
-  (cond
-   ((and (tired-entry-dirp a) (not (tired-entry-dirp b))) t)
-   ((and (tired-entry-dirp b) (not (tired-entry-dirp a))) nil)
-   (t (let ((forward (tired--key-before-p tired--sort-key a b))
-            (backward (tired--key-before-p tired--sort-key b a)))
-        (cond (forward (not tired--sort-flip))
-              (backward tired--sort-flip)
-              (t (string< (tired-entry-name a) (tired-entry-name b))))))))
+  "Return non-nil when sort row A lists before sort row B.
+With `tired-group-directories' set, a directory comes first.
+Within a group, rows follow `tired--sort-key' and `tired--sort-flip',
+with the name as the tie-breaker."
+  (let ((a-dir (and tired-group-directories
+                    (tired-entry-dirp (tired-sort-row-entry a))))
+        (b-dir (and tired-group-directories
+                    (tired-entry-dirp (tired-sort-row-entry b)))))
+    (cond
+     ((and a-dir (not b-dir)) t)
+     ((and b-dir (not a-dir)) nil)
+     (t (let ((left (tired-sort-row-value a))
+              (right (tired-sort-row-value b)))
+          (cond
+           ((if (numberp left) (< left right) (string< left right))
+            (not tired--sort-flip))
+           ((if (numberp left) (< right left) (string< right left))
+            tired--sort-flip)
+           (t (string< (tired-sort-row-name a)
+                       (tired-sort-row-name b)))))))))
 
 (defun tired--table (directory)
   "Return the entry table for DIRECTORY, or nil."
@@ -575,19 +620,27 @@ keeps its symlink name and face either way."
            (and (eq (tired-entry-type entry) 'symlink)
                 (file-directory-p (tired-entry-path entry))))))
 
-(defun tired--sorted-directory-entries (directory visible-only)
-  "Return the entries of DIRECTORY in display order.
+(defun tired--sorted-directory-rows (directory visible-only)
+  "Return the `tired-sort-row' list of DIRECTORY in display order.
 When VISIBLE-ONLY is non-nil, drop entries hidden by the filter and
 the dotfile setting."
   (let ((table (tired--table directory))
-        entries)
+        rows)
     (when table
       (maphash (lambda (_name entry)
                  (when (or (not visible-only)
                            (tired--entry-visible-p entry))
-                   (push entry entries)))
+                   (push (tired--sort-row directory entry) rows)))
                table))
-    (sort entries #'tired--lessp)))
+    (sort rows #'tired--lessp)))
+
+(defun tired--sorted-directory-entries (directory visible-only)
+  "Return the entries of DIRECTORY in display order.
+When VISIBLE-ONLY is non-nil, drop entries hidden by the filter and
+the dotfile setting.  A collapsed entry returns the table entry, so
+a caller reads the file that the row stands for."
+  (mapcar #'tired-sort-row-entry
+          (tired--sorted-directory-rows directory visible-only)))
 
 (defun tired--directory-names (directory)
   "Return the entry names of DIRECTORY, or nil when unreadable."
@@ -846,7 +899,8 @@ sections of an expanded file follow the row of that file.  With
 VISIBLE-ONLY, skip hidden, filtered and narrowed-out entries.  A
 directory seen twice through symlinks appears once.  A directory
 that leads to a single entry chain collapses into one row for the
-last entry of the chain, keeping the directory's sort position.
+last entry of the chain, and the row takes the sort place that its
+printed size, time and mode earn.
 Such a row still shows the sections of its file, and still shows the
 children of its directory, when the user expands it."
   (let ((rows nil)
@@ -856,9 +910,9 @@ children of its directory, when the user expands it."
            (let ((key (file-truename directory)))
              (unless (gethash key seen)
                (puthash key t seen)
-               (dolist (entry (tired--sorted-directory-entries directory nil))
-                 (let* ((collapsed
-                         (tired--collapsed-display-entry directory entry))
+               (dolist (sort-row (tired--sorted-directory-rows directory nil))
+                 (let* ((entry (tired-sort-row-entry sort-row))
+                        (collapsed (tired-sort-row-display sort-row))
                         (display (or collapsed entry))
                         (hidden (tired--hidden-p display))
                         (sections (and (not hidden)
@@ -1307,15 +1361,10 @@ hook, so the reprint goes through a timer."
 (defun tired--size-cell (entry)
   "Return the size column string for ENTRY.
 A remote directory keeps the column empty, because a walk over the
-network costs one round trip per file."
-  (cond
-   ((not (tired-entry-dirp entry))
-    (file-size-human-readable (tired-entry-size entry)))
-   ((not tired-directory-size) "")
-   ((file-remote-p (tired-entry-path entry)) "")
-   (t
-    (let ((total (tired--directory-total (tired-entry-path entry))))
-      (if total (file-size-human-readable total) "")))))
+network costs one round trip per file.  `tired--shown-size' decides
+the number, so the size sort and the cell agree."
+  (let ((size (tired--shown-size entry)))
+    (if size (file-size-human-readable size) "")))
 
 (defun tired--size-column (entry)
   "Return the size cell for ENTRY, painted with `tired-file-size'.

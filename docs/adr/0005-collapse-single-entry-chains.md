@@ -8,8 +8,9 @@ as the leaf.  A file leaf keeps the row shape it always had, so
 `docs/adr/` when `docs` holds only `adr`, so a branch one level down
 loses no row and no name.
 
-The row uses the leaf attributes and keeps the directory's sort
-position.  A directory leaf keeps the directory type, so `TAB`
+The row uses the leaf attributes, and a size, time or mode sort places
+it by the number that it shows.  A directory leaf keeps the directory
+type, so `TAB`
 inserts its children, `RET` opens a Tired buffer for it, and the
 inserted children indent below the collapsed row.  A directory leaf
 closes its name with a slash.
@@ -31,5 +32,6 @@ the collapse until the user expands a path; an on-demand command keeps
 the tree noisy by default; ending the chain before a branch directory
 costs a special case and hides the name of the branch.  Consequences:
 one `directory-files` call per listed directory per refresh, a cache
-that lives until the next refresh, and a row whose sort key follows
-the first directory while its columns show the leaf.
+that lives until the next refresh, and a row whose columns and sort
+key follow the leaf while the name key and the directory group follow
+the listed directory.

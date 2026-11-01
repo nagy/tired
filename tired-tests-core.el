@@ -272,6 +272,83 @@ twin.  The option nil keeps the plain name order."
                      '("sub" ".hidden" "alpha.TXT" "alpha.txt"
                        "beta.txt" "link" "notes.org"))))))
 
+(ert-deftest tired-name-sort-keeps-a-collapsed-chain-in-its-group ()
+  "The name key reads the directory, so a leaf extension moves no row.
+The chain row stays in the directory group and keeps the name place
+of its directory, because the leaf name must not regroup it."
+  (tired-tests--with-fixture
+    (let ((chain (expand-file-name "chain/a" root)))
+      (make-directory chain t)
+      (with-temp-file (expand-file-name "leaf.zzz" chain)
+        (insert "x")))
+    (tired root)
+    (should (equal (seq-take (tired-tests--names) 2)
+                   '("chain/a/leaf.zzz" "sub")))))
+
+(ert-deftest tired-sort-by-modified-follows-a-collapsed-leaf ()
+  "A collapsed row sorts by the time that its row prints.
+The top directory takes the opposite time, so the leaf decides."
+  (tired-tests--with-fixture
+    (let ((base 1600000000))
+      (dolist (spec '(("chain-old" 9000 100) ("chain-new" 0 700)))
+        (let* ((top (expand-file-name (car spec) root))
+               (leaf (expand-file-name "a/b/leaf.txt" top)))
+          (make-directory (file-name-directory leaf) t)
+          (with-temp-file leaf (insert "x"))
+          (set-file-times leaf
+                          (seconds-to-time (+ base (nth 2 spec))))
+          (set-file-times top
+                          (seconds-to-time (+ base (nth 1 spec)))))))
+    (tired root)
+    (tired-sort 'modified)
+    (should (equal (seq-filter (lambda (name)
+                                 (string-prefix-p "chain" name))
+                               (tired-tests--names))
+                   '("chain-old/a/b/leaf.txt" "chain-new/a/b/leaf.txt")))))
+
+(ert-deftest tired-sort-by-size-follows-the-printed-directory-total ()
+  "A directory sorts by the total that its size cell shows.
+Both temporary directories hold one entry, so a sort on the raw
+inode size ties and falls back to the name, which puts `big' first."
+  (tired-tests--with-fixture
+    (let ((small (expand-file-name "small" root))
+          (big (expand-file-name "big" root)))
+      (make-directory small t)
+      (make-directory big t)
+      (with-temp-file (expand-file-name "s.bin" small)
+        (insert (make-string 10 ?s)))
+      (with-temp-file (expand-file-name "b.bin" big)
+        (insert (make-string 5000 ?b))))
+    (let ((tired-directory-size t)
+          (tired-collapse-single-child nil))
+      (tired root)
+      (tired-sort 'size)
+      (let ((names (tired-tests--names)))
+        (should (equal (tired--size-cell (tired-tests--entry "small"))
+                       "10"))
+        (should (< (seq-position names "small")
+                   (seq-position names "big")))))))
+
+(ert-deftest tired-group-directories-nil-interleaves-directories ()
+  "With `tired-group-directories' nil, one order holds every row.
+The option nil lets a file sit between two directories, the way
+`dired' sorts by time."
+  (tired-tests--with-fixture
+    (let ((base 1600000000))
+      (dolist (spec '(("alpha.txt" 30) (".hidden" 10)
+                      ("sub" 20) ("beta.txt" 40)))
+        (set-file-times (expand-file-name (car spec) root)
+                        (seconds-to-time (+ base (cadr spec))))))
+    (tired root)
+    (tired-sort 'modified)
+    (should (equal (tired-tests--names)
+                   '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))
+    (let ((tired-group-directories nil))
+      (tired-refresh)
+      (should (equal (tired-tests--names)
+                     '(".hidden" "sub" "alpha.txt" "beta.txt"
+                       "link"))))))
+
 (ert-deftest tired-header-click-sorts-by-a-column ()
   "A click on a header label sorts the listing by its column."
   (tired-tests--with-fixture
