@@ -782,6 +782,239 @@ readable database."
           (nreverse sections))
       (error nil))))
 
+(defconst tired--tar-block 512
+  "Size of one tar header block and of one tar data block.")
+
+(defun tired--tar-field (header start end)
+  "Return the text between START and END of the tar HEADER.
+Stop at the first NUL byte, as the format intends."
+  (let* ((text (substring header start end))
+         (nul (cl-position 0 text)))
+    (substring text 0 (or nul (length text)))))
+
+(defun tired--tar-number (text)
+  "Return the number that the tar header field TEXT holds.
+Read an octal field, and a GNU base-256 field that sets the high bit
+of its first byte.  Return 0 for an empty field."
+  (let ((text (string-trim text "[\0 ]" "[\0 ]")))
+    (cond
+     ((string-empty-p text) 0)
+     ((>= (aref text 0) 128)
+      (let ((value (logand (aref text 0) 127))
+            (index 1))
+        (while (< index (length text))
+          (setq value (+ (* value 256) (aref text index)))
+          (setq index (1+ index)))
+        value))
+     (t (string-to-number text 8)))))
+
+(defun tired--tar-pax-records (text)
+  "Return the extended header records of TEXT as an alist.
+Each record holds a decimal length, a space, the KEY=VALUE text and a
+newline."
+  (let ((index 0)
+        (end (length text))
+        records)
+    (while (< index end)
+      (let* ((space (cl-position ?\s text :start index))
+             (length (and space
+                          (string-to-number (substring text index space))))
+             (stop (and length (> length 0) (+ index length))))
+        (if (or (null stop) (> stop end))
+            (setq index end)
+          (let* ((record (substring text (1+ space) (1- stop)))
+                 (equal (cl-position ?= record)))
+            (when equal
+              (push (cons (substring record 0 equal)
+                          (substring record (1+ equal)))
+                    records)))
+          (setq index stop))))
+    (nreverse records)))
+
+(defun tired--tar-header-name (header)
+  "Return the member name that the tar HEADER holds.
+Join the ustar prefix field and the name field when the prefix holds
+text."
+  (let ((name (tired--tar-field header 0 100))
+        (prefix (tired--tar-field header 345 500)))
+    (if (string-empty-p prefix) name (concat prefix "/" name))))
+
+(defun tired--tar-plain-text (text)
+  "Return TEXT without the NUL bytes that pad a tar record."
+  (replace-regexp-in-string "\0+" "" text))
+
+(defun tired--tar-member-name (name)
+  "Return the archive member NAME as a plain relative path, or nil.
+Drop a leading dot and a trailing slash, and reject the archive root
+and a name that leaves the archive."
+  (let ((name (replace-regexp-in-string
+               "\\`\\./" "" (tired--tar-plain-text name))))
+    (setq name (replace-regexp-in-string "/+\\'" "" name))
+    (when (and (not (string-empty-p name))
+               (not (equal name "."))
+               (not (string-prefix-p "/" name))
+               (not (string-match-p
+                     "\\(?:\\`\\|/\\)\\.\\.\\(?:/\\|\\'\\)" name)))
+      (if (multibyte-string-p name)
+          name
+        (decode-coding-string name 'utf-8)))))
+
+(defun tired--tar-level (name)
+  "Return the depth of the archive member NAME."
+  (let ((depth 0)
+        (index 0))
+    (while (setq index (cl-position ?/ name :start index))
+      (setq depth (1+ depth))
+      (setq index (1+ index)))
+    depth))
+
+(defun tired--tar-end-block-p (position)
+  "Return non-nil when the block at POSITION holds no member.
+An archive ends with a block of NUL bytes."
+  (not (string-match-p "[^\0]"
+                       (buffer-substring-no-properties
+                        position (+ position tired--tar-block)))))
+
+(defun tired--tar-entries ()
+  "Return the members of the tar archive in the current buffer.
+Each value is a plist with `:name', `:size', `:type', `:offset' and
+`:link'.  Read the 512-byte headers, and follow the GNU long-name and
+the pax extended headers that change a name, a size or a link.  The
+buffer must hold the raw bytes of the archive."
+  (let ((position (point-min))
+        (end (point-max))
+        long-name
+        long-link
+        pax
+        entries)
+    (while (and (<= (+ position tired--tar-block) end)
+                (not (tired--tar-end-block-p position)))
+      (let* ((header (buffer-substring-no-properties
+                      position (+ position tired--tar-block)))
+             (type (aref header 156))
+             (size (tired--tar-number (substring header 124 136)))
+             (offset (+ position tired--tar-block))
+             (data-end (min end (+ offset size))))
+        (pcase type
+          (?L (setq long-name (buffer-substring-no-properties offset data-end)))
+          (?K (setq long-link (buffer-substring-no-properties offset data-end)))
+          ((or ?x ?g)
+           (setq pax (append (tired--tar-pax-records
+                              (buffer-substring-no-properties offset data-end))
+                             pax)))
+          (_
+           (let* ((raw (or long-name
+                           (alist-get "path" pax nil nil #'equal)
+                           (tired--tar-header-name header)))
+                  (name (tired--tar-member-name raw))
+                  (link (tired--tar-field header 157 257))
+                  (link (or long-link
+                            (alist-get "linkpath" pax nil nil #'equal)
+                            link))
+                  (link (tired--tar-plain-text link)))
+             (setq size (if-let* ((text (alist-get "size" pax nil nil #'equal)))
+                          (string-to-number text)
+                        size))
+             (when name
+               (push (list :name name
+                           :size size
+                           :type type
+                           :offset offset
+                           :link link)
+                     entries))
+             (setq long-name nil)
+             (setq long-link nil)
+             (setq pax nil))))
+        (setq position (+ offset
+                          (* tired--tar-block
+                             (/ (+ size (1- tired--tar-block))
+                                tired--tar-block))))))
+    (nreverse entries)))
+
+(defun tired--tar-member-label (entry)
+  "Return the row label for the archive member ENTRY.
+A directory keeps a trailing slash, and a link names its target."
+  (let ((name (plist-get entry :name))
+        (type (plist-get entry :type))
+        (link (plist-get entry :link)))
+    (concat (file-name-nondirectory name)
+            (if (eq type ?5) "/" "")
+            (if (and link (not (string-empty-p link)) (memq type '(?1 ?2)))
+                (concat " -> " link)
+              ""))))
+
+(defun tired--tar-sections ()
+  "Return the section plists of the tar archive in the current buffer.
+A member row carries a synthetic ordinal as its line, because an
+archive has no lines.  Its action extracts the member."
+  (let ((line 0))
+    (mapcar (lambda (entry)
+              (let ((name (plist-get entry :name))
+                    (type (plist-get entry :type)))
+                (list :label (tired--tar-member-label entry)
+                      :line (setq line (1+ line))
+                      :level (tired--tar-level name)
+                      :kind (if (eq type ?5) 'directory 'file)
+                      :action (cons #'tired--tar-open-member (list name)))))
+            (tired--tar-entries))))
+
+(defun tired--tar-archive-buffer (path)
+  "Return a new buffer that holds the raw bytes of the archive at PATH.
+`insert-file-contents' decompresses a compressed archive, because
+`jka-compr' handles the compressed suffix."
+  (with-current-buffer (generate-new-buffer " *tired-tar*" t)
+    (let ((coding-system-for-read 'no-conversion))
+      (insert-file-contents path))
+    (set-buffer-multibyte nil)
+    (current-buffer)))
+
+(defun tired--tar-extract (path member)
+  "Write the archive member MEMBER of PATH to a new temporary file.
+Return the file name.  Signal a user error when the archive holds no
+such member, or when the member is a directory or a link."
+  (let ((buffer (tired--tar-archive-buffer path)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (let ((entry (seq-find (lambda (item)
+                                   (equal (plist-get item :name) member))
+                                 (tired--tar-entries))))
+            (cond
+             ((null entry)
+              (user-error "No member %s in %s" member path))
+             ((eq (plist-get entry :type) ?5)
+              (user-error "Member %s is a directory" member))
+             ((memq (plist-get entry :type) '(?1 ?2))
+              (user-error "Member %s is a link" member))
+             (t
+              (let* ((offset (plist-get entry :offset))
+                     (file (expand-file-name
+                            (file-name-nondirectory member)
+                            (make-temp-file "tired-tar-" t))))
+                (let ((coding-system-for-write 'no-conversion))
+                  (write-region offset (+ offset (plist-get entry :size))
+                                file nil 'silent))
+                file)))))
+      (kill-buffer buffer))))
+
+(defun tired--tar-open-member (section member &optional other-window)
+  "Visit MEMBER of the archive that SECTION belongs to.
+Extract the member to a temporary file first.  OTHER-WINDOW shows the
+file in another window."
+  (let ((file (tired--tar-extract (tired-section-path section) member)))
+    (if other-window
+        (find-file-other-window file)
+      (find-file file))))
+
+(defun tired-file-sections-tar (_path)
+  "Return the members of the current tar buffer as section plists.
+The buffer already holds the file, so the handler ignores PATH.
+Emacs decompresses a `.tar.gz' or a `.tar.zst' archive before this
+call, so one parser serves every suffix.  The handler reads the raw
+bytes, because a tar header holds NUL bytes.  Return nil when the
+buffer holds no tar member."
+  (set-buffer-multibyte nil)
+  (tired--tar-sections))
+
 (provide 'tired-sections)
 
 ;;; tired-sections.el ends here

@@ -24,7 +24,7 @@ README before you document a command.
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, `tired-mode`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Go, Markdown,
-  Cargo and SQLite handlers
+  Cargo, SQLite and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the
   global count cache and the idle queue
 - `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
@@ -59,8 +59,9 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
   argument on the build does nothing; the default `emacsPackages` builds
   a wrapper that carries evil instead.  `packageRequires` stays empty, so
   the metadata names no elisp dependency.  `checkInputs` holds the
-  tree-sitter Rust, Go, Markdown and TOML grammars, and `checkPhase` exports
-  `TREESIT_EXTRA_LOAD_PATH`; a missing grammar skips its test instead of
+  tree-sitter Rust, Go, Markdown and TOML grammars, and `checkPhase`
+  exports `TREESIT_EXTRA_LOAD_PATH` and puts `zstd` on the path for the
+  archive fixtures; a missing grammar skips its test instead of
   failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el`, `checkdoc` on
   the seven libraries, and `relint` on the same seven.  `checkdoc` and
@@ -119,7 +120,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    together with the directories that the chain walk visited.
 5. `tired-file-sections` picks a handler through `tired-file-handlers`,
    runs it in a temporary buffer, and turns the plists into
-   `tired-section` structs.  The result caches in `tired--sections` by
+   `tired-section` structs.  A file above
+   `tired-section-file-size-limit` runs no handler, and it writes no
+   cache entry, because a handler reads the whole file first.  The
+   result caches in `tired--sections` by
    modification time, so a redraw does not re-parse.  A handler
    fontifies its buffer and returns propertized labels, and
    `tired--section-cell` mirrors each `face` into `font-lock-face`.
@@ -559,6 +563,24 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   that the file declares before its type stays at level zero, because
   an indent with no parent row above it would read as a child of the
   row before it.
+- The tar handler reads raw bytes, so it sets the buffer unibyte before
+  the walk.  A tar header holds NUL bytes, so the coding system that
+  `insert-file-contents` detects is `no-conversion`, and the block
+  offsets stay true.  `jka-compr` decompresses a `.tar.gz` or a
+  `.tar.zst` archive during that read, so one parser serves every
+  suffix and the handler carries no decompression code.  A member row
+  carries a synthetic ordinal as its `:line`, because an archive has no
+  lines.
+- A pax record and a GNU long-name record change the name and the size
+  of the member that follows them, so the walk clears both after it
+  emits a member.  A GNU record pads its text with a NUL byte.  The
+  extraction action re-reads the archive and slices the member bytes,
+  so it needs no `tar` program, and it refuses a directory and a link.
+  A member name that leaves the archive reads as no member.
+- `tired-section-file-size-limit` guards every handler, because a
+  handler reads the whole file into a temporary buffer.  A skipped file
+  writes no section cache entry, so a raised limit takes effect on the
+  next redraw.
 - A label takes its faces from the fontified temporary buffer, so the
   handler calls `font-lock-ensure` after it selects its major mode.
   Without that call a tree-sitter buffer holds no face and every row

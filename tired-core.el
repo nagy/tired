@@ -251,6 +251,8 @@ name."
     ("\\.go\\'" . tired-file-sections-go)
     ("\\.\\(?:md\\|markdown\\)\\'" . tired-file-sections-markdown)
     ("/Cargo\\.toml\\'" . tired-file-sections-cargo)
+    ("\\.tar\\'" . tired-file-sections-tar)
+    ("\\.tar\\.\\(?:gz\\|zst\\)\\'" . tired-file-sections-tar)
     ("\\.\\(?:db\\|sqlite\\|sqlite3\\)\\'" . tired-file-sections-sqlite))
   "Alist of regexp to a function that extracts sections from a file.
 The regexp matches the absolute file name, and the first match wins.
@@ -260,6 +262,16 @@ returns a list of plists with the keys `:label', `:line', `:level'
 and `:kind', plus the optional keys `:column' and `:action'.  An
 empty list means the file has no sections."
   :type '(alist :key-type regexp :value-type function))
+
+(defcustom tired-section-file-size-limit nil
+  "Largest file size in bytes that a section handler reads.
+A file above the limit keeps its plain row and runs no handler.  Nil
+means no limit.  A handler reads the whole file into a temporary
+buffer, so a very large file costs memory and a visible pause.  The
+limit reads the size that the file system reports, before that read,
+and a skipped file enters no section cache, so a larger limit takes
+effect on the next redraw."
+  :type '(choice (const :tag "No limit" nil) integer))
 
 (defcustom tired-org-narrow-on-open t
   "When non-nil, narrow an org buffer to the subtree that was opened.
@@ -808,21 +820,27 @@ ITEM is a plist with `:label' and `:line', plus the optional keys
 (defun tired-file-sections (path &optional force)
   "Return the sections of PATH as a list of `tired-section' structs.
 Parse the file when FORCE is non-nil or when its modification time
-changed.  Return nil when no handler matches, when the file is gone
-or when the handler found nothing."
+changed.  Return nil when no handler matches, when the file is gone,
+when the file exceeds `tired-section-file-size-limit' or when the
+handler found nothing."
   (let* ((handler (tired-file-handler path))
          (attributes (and handler (file-attributes path)))
          (time (and attributes
                     (file-attribute-modification-time attributes)))
+         (size (and attributes (file-attribute-size attributes)))
+         (too-big (and size tired-section-file-size-limit
+                       (> size tired-section-file-size-limit)))
          (cached (and (hash-table-p tired--sections)
                       (gethash path tired--sections)))
          (sections
           (cond
-           ((null attributes) nil)
+           ((or (null attributes) too-big) nil)
            ((and (not force) cached (equal (car cached) time)) (cdr cached))
            (t (mapcar (lambda (item) (tired--section-plist item path))
                       (tired--call-handler handler path))))))
-    (when (and attributes (hash-table-p tired--sections))
+    (when (and attributes
+               (not too-big)
+               (hash-table-p tired--sections))
       (puthash path (cons time sections) tired--sections))
     sections))
 

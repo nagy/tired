@@ -290,6 +290,91 @@ point joins the range."
   "Return the names of the current targets."
   (mapcar #'tired-entry-name (tired--selection-targets)))
 
+(defun tired-tests--tar-put (header start text)
+  "Copy TEXT into the tar HEADER at START and return HEADER."
+  (let ((index 0))
+    (while (< index (length text))
+      (aset header (+ start index) (aref text index))
+      (setq index (1+ index))))
+  header)
+
+(defun tired-tests--tar-header (name size type &optional link prefix)
+  "Return one 512-byte tar header.
+NAME is the member name, SIZE the byte count, and TYPE the type flag.
+LINK fills the link field, and PREFIX fills the ustar prefix field."
+  (let ((header (make-string 512 ?\0)))
+    (tired-tests--tar-put header 0 name)
+    (tired-tests--tar-put header 100 "0000644\0")
+    (tired-tests--tar-put header 108 "0000000\0")
+    (tired-tests--tar-put header 116 "0000000\0")
+    (tired-tests--tar-put header 124 (format "%011o\0" size))
+    (tired-tests--tar-put header 136 "00000000000\0")
+    (tired-tests--tar-put header 148 "        ")
+    (aset header 156 type)
+    (when link (tired-tests--tar-put header 157 link))
+    (tired-tests--tar-put header 257 "ustar\0")
+    (tired-tests--tar-put header 263 "00")
+    (tired-tests--tar-put header 265 "tester")
+    (tired-tests--tar-put header 297 "tester")
+    (when prefix (tired-tests--tar-put header 345 prefix))
+    header))
+
+(defun tired-tests--tar-member (name content &optional type link)
+  "Return the header and the data blocks of one tar member.
+NAME is the member name, CONTENT the text, TYPE the type flag and
+LINK the link target."
+  (let ((type (or type ?0))
+        (content (or content ""))
+        (padded (* 512 (/ (+ (length content) 511) 512))))
+    (concat (tired-tests--tar-header name (length content) type link)
+            content
+            (make-string (- padded (length content)) ?\0))))
+
+(defun tired-tests--tar-bytes (&rest members)
+  "Return the bytes of a tar archive that holds MEMBERS.
+Each member is a list of NAME, CONTENT and the optional TYPE and LINK."
+  (concat (mapconcat (lambda (member)
+                       (apply #'tired-tests--tar-member member))
+                     members "")
+          (make-string 1024 ?\0)))
+
+(defun tired-tests--tar-write-to (archive &rest members)
+  "Write a tar archive at ARCHIVE from MEMBERS.
+A `.gz' or `.zst' suffix compresses the archive with the matching
+program, so a test needs that program."
+  (let ((plain (concat archive ".plain.tar")))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert (apply #'tired-tests--tar-bytes members))
+      (write-region (point-min) (point-max) plain))
+    (if (string-suffix-p ".tar" archive)
+        (rename-file plain archive)
+      (let ((program (if (string-suffix-p ".gz" archive) "gzip" "zstd")))
+        (with-temp-buffer
+          (set-buffer-multibyte nil)
+          (call-process program nil t nil "-c" plain)
+          ;; Write the compressed bytes as they are, so the jka-compr
+          ;; handler does not compress the archive a second time.
+          (let ((file-name-handler-alist nil)
+                (coding-system-for-write 'no-conversion))
+            (write-region (point-min) (point-max) archive)))
+        (delete-file plain)))))
+
+(defmacro tired-tests--tar-write (name &rest members)
+  "Write a tar archive called NAME inside `root' from MEMBERS.
+Each member is a list of NAME, CONTENT and the optional TYPE and LINK."
+  (declare (indent 1) (debug t))
+  `(tired-tests--tar-write-to (expand-file-name ,name root) ,@members))
+
+(defun tired-tests--pax-record (key value)
+  "Return one pax extended header record for KEY and VALUE.
+The record starts with its own decimal length."
+  (let* ((body (concat " " key "=" value "\n"))
+         (length (+ (length body) 1)))
+    (while (/= length (+ (length body) (length (number-to-string length))))
+      (setq length (+ (length body) (length (number-to-string length)))))
+    (concat (number-to-string length) body)))
+
 (provide 'tired-tests)
 
 (provide 'tired-tests-fixtures)

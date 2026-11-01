@@ -672,6 +672,108 @@
                    '(("Intro" . 1) ("Detail" . 2))))
     (should (equal (tired-tests--names) '("notes.org")))))
 
+(ert-deftest tired-sections-of-a-tar-file ()
+  "A tar archive lists its members and indents a nested member."
+  (tired-tests--with-fixture
+    (tired-tests--tar-write "bundle.tar"
+                            '("docs" "" ?5)
+                            '("docs/readme.md" "hello\n")
+                            '("main.go" "package main\n"))
+    (tired root)
+    (tired-tests--goto "bundle.tar")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("docs/" . 1) ("readme.md" . 2) ("main.go" . 1))))
+    (should (eq (tired-section-kind
+                 (car (tired-file-sections
+                       (expand-file-name "bundle.tar" root))))
+                'directory))))
+
+(ert-deftest tired-tar-handler-reads-a-gnu-long-name ()
+  "The handler follows a GNU long-name record."
+  (let ((name (concat (make-string 120 ?n) ".txt")))
+    (tired-tests--with-fixture
+      (tired-tests--tar-write "long.tar"
+                              (list "././@LongLink" (concat name "\0") ?L)
+                              (list (substring name 0 99) "x\n"))
+      (tired root)
+      (tired-tests--goto "long.tar")
+      (tired-toggle-subdir)
+      (should (equal (tired-tests--sections) (list (cons name 1)))))))
+
+(ert-deftest tired-tar-handler-reads-a-pax-name ()
+  "The handler follows a pax extended header record."
+  (let ((name (concat (make-string 120 ?p) ".txt")))
+    (tired-tests--with-fixture
+      (tired-tests--tar-write "pax.tar"
+                              (list "PaxHeaders/x"
+                                    (tired-tests--pax-record "path" name)
+                                    ?x)
+                              (list (substring name 0 99) "y\n"))
+      (tired root)
+      (tired-tests--goto "pax.tar")
+      (tired-toggle-subdir)
+      (should (equal (tired-tests--sections) (list (cons name 1)))))))
+
+(ert-deftest tired-tar-handler-reads-a-compressed-archive ()
+  "A `.tar.gz' archive reaches the same parser as a plain one."
+  (skip-unless (executable-find "gzip"))
+  (tired-tests--with-fixture
+    (tired-tests--tar-write "bundle.tar.gz" '("a.txt" "a\n"))
+    (tired root)
+    (tired-tests--goto "bundle.tar.gz")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections) '(("a.txt" . 1))))))
+
+(ert-deftest tired-tar-handler-reads-a-zstd-archive ()
+  "A `.tar.zst' archive reaches the same parser as a plain one."
+  (skip-unless (and (executable-find "zstd")
+                    (require 'jka-compr nil t)
+                    (seq-find (lambda (entry)
+                                (equal (aref entry 0) "\\.zst\\'"))
+                              jka-compr-compression-info-list)))
+  (tired-tests--with-fixture
+    (tired-tests--tar-write "bundle.tar.zst" '("a.txt" "a\n"))
+    (tired root)
+    (tired-tests--goto "bundle.tar.zst")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections) '(("a.txt" . 1))))))
+
+(ert-deftest tired-tar-extract-writes-the-member ()
+  "The action of a member row writes that member to a temporary file."
+  (tired-tests--with-fixture
+    (tired-tests--tar-write "bundle.tar" '("ok.txt" "payload\n"))
+    (let ((file (tired--tar-extract (expand-file-name "bundle.tar" root)
+                                    "ok.txt")))
+      (unwind-protect
+          (should (equal (tired-tests--contents file) "payload\n"))
+        (delete-directory (file-name-directory file) t)))))
+
+(ert-deftest tired-tar-extract-refuses-a-directory ()
+  "A directory member has no bytes to write."
+  (tired-tests--with-fixture
+    (tired-tests--tar-write "bundle.tar" '("docs" "" ?5))
+    (should-error (tired--tar-extract (expand-file-name "bundle.tar" root)
+                                      "docs")
+                  :type 'user-error)))
+
+(ert-deftest tired-tar-member-name-rejects-a-name-outside-the-archive ()
+  "A member name that leaves the archive reads as no member."
+  (should-not (tired--tar-member-name "../etc/passwd"))
+  (should-not (tired--tar-member-name "/etc/passwd"))
+  (should-not (tired--tar-member-name "./"))
+  (should (equal (tired--tar-member-name "./a/b.txt") "a/b.txt")))
+
+(ert-deftest tired-sections-of-a-file-above-the-size-limit-stay-out ()
+  "A file above `tired-section-file-size-limit' keeps a plain row."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n")
+    (let ((path (expand-file-name "notes.org" root))
+          (tired-section-file-size-limit 1))
+      (should-not (tired-file-sections path))
+      (let ((tired-section-file-size-limit nil))
+        (should (tired-file-sections path))))))
+
 (provide 'tired-tests-sections)
 
 ;;; tired-tests-sections.el ends here

@@ -789,7 +789,7 @@ extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
 on =TAB=.
 
-Seven handlers ship with the package:
+Eight handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
@@ -800,6 +800,7 @@ Seven handlers ship with the package:
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
+| Tar (=.tar=, =.tar.gz=, =.tar.zst=) | Every member, indented by the depth of its path.  A directory keeps a trailing slash and a link names its target.  =RET= extracts the member to a temporary file and visits it |
 
 =RET= on a section row visits the file at the section line.  A section
 row fills the name column only.  A SQLite section opens the table in
@@ -881,6 +882,22 @@ The Rust handler needs the tree-sitter grammar for Rust, and the Go
 handler needs the grammar for Go.  Without the grammar the handler
 returns no sections and the file row stays plain.
 
+The tar handler reads the 512-byte headers itself, so it needs no
+external tool.  It follows the ustar prefix, a GNU long-name record
+and a pax extended header.  Emacs decompresses a =.tar.gz= or a
+=.tar.zst= archive during the read, so one parser serves every suffix.
+A =.tar.zst= archive still needs the =zstd= program on =exec-path=,
+because Emacs runs that program.  A member row carries a synthetic
+ordinal as its line, because an archive has no lines.  =RET= writes
+the member into =temporary-file-directory= and visits that copy.  A
+directory member and a link member hold no bytes, so =RET= refuses
+them.  A member name that leaves the archive reads as no member.
+
+Set =tired-section-file-size-limit= to a byte count to skip a large
+file.  A skipped file keeps its plain row and runs no handler, and
+=nil= means no limit.  The option guards every handler, because a
+handler reads the whole file into memory before it parses.
+
 * Export
 
 Three commands write the targets to a read-only buffer in another
@@ -958,7 +975,9 @@ Emacs.
 
 The Rust and Go section tests skip themselves when no grammar is
 present.  Point =TREESIT_EXTRA_LOAD_PATH= at the directory that holds
-=libtree-sitter-rust.so= and =libtree-sitter-go.so= to run them.
+=libtree-sitter-rust.so= and =libtree-sitter-go.so= to run them.  The
+compressed archive tests skip themselves when =gzip= or =zstd= is
+absent, and the Nix check supplies =zstd=.
 
 * Design notes
 

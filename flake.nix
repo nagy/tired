@@ -171,6 +171,10 @@
 
               checkPhase = ''
                 runHook preCheck
+                # The archive tests compress a fixture with zstd and read
+                # it back through jka-compr.  A check input does not reach
+                # the path of this build, so the path grows here.
+                export PATH="${pkgs.lib.makeBinPath [ pkgs.zstd ]}:$PATH"
                 ${pkgs.lib.optionalString (treesitGrammars != null) ''
                   export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
                 ''}
@@ -218,9 +222,10 @@
           devShells.default = pkgs.mkShell {
             packages = [
               # The evil package lets the ERT tests for tired-evil.el run
-              # outside Nix too.
+              # outside Nix too, and zstd builds the archive fixtures.
               (pkgs.emacsPackages.emacsWithPackages (epkgs: [ epkgs.evil ]))
               pkgs.git
+              pkgs.zstd
               config.treefmt.build.wrapper
             ];
           };
