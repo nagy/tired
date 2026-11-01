@@ -217,7 +217,7 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     a section is not a file.  A whole-view export reuses one buffer per
     format and directory.  A partial export makes a new buffer, because
     another selection holds other rows.
-16. The Elements column sits between Modified and Mode.  The column,
+16. The Elements column sits between Size and Modified.  The column,
     its sort key and its cell live in `tired-core`, and the count lives
     in `tired-elements.el`.  Core reads three variables that the
     library fills at load time: `tired--elements-value-function`,

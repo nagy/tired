@@ -39,18 +39,20 @@
 
 (defun tired-tests--elements-cell (name)
   "Return the Elements cell of the entry called NAME."
-  (aref (tired--row (tired-tests--entry name) 0) 3))
+  (aref (tired--row (tired-tests--entry name) 0) 2))
 
 ;;; The column
 
-(ert-deftest tired-elements-column-sits-between-modified-and-mode ()
-  "The Elements column follows Modified and leads Mode."
+(ert-deftest tired-elements-column-sits-between-size-and-modified ()
+  "The Elements column follows Size and leads Modified."
   (tired-tests--with-fixture
     (tired root)
-    (should (string-prefix-p "Elements" (car (aref tabulated-list-format 3))))
+    (should (string-prefix-p "Size" (car (aref tabulated-list-format 1))))
+    (should (string-prefix-p "Elements" (car (aref tabulated-list-format 2))))
+    (should (string-prefix-p "Modified" (car (aref tabulated-list-format 3))))
     (should (string-prefix-p "Mode" (car (aref tabulated-list-format 4))))
-    (should (= 10 (nth 1 (aref tabulated-list-format 3))))
-    (should (nth 3 (aref tabulated-list-format 3)))
+    (should (= 10 (nth 1 (aref tabulated-list-format 2))))
+    (should (nth 3 (aref tabulated-list-format 2)))
     (should (string-match-p "Elements" (tired-tests--header-string)))))
 
 (ert-deftest tired-elements-column-click-sorts-the-listing ()

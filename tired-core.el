@@ -1489,11 +1489,11 @@ Emacs 31 requires a vector of column descriptors here; a list makes
     (vector (concat (make-string (* 2 depth) ?\s)
                     (tired--name-cell row))
             (tired--size-column row)
+            (tired--elements-cell row)
             (propertize (format-time-string tired-date-format
                                             (tired-entry-mtime row))
                         'face 'tired-date
                         'font-lock-face 'tired-date)
-            (tired--elements-cell row)
             (tired-entry-mode row))))
 
 (defun tired--tabulated-entries ()
@@ -1574,8 +1574,8 @@ column from the current listing."
          (or name-width (tired--name-column-width))
          nil)
    (list (tired--column-label "Size" 'size) 9 nil :right-align t)
-   (list (tired--column-label "Modified" 'modified) 17 nil)
    (list (tired--column-label "Elements" 'elements) 10 nil :right-align t)
+   (list (tired--column-label "Modified" 'modified) 17 nil)
    (list (tired--column-label "Mode" 'mode) 10 nil)))
 
 (defun tired--escape-mode-line (text)

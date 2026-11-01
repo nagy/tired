@@ -231,7 +231,7 @@ One click moves point to the row, and a drag makes a region, as in any
 Emacs buffer.  A row is not a link, so no click opens an entry.
 
 Every column header takes a click.  =mouse-1= on =Name=, =Size=,
-=Modified=, =Elements= or =Mode= sorts the listing by that column, and a click on
+=Elements=, =Modified= or =Mode= sorts the listing by that column, and a click on
 the column that already sorts flips the direction, as =s= does.  The
 arrow in the label shows the current column and direction.
 
@@ -508,7 +508,7 @@ to nil to walk every directory in one redraw.
 
 * Elements
 
-The =Elements= column sits between =Modified= and =Mode=.  It counts the
+The =Elements= column sits between =Size= and =Modified=.  It counts the
 items that a row holds:
 
 | Row                           | Elements                                    |

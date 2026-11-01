@@ -1479,7 +1479,7 @@ The slash follows the name, so the row dims as one run."
   (tired-tests--with-fixture
     (tired root)
     (let* ((entry (tired-tests--entry "alpha.txt"))
-           (cell (aref (tired--row entry 0) 2)))
+           (cell (aref (tired--row entry 0) 3)))
       (should (eq 'tired-date (get-text-property 0 'face cell)))
       (should (eq 'tired-date (get-text-property 0 'font-lock-face cell)))
       (should (string= cell (format-time-string tired-date-format
