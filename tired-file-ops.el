@@ -286,8 +286,8 @@ system keeps two files, and the caller trashes TARGET first."
 Scan the windows of this frame from the one after the selected
 window, as `dired-dwim-target-next' does.  Return nil when no
 other window shows a Tired buffer, or when that buffer shows the
-directory of this buffer, because a move into the same directory
-would change nothing."
+directory of this buffer, because a copy or a move into the same
+directory would change nothing."
   (let ((here tired--directory))
     (catch 'found
       (dolist (window (window-list-1 (next-window nil 'nomini) 'nomini))
@@ -300,9 +300,19 @@ would change nothing."
 
 (defun tired-copy (directory)
   "Copy the targets into DIRECTORY.
-An existing destination goes to `tired-trash-directory' first, so
-`tired-undo' puts it back.  The copy never calls a shell."
-  (interactive (list (read-directory-name "Copy targets to: " tired--directory)))
+Interactively, when `tired-dwim-target' holds and another window of
+the frame shows a Tired buffer for another directory, the command
+copies the targets into that directory at once and asks no
+question.  An existing destination goes to `tired-trash-directory'
+first, so `tired-undo' puts it back.  The copy never calls a shell."
+  (interactive
+   (let ((targets (tired--selection-targets))
+         (dwim (and tired-dwim-target (tired--other-tired-directory))))
+     (unless targets
+       (user-error "No entry at point"))
+     (if dwim
+         (list dwim)
+       (list (read-directory-name "Copy targets to: " tired--directory)))))
   (let ((destination (file-name-as-directory (expand-file-name directory)))
         (created nil)
         (trashed nil))

@@ -278,13 +278,16 @@ that stays above it, so a removed block above point does not push it
 down.  When no row above stays, point stops on the first row, and a
 refresh keeps the line when a file leaves the disk.
 
-=m= reads its destination from a second window.  When another window
-of the frame shows a Tired buffer for another directory, the command
-moves the targets into that directory at once and asks no question.
-The window scan follows =dired-dwim-target-next=, so =tired-move=
-behaves like =dired-do-rename= with a dwim target.  =M-x tired-undo=
-undoes the move.  Set =tired-dwim-target= to nil to keep the
-minibuffer question.
+=c= and =m= read their destination from a second window.  When
+another window of the frame shows a Tired buffer for another
+directory, the command copies or moves the targets into that
+directory at once and asks no question.  The window scan follows
+=dired-dwim-target-next=, so =tired-move= behaves like
+=dired-do-rename= with a dwim target, and =tired-copy= behaves like
+=dired-do-copy=.  A Tired buffer for the shown directory names no
+target, because a copy or a move into that directory would change
+nothing.  =M-x tired-undo= undoes a copy and a move.  Set
+=tired-dwim-target= to nil to keep the minibuffer question.
 
 Every command reports the paths that failed and continues with the
 rest of the targets.  The *Warnings* buffer holds the full list.

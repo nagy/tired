@@ -191,12 +191,12 @@ redraw."
   :type '(choice (natnum :tag "Seconds") (const :tag "No budget" nil)))
 
 (defcustom tired-dwim-target t
-  "When non-nil, `tired-move' reads a destination from another window.
-The command scans the windows of the frame, the way
+  "When non-nil, `tired-copy' and `tired-move' read a destination.
+The commands scan the windows of the frame, the way
 `dired-dwim-target-next' does.  When another window shows a Tired
-buffer for another directory, the command moves the targets into
-that directory at once and asks no question.  When no such window
-exists, the command prompts in the minibuffer."
+buffer for another directory, a command copies or moves the
+targets into that directory at once and asks no question.  When no
+such window exists, the command prompts in the minibuffer."
   :type 'boolean)
 
 (defcustom tired-name-faces nil

@@ -537,6 +537,78 @@ the disk."
       (tired-delete)
       (should-not (file-exists-p (expand-file-name "alpha.txt" root))))))
 
+(ert-deftest tired-copy-prompts-without-another-window ()
+  "Copy asks in the minibuffer when no other window shows a Tired buffer."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (let (asked)
+        (cl-letf (((symbol-function 'read-directory-name)
+                   (lambda (&rest _)
+                     (setq asked t)
+                     (expand-file-name "out" root))))
+          (make-directory (expand-file-name "out" root))
+          (call-interactively #'tired-copy))
+        (should asked)
+        (should (file-regular-p (expand-file-name "out/alpha.txt" root)))))))
+
+(ert-deftest tired-copy-uses-another-window-directory-at-once ()
+  "Copy with another Tired window asks no question and copies at once.
+The copy joins the undo stack, so `tired-undo' removes it again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((other (file-name-as-directory
+                    (make-temp-file "tired-tests-other-" t))))
+        (unwind-protect
+            (progn
+              (tired root)
+              (tired-tests--goto "alpha.txt")
+              (tired-tests--with-other-window other
+                (cl-letf (((symbol-function 'read-directory-name)
+                           (lambda (&rest _)
+                             (ert-fail "tired-copy asked a question"))))
+                  (call-interactively #'tired-copy))
+                (should (equal "abc"
+                               (tired-tests--contents
+                                (expand-file-name "alpha.txt" other))))
+                (should (equal "abc"
+                               (tired-tests--contents
+                                (expand-file-name "alpha.txt" root))))
+                (tired-undo)
+                (should-not (file-exists-p
+                             (expand-file-name "alpha.txt" other)))
+                (should (equal "abc"
+                               (tired-tests--contents
+                                (expand-file-name "alpha.txt" root))))))
+          (delete-directory other t))))))
+
+(ert-deftest tired-copy-prompts-when-dwim-is-off ()
+  "The dwim option nil keeps the question in the minibuffer for copy."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((other (file-name-as-directory
+                    (make-temp-file "tired-tests-other-" t)))
+            (tired-dwim-target nil))
+        (unwind-protect
+            (progn
+              (tired root)
+              (make-directory (expand-file-name "out" root))
+              (tired-tests--goto "alpha.txt")
+              (tired-tests--with-other-window other
+                (let (asked)
+                  (cl-letf (((symbol-function 'read-directory-name)
+                             (lambda (&rest _)
+                               (setq asked t)
+                               (expand-file-name "out" root))))
+                    (call-interactively #'tired-copy))
+                  (should asked)
+                  (should (file-regular-p
+                           (expand-file-name "out/alpha.txt" root)))
+                  (should-not (file-exists-p
+                               (expand-file-name "alpha.txt" other))))))
+          (delete-directory other t))))))
+
 (ert-deftest tired-move-many-targets-into-a-directory ()
   "Move with several targets reads the destination as a directory."
   (tired-tests--with-fixture

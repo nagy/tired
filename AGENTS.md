@@ -156,6 +156,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     Each command pushes one undo function.  `tired-rename` stays outside
     that helper: it reads the row at point alone, so the selection and
     the region stay untouched.
+    `tired-copy` and `tired-move` read their destination from another
+    Tired window when `tired-dwim-target` holds, through
+    `tired--other-tired-directory`, so neither asks a question then and
+    both keep one undo step.  The helper returns no directory that the
+    shown buffer already lists, because a copy or a move into that
+    directory would change nothing.
 11. `tired-evil.el` is a second library.  `tired.el` installs its hook
     after `provide`, so both load orders work.
 12. `tired-edit-names` turns `tired-name-edit-mode` on, and the mode
