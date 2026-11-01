@@ -226,6 +226,36 @@ buffer that leaves the local mode keeps no stale hook."
         (evil-normal-state)
         (evil-local-mode -1)))))
 
+(ert-deftest tired-evil-visual-range-covers-the-row-at-point ()
+  "A visual range grows one row per line motion and keeps point's row.
+The line motions carry the `:keep-visual' property, so evil leaves the
+range unexpanded around them and `V j j' covers three rows."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (tired-tests--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode 1)
+          (tired-tests--goto ".hidden")
+          (execute-kbd-macro (kbd "Vjj"))
+          (should (eq evil-state 'visual))
+          (should (equal (tired-tests--target-names)
+                         '(".hidden" "link" "alpha.txt")))
+          (execute-kbd-macro (kbd "k"))
+          (should (equal (tired-tests--target-names)
+                         '(".hidden" "link")))
+          (execute-kbd-macro (kbd "<escape>"))
+          (should (eq evil-state 'normal))
+          (tired-tests--goto ".hidden")
+          (execute-kbd-macro (kbd "vjj"))
+          (should (equal (tired-tests--target-names)
+                         '(".hidden" "link" "alpha.txt"))))
+      (evil-normal-state)
+      (tired-evil-mode -1)
+      (evil-local-mode -1))))
+
 (provide 'tired-tests-evil)
 
 ;;; tired-tests-evil.el ends here

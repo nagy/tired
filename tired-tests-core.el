@@ -1666,8 +1666,8 @@ The slash follows the name, so the row dims as one run."
     (should (equal (tired-tests--target-names) '("alpha.txt" "beta.txt")))
     (should-not tired--selection)))
 
-(ert-deftest tired-region-excludes-the-row-at-its-end ()
-  "A region that ends at a line start leaves that row out."
+(ert-deftest tired-region-includes-the-row-at-point ()
+  "A region that ends at a line start keeps that row."
   (tired-tests--with-fixture
     (tired root)
     (transient-mark-mode 1)
@@ -1676,7 +1676,36 @@ The slash follows the name, so the row dims as one run."
     (push-mark (point) t t)
     (tired-tests--goto "alpha.txt")
     (beginning-of-line)
-    (should (equal (tired-tests--target-names) '("link")))))
+    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))
+    (deactivate-mark)
+    (tired-tests--goto "alpha.txt")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (tired-tests--goto "link")
+    (beginning-of-line)
+    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))))
+
+(ert-deftest tired-region-follows-the-line-motions ()
+  "A line motion extends the region to the row that it reaches.
+The name motion and the plain motion both add the row at point, so
+the indent of the row decides nothing."
+  (tired-tests--with-fixture
+    (tired root)
+    (transient-mark-mode 1)
+    (tired-tests--goto "link")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (tired-next-line)
+    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))
+    (tired-next-line)
+    (should (equal (tired-tests--target-names)
+                   '("link" "alpha.txt" "beta.txt")))
+    (deactivate-mark)
+    (tired-tests--goto "link")
+    (beginning-of-line)
+    (push-mark (point) t t)
+    (forward-line 1)
+    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))))
 
 (ert-deftest tired-region-loses-to-the-selection ()
   "An explicit selection wins over the active region."
@@ -1711,7 +1740,6 @@ The file row may lie inside the same region, and it joins once."
     (beginning-of-line)
     (push-mark (point) t t)
     (tired-tests--goto-section "two")
-    (forward-line 1)
     (beginning-of-line)
     (should (equal (tired-tests--target-names) '("notes.org")))
     (deactivate-mark)
@@ -1719,7 +1747,6 @@ The file row may lie inside the same region, and it joins once."
     (beginning-of-line)
     (push-mark (point) t t)
     (tired-tests--goto-section "two")
-    (forward-line 1)
     (beginning-of-line)
     (should (equal (tired-tests--target-names) '("notes.org")))))
 
@@ -1768,7 +1795,7 @@ The file row may lie inside the same region, and it joins once."
     (tired-select-none)
     (should-not (use-region-p))
     (should-not tired--selection)
-    (should (equal (tired-tests--target-names) '("beta.txt")))))
+    (should (equal (tired-tests--target-names) '("alpha.txt")))))
 
 (ert-deftest tired-narrow-to-selection-accepts-a-region ()
   "Narrow reads the region when the selection stays empty."

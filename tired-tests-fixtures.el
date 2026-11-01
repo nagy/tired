@@ -265,14 +265,13 @@ number of `tired-refresh' calls."
 
 (defun tired-tests--mark-row-range (first last)
   "Activate a region that covers the rows FIRST through LAST.
-The region ends at the beginning of the row after LAST, so LAST
-joins the range."
+The region ends at the beginning of the line of LAST, and the row at
+point joins the range."
   (transient-mark-mode 1)
   (tired-tests--goto first)
   (beginning-of-line)
   (push-mark (point) t t)
   (tired-tests--goto last)
-  (forward-line 1)
   (beginning-of-line))
 
 (defun tired-tests--target-names ()

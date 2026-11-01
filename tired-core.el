@@ -1773,20 +1773,24 @@ parent directory holds no such name."
 
 (defun tired--region-entries ()
   "Return the entries inside the active region, or nil.
-The row on which the region ends does not join, because the region
-ends at the beginning of that line.  A section row stands for the
-file that holds it, and one file joins once, so a region over the
-headings of a file reaches that file alone."
+Both ends join, so the row that point shows joins even when the
+region ends at its line start, and a line motion grows the region
+one row per step.  Read the ends from point and mark, because a
+linewise evil range ends with the newline of the row at point, and
+that newline does not name another row.  A section row stands for
+the file that holds it, and one file joins once, so a region over
+the headings of a file reaches that file alone."
   (when (use-region-p)
-    (let ((end (region-end))
-          (table nil)
-          (seen (make-hash-table :test #'equal))
-          entries)
+    (let* ((far (max (point) (or (mark t) (point))))
+           (last (save-excursion (goto-char far) (line-beginning-position)))
+           (table nil)
+           (seen (make-hash-table :test #'equal))
+           entries)
       (save-excursion
         (goto-char (region-beginning))
         (beginning-of-line)
         (while (and (not (eobp))
-                    (< (line-beginning-position) end))
+                    (<= (line-beginning-position) last))
           (let* ((row (tired--row-at-point))
                  (entry
                   (cond

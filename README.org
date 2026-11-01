@@ -140,18 +140,18 @@ selects both groups.  A directory stays out.
 
 The active region is the second way to make a selection.  Move with
 =S-<down>= and =S-<up>=, drag with the mouse, or set a mark with
-=C-SPC= and move.  Every row between the mark and point becomes a
-target, so a run costs one motion instead of one =SPC= per row.  A
-command turns the region into a selection before it acts, so =D=,
-=c=, =m=, =y=, =w=, =!=, =i=, =M-i=, =TAB=, =e= and =E= read the
-same rows that =SPC= on each row would select.  The mode line reports
-the region count and size, as it does for a selection.  =u= clears
-both sources.  A non-empty selection wins over the region.  The row on which the
-region ends stays out, because the region ends at the beginning of
-that line.  A section row stands for the file that holds it, so a
-region over headings reaches the file, the way point on a heading
-does.  The mode line bracket group appears only while the listing
-holds optional state, so a plain listing shows no group at all.
+=C-SPC= and move with =n= and =p=.  Every row between the mark and
+point becomes a target, and both of those rows join, so one =n= adds
+one row to the run.  A run costs one motion instead of one =SPC= per
+row.  A command turns the region into a selection before it acts, so
+=D=, =c=, =m=, =y=, =w=, =!=, =i=, =M-i=, =TAB=, =e= and =E= read
+the same rows that =SPC= on each row would select.  The mode line
+reports the region count and size, as it does for a selection.  =u=
+clears both sources.  A non-empty selection wins over the region.  A
+section row stands for the file that holds it, so a region over
+headings reaches the file, the way point on a heading does.  The mode
+line bracket group appears only while the listing holds optional
+state, so a plain listing shows no group at all.
 
 The filter is live.  =f= opens a minibuffer and a keystroke updates
 the listing after =tired-filter-delay= seconds, which is 0.15 by
@@ -269,8 +269,10 @@ active, shows the bindings that a buffer really carries.
 
 Visual state keeps its text objects.  The keys that act on files stay
 bound there, so =V= followed by a motion and =D= deletes the range,
-because the region already feeds every file command.  =tired-evil-mode=
-adds and removes the keys for every Tired buffer, existing or new.
+because the region already feeds every file command.  A visual range
+grows one row per =j= or =k=, and the row at point joins it, so =V=
+and two motions cover three rows.  =tired-evil-mode= adds and removes
+the keys for every Tired buffer, existing or new.
 
 Evil keeps its own mouse handling.  =down-mouse-1= runs
 =evil-mouse-drag-region=, so a drag makes a visual selection and a

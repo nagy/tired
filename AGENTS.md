@@ -140,6 +140,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    same rows and changes nothing, so a menu `:active` form and an
    interactive spec call it and a canceled prompt leaves no selection.
    A section row stands for its file, and one file joins once.
+   `tired--region-entries` reads the lines from the earlier of point
+   and mark through the later, so both ends join and the indent of a
+   row decides nothing.  A linewise evil range ends with the newline
+   of the row at point, so the function reads point and mark, never
+   `region-end`, or that newline would name one row too many.
    `tired--apply-to-rows` runs one view function over the targets and
    keeps the selection, because a user selects a directory, inserts it
    and then adds a child row.  A file command clears both sources.
@@ -337,7 +342,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   as literal characters.  The normal table remaps `evil-replace`,
   `evil-goto-line`, `evil-next-line` and `evil-previous-line`, so `r`
   renames and `j`, `k` and `G` stop on a row.  `j` and `k` keep their
-  key through the remap, and visual state keeps the plain motions.
+  key through the remap.  A remap reaches the visual state, because
+  the normal table of a minor mode stays active there, so
+  `tired-evil.el` gives the three motion commands the `:keep-visual`
+  property: `evil-visual-pre-command` expands the region for every
+  other command, and an expanded region turns the line motion into no
+  motion, so `V j` would never grow the range.
 - `define-minor-mode` defines a defcustom, so a mode without
   `:group 'tired` fails byte compilation.
 - `tabulated-list-mode` binds `follow-link` to `mouse-face`, and with

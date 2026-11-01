@@ -38,7 +38,9 @@
 ;;
 ;; A command acts on the transient selection, and an active region
 ;; joins it first, so a visual range feeds delete, copy, move and the
-;; view commands without an extra step.
+;; view commands without an extra step.  A visual range grows one row
+;; per `j' or `k', and `V' covers whole rows, because the three line
+;; motions carry the `:keep-visual' property.
 ;;
 ;; Evil keeps its state maps in `emulation-mode-map-alists', and Emacs
 ;; checks that list before the major mode map, so `evil-ret' on RET
@@ -140,6 +142,16 @@ command here reads the active region.")
          (mapcan (lambda (binding)
                    (list (key-parse (car binding)) (cdr binding)))
                  keys)))
+
+;; A visual range grows one row per motion, so the visual state needs
+;; the line motions to stay motions.  `evil-visual-pre-command'
+;; expands the region for every command that carries no `:keep-visual'
+;; property, and an expanded region turns the line motion into no
+;; motion at all, so `V j' would never grow the range.  The three
+;; motion commands carry the property, and no other command needs it.
+(dolist (command '(tired-next-line tired-previous-line
+                   tired-goto-last-entry))
+  (evil-set-command-property command :keep-visual t))
 
 (defun tired-evil--name-edit ()
   "Keep a name edit in the evil insert state.

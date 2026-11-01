@@ -55,8 +55,9 @@ _Avoid_: Job, process, filter
 
 **Region**:
 The Emacs region between mark and point, used as a target source.
-Every row between the two positions joins, except the row on which the
-region ends, and a section row stands for the file that holds it.
+Every row between the two positions joins, including the rows that
+mark and point show, and a section row stands for the file that holds
+it.
 _Avoid_: Range, block, span
 
 **Filter**:
