@@ -306,6 +306,20 @@
       (should (eq (get-text-property 9 'face label)
                   'font-lock-function-name-face)))))
 
+(ert-deftest tired-rust-constant-and-static-rows-name-their-kind ()
+  "A Rust const row and a static row read apart."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "lib.rs"
+                        "const LIMIT: u8 = 3;\n\nstatic NAME: &str = \"x\";\n")
+    (let* ((path (expand-file-name "lib.rs" root))
+           (sections (tired-file-sections path)))
+      (should (equal (mapcar (lambda (section)
+                               (substring-no-properties
+                                (tired-section-label section)))
+                             sections)
+                     '("const LIMIT" "static NAME"))))))
+
 (ert-deftest tired-sections-of-a-markdown-file ()
   "A Markdown file lists ATX and setext headings and skips code fences."
   (skip-unless (and (require 'treesit nil t)

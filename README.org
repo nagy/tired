@@ -795,7 +795,7 @@ Seven handlers ship with the package:
 |---------------+-------------------------------------------------------|
 | Org (=.org=)  | Every heading, indented by its outline level, colored as =org-mode= colors the title |
 | Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source |
-| Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it.  A name carries the face of its source |
+| Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants, statics and macros, with the methods of an impl block nested under it.  A name carries the face of its source |
 | Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  A name carries the face of its source |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper |
