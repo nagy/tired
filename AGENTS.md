@@ -123,7 +123,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    its old line, clamped to the last row, so a removal never sends point
    to the first line.  A view change (filter, sort, dotfile, hidden,
    insert, expand, fold) calls it.  `tired-refresh` re-reads the tables,
-   prunes dead state and then redraws.
+   prunes dead state and then redraws.  A redraw binds
+   `tired--size-deadline` from `tired-directory-size-budget` and
+   `tired--size-walks` at zero, so a size walk stops when the budget
+   ends.
 7. Selection and region share one target path.  `tired--selection`
    holds paths and `tired--selection-set` mirrors it.
    `tired--targets` commits an active region into the selection, then
@@ -384,6 +387,26 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   reads the size cache and a redraw walks a subtree even with
   `tired-directory-size` nil.  That cache bounds the cost.  A remote
   directory keeps the directory face and costs no walk.
+- A size walk waits for a window.  `tired--size-walk-skipped-p` skips
+  the walk when no window shows the buffer or when
+  `tired-directory-size-budget` ended, and it sets
+  `tired--size-deferred`.  `tired--directory-total` then returns nil, so
+  every caller tests the value: a nil total prints an empty cell, keeps
+  the plain directory face and counts as no byte.  A cached total still
+  serves a hidden listing, because the cache read costs nothing.
+- `tired-noselect` redraws before a window exists, so its sizes stay
+  unwalked.  A buffer-local `window-buffer-change-functions` entry calls
+  `tired--window-buffer-changed`, which schedules a redraw through
+  `tired--schedule-size-redraw`.  Redisplay runs that hook, so the
+  reprint goes through a timer.  `tired--size-redraw` clears the flag
+  and redraws, and a redraw that spends its budget again schedules one
+  more pass.  A pass that finished no walk schedules nothing, so a
+  budget too small for one subtree costs one reprint and ends.
+- Batch Emacs opens a window for `tired`, so a test that needs a hidden
+  listing binds `tired-tests--with-deferred-sizes`, which stubs
+  `tired--size-window-p`.  Bind `tired-tests--window-shown` to t inside
+  that macro to act as the display does.  `tired--size-always` belongs
+  to `tired-tests--with-fixture`, which also sets the budget to nil.
 - `minibuffer-contents` returns the current buffer text outside a
   minibuffer, so read it before `with-current-buffer`.
 - `tabulated-list-print` erases the buffer, and the erase strands the

@@ -80,6 +80,24 @@ share it.  `tired-size-cache-ttl` bounds the age of a total, and a
 refresh drops the expired ones.
 _Avoid_: Du cache, memo, total table
 
+**Size walk**:
+The recursive read of one directory subtree for its byte count.
+`tired--subtree-size` runs the walk and `tired--directory-total` starts
+it, so one walk caches every directory that it reaches.
+_Avoid_: Scan, size pass
+
+**Deferred size**:
+A size whose walk waits.  No window shows the listing, or
+`tired-directory-size-budget` ended.  The cell prints empty, and
+`tired--size-deferred` holds the state until a display or an idle pass
+walks the size.
+_Avoid_: Pending total, lazy size, unknown size
+
+**Size budget**:
+The `tired-directory-size-budget` seconds that one redraw spends on size
+walks.  A spent budget stops the walk and defers the rest.
+_Avoid_: Timeout, walk limit, quota
+
 **Collapse**:
 One row that represents a directory chain whose subtree holds exactly
 one file.

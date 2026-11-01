@@ -429,6 +429,18 @@ can reach.  An edit deep in the tree reaches the column at most one
 window later, and so does an edit in a directory that carries no
 watch.  Set the value to 0 to sum the subtree on every refresh.
 
+A listing that no window shows walks no directory, and a visible
+listing stops walking when =tired-directory-size-budget= seconds end.
+The size cells that stay unwalked show empty, and an idle pass then
+fills them:
+
+#+begin_src elisp
+  (setq tired-directory-size-budget 0.2)
+#+end_src
+
+The walk of one single subtree still runs to its end.  Set the value
+to nil to walk every directory in one redraw.
+
 * Hidden entries
 
 Set =tired-hidden-regexps= to a list of regexps that remove entries
@@ -465,7 +477,9 @@ An empty directory takes `dired-ignored' as well.  A directory counts
 as empty when its subtree holds no byte, so a directory that holds
 only empty files dims too.  The slash of the row follows the name.
 The mark needs no =tired-directory-size=, because the name reads the
-size cache, and a remote directory keeps the directory face.
+size cache, and a remote directory keeps the directory face.  A walk
+that `tired-directory-size-budget' or a hidden listing stops leaves
+the plain directory face, and a later pass marks the empty row.
 
 Set =tired-name-faces= to colorize more names.  Each rule starts with
 a regexp that matches the entry name.  A rule that holds a bare face

@@ -180,6 +180,16 @@ Emacs collects garbage several times during one walk of a large
 tree, so such a hook would empty the table faster than it fills."
   :type 'natnum)
 
+(defcustom tired-directory-size-budget 0.2
+  "Seconds one redraw may spend on directory size walks.
+A walk of a deep tree blocks the redraw, so the redraw stops walking
+when this budget ends and leaves the remaining size cells empty.
+An idle timer then redraws and walks the next part, so the column
+fills in several passes.  The walk of one single subtree still runs
+to its end.  Set the value to nil to walk every directory in one
+redraw."
+  :type '(choice (natnum :tag "Seconds") (const :tag "No budget" nil)))
+
 (defcustom tired-dwim-target t
   "When non-nil, `tired-move' reads a destination from another window.
 The command scans the windows of the frame, the way
@@ -979,7 +989,8 @@ A remote directory counts as non-empty, because its walk costs one
 round trip per file."
   (and (stringp directory)
        (not (file-remote-p directory))
-       (zerop (tired--directory-total directory))))
+       (let ((total (tired--directory-total directory)))
+         (and total (zerop total)))))
 
 (defun tired--directory-slash-face (face)
   "Return the face for the slash of a directory whose name takes FACE.
@@ -1144,6 +1155,30 @@ one.  A value holds `(TOTAL . STAMP)', where STAMP is the
 A walk binds one timestamp, so every directory that the walk
 reaches carries the same age.")
 
+(defvar tired--size-deadline nil
+  "Time at which the running redraw stops walking a directory size.
+Nil means no deadline, so every walk runs to its end.")
+
+(defvar tired--size-always nil
+  "When non-nil, walk a directory size with no window and no budget.
+Batch Emacs shows no window, so the test suite binds this to t.")
+
+(defvar tired--size-walks 0
+  "Number of directory walks that the running redraw finished.
+A pass that finishes no walk makes no progress, and
+`tired--redraw-buffer' then schedules no further pass.")
+
+(defvar-local tired--size-deferred nil
+  "Non-nil when a redraw left a directory size unwalked.
+`tired--size-walk-skipped-p' sets it, and a display, an idle timer
+or the next redraw reads it.")
+
+(defvar-local tired--size-timer nil
+  "Timer that redraws the listing to walk a deferred directory size.")
+
+(defconst tired--size-redraw-delay 0.3
+  "Idle seconds before a redraw walks a deferred directory size.")
+
 (defun tired--size-key (directory)
   "Return the `tired--size-cache' key for DIRECTORY.
 Normalise the name without a symbolic link resolution: the walk
@@ -1172,6 +1207,25 @@ that one cache window can reach."
              tired--size-cache)
     (dolist (key stale)
       (remhash key tired--size-cache))))
+
+(defun tired--size-window-p ()
+  "Return non-nil when a window shows the listing.
+A test binds `tired--size-always', because batch Emacs shows no
+buffer in a window."
+  (or tired--size-always
+      (and (get-buffer-window-list (current-buffer) nil t) t)))
+
+(defun tired--size-walk-skipped-p ()
+  "Return non-nil when this redraw leaves a directory size unwalked.
+A listing that no window shows costs no walk, and a walk that
+`tired-directory-size-budget' stops ends there.  Set
+`tired--size-deferred' in either case, so a later display or an idle
+timer walks the size again."
+  (when (or (not (tired--size-window-p))
+            (and tired--size-deadline
+                 (> (float-time) tired--size-deadline)))
+    (setq tired--size-deferred t)
+    t))
 
 (defun tired--subtree-size (directory)
   "Return the number of bytes in every regular file under DIRECTORY.
@@ -1205,9 +1259,50 @@ reads nothing.  An unreadable directory counts as zero."
   "Return the number of bytes in every regular file under DIRECTORY.
 Serve the value from `tired--size-cache' when it stays young enough
 and sum the subtree otherwise.  One walk stamps every directory it
-reaches with the same start time."
-  (let ((tired--size-stamp (float-time)))
-    (tired--subtree-size directory)))
+reaches with the same start time.  Return nil when the walk waits for
+a window or for the budget of the next redraw."
+  (let* ((key (tired--size-key directory))
+         (hit (gethash key tired--size-cache)))
+    (cond
+     ((tired--size-cache-valid-p hit) (car hit))
+     ((tired--size-walk-skipped-p) nil)
+     (t (setq tired--size-walks (1+ tired--size-walks))
+        (let ((tired--size-stamp (float-time)))
+          (tired--subtree-size directory))))))
+
+(defun tired--schedule-size-redraw (&optional delay)
+  "Redraw the listing after DELAY seconds to walk a deferred size.
+DELAY defaults to `tired--size-redraw-delay'.  A zero delay moves the
+redraw out of a display hook, where a reprint must wait.  A listing
+that no window shows stays unwalked, and the next display starts the
+walk."
+  (when (and tired--size-deferred
+             (tired--size-window-p)
+             (not (timerp tired--size-timer)))
+    (let ((buffer (current-buffer)))
+      (setq tired--size-timer
+            (run-at-time (or delay tired--size-redraw-delay)
+                         nil #'tired--size-redraw buffer)))))
+
+(defun tired--size-redraw (buffer)
+  "Redraw BUFFER when a directory size still waits for a walk.
+A redraw that spends its budget again sets the flag, and the function
+then schedules one more pass."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq tired--size-timer nil)
+      (when (and (derived-mode-p 'tired-mode)
+                 tired--size-deferred
+                 (tired--size-window-p))
+        (tired--redraw (get-buffer-window buffer t))))))
+
+(defun tired--window-buffer-changed (_window)
+  "Redraw the listing after a window starts to show it.
+A redraw that no window shows leaves the directory sizes unwalked,
+so the first redisplay of the buffer walks them.  Redisplay runs this
+hook, so the reprint goes through a timer."
+  (when tired--size-deferred
+    (tired--schedule-size-redraw 0)))
 
 (defun tired--size-cell (entry)
   "Return the size column string for ENTRY.
@@ -1219,8 +1314,8 @@ network costs one round trip per file."
    ((not tired-directory-size) "")
    ((file-remote-p (tired-entry-path entry)) "")
    (t
-    (file-size-human-readable
-     (tired--directory-total (tired-entry-path entry))))))
+    (let ((total (tired--directory-total (tired-entry-path entry))))
+      (if total (file-size-human-readable total) "")))))
 
 (defun tired--size-column (entry)
   "Return the size cell for ENTRY, painted with `tired-file-size'.
@@ -1257,7 +1352,9 @@ Emacs 31 requires a vector of column descriptors here; a list makes
   "Return `tabulated-list-entries' for the current listing.
 When `tired-directory-size' is non-nil, the global memo table
 serves every row of every redraw, so a nested directory costs one
-read per `tired-size-cache-ttl' window, not one read per redraw."
+read per `tired-size-cache-ttl' window, not one read per redraw.
+`tired-directory-size-budget' stops the walk, and a stopped walk
+leaves the size cell of its row empty until the next pass."
   (mapcar (lambda (row)
             (list (car row) (tired--row (car row) (cdr row))))
           (tired--visible-rows)))
@@ -1519,7 +1616,7 @@ round trip per file."
   (cond
    ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
    ((file-remote-p (tired-entry-path entry)) 0)
-   (t (tired--directory-total (tired-entry-path entry)))))
+   (t (or (tired--directory-total (tired-entry-path entry)) 0))))
 
 (defun tired--entries-size (entries)
   "Return the total size of ENTRIES in bytes.
@@ -1732,6 +1829,9 @@ edit to a file inside that directory."
   (when (timerp tired--revert-timer)
     (cancel-timer tired--revert-timer)
     (setq tired--revert-timer nil))
+  (when (timerp tired--size-timer)
+    (cancel-timer tired--size-timer)
+    (setq tired--size-timer nil))
   (dolist (watch tired--watches)
     (ignore-errors (file-notify-rm-watch (cdr watch))))
   (setq tired--watches nil))
@@ -1871,8 +1971,16 @@ nothing."
   "Redraw the listing from the cached entries.
 WINDOW is the window that shows the buffer, or nil for the selected
 window.  Its width limits the name column.  The redraw keeps the
-point and the scroll position of every window that shows the listing."
+point and the scroll position of every window that shows the listing.
+The redraw walks a directory size until `tired-directory-size-budget'
+ends, and `tired--size-deferred' then sends a later pass over the
+rows that it left unwalked."
+  (setq tired--size-deferred nil)
   (let* ((window (or window (selected-window)))
+         (tired--size-walks 0)
+         (tired--size-deadline
+          (and tired-directory-size-budget
+               (+ (float-time) tired-directory-size-budget)))
          (point-entry (tired--point-row window))
          (point-line (line-number-at-pos))
          (mark-entry (tired--row-at (mark t)))
@@ -1894,7 +2002,11 @@ point and the scroll position of every window that shows the listing."
                           "  "
                           tired--header-base))))
           (tabulated-list-print t)
-          (tired--paint-row-help))
+          (tired--paint-row-help)
+          ;; A pass that finished no walk makes no progress, so it
+          ;; schedules no further pass.
+          (when (> tired--size-walks 0)
+            (tired--schedule-size-redraw)))
       (setq tired--rows nil))
     (unless (tired--goto-entry point-entry)
       ;; The printed row is gone, and the print left point on the first
@@ -2917,6 +3029,8 @@ The directory contents come from `directory-files' and
   (setq-local tired--inserted (make-hash-table :test #'equal))
   (setq-local tired--watches nil)
   (setq-local tired--revert-timer nil)
+  (setq-local tired--size-timer nil)
+  (setq-local tired--size-deferred nil)
   (setq-local tired--collapse-cache (make-hash-table :test #'equal))
   (setq-local tired--expanded (make-hash-table :test #'equal))
   (setq-local tired--sections (make-hash-table :test #'equal))
@@ -2942,6 +3056,10 @@ The directory contents come from `directory-files' and
   (setq-local tired--mode-line-cache "")
   (setq-local mode-line-format tired--mode-line-base)
   (add-hook 'post-command-hook #'tired--mode-line-maybe-update nil t)
+  ;; A redraw that no window shows leaves the directory sizes
+  ;; unwalked, so the first display of the buffer walks them.
+  (add-hook 'window-buffer-change-functions
+            #'tired--window-buffer-changed nil t)
   ;; `context-menu-functions' lives in mouse.el.  A session without a
   ;; menu has no context menu mode, so skip the hook there.
   (when (boundp 'context-menu-functions)

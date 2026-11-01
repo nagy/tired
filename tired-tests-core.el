@@ -868,6 +868,7 @@ key map alone."
                                              :type 'directory
                                              :dirp t))))
         (should-not walked)
+        (tired--size-cache-clear)
         (tired--size-cell (tired-tests--entry "sub"))
         (should walked)))))
 
@@ -989,6 +990,77 @@ key map alone."
         (tired--size-cache-clear)
         (tired--redraw)
         (should (= 2 sub-reads))))))
+
+(ert-deftest tired-size-walk-waits-for-a-window ()
+  "A listing that no window shows leaves every directory size unwalked.
+Batch Emacs runs no display, so the gate stub keeps the listing
+hidden."
+  (tired-tests--with-fixture
+    (tired-tests--with-deferred-sizes
+      (let ((tired-directory-size t)
+            (walked nil))
+        (cl-letf (((symbol-function 'tired--subtree-size)
+                   (lambda (&rest _) (setq walked t) 0)))
+          (tired root)
+          (should-not walked)
+          (should tired--size-deferred)
+          (should-not (timerp tired--size-timer))
+          (should (equal "" (tired--size-cell (tired-tests--entry "sub")))))))))
+
+(ert-deftest tired-size-walk-serves-a-young-total-without-a-window ()
+  "A listing that no window shows still reads a young total from the table."
+  (tired-tests--with-fixture
+    (tired-tests--with-deferred-sizes
+      (puthash (tired--size-key root) (cons 42 (float-time)) tired--size-cache)
+      (should (equal 42 (tired--directory-total root))))))
+
+(ert-deftest tired--directory-total-stops-at-its-deadline ()
+  "A walk past `tired--size-deadline' returns nil and defers."
+  (tired-tests--with-fixture
+    (let ((tired--size-deadline (- (float-time) 1))
+          (walked nil))
+      (cl-letf (((symbol-function 'tired--subtree-size)
+                 (lambda (&rest _) (setq walked t) 0)))
+        (should-not (tired--directory-total root))
+        (should-not walked)
+        (should tired--size-deferred)))))
+
+(ert-deftest tired-redraw-defers-a-walk-past-its-budget ()
+  "A zero budget leaves the size cell of every directory empty.
+The pass finishes no walk, so it schedules no second pass."
+  (tired-tests--with-fixture
+    (tired-tests--with-deferred-sizes
+      (let ((tired-directory-size t)
+            (tired-directory-size-budget 0))
+        (tired root)
+        (should tired--size-deferred)
+        (should-not (timerp tired--size-timer))
+        (should-not (gethash (tired--size-key (expand-file-name "sub" root))
+                             tired--size-cache))))))
+
+(ert-deftest tired-empty-directory-mark-waits-for-a-window ()
+  "A deferred walk keeps the plain directory face and no byte total."
+  (tired-tests--with-fixture
+    (tired-tests--with-deferred-sizes
+      (make-directory (expand-file-name "hollow" root))
+      (tired root)
+      (should (eq 'tired-directory-face
+                  (tired-tests--cell-face (tired-tests--entry "hollow"))))
+      (should (zerop (tired--entry-size (tired-tests--entry "hollow")))))))
+
+(ert-deftest tired-window-buffer-changed-schedules-the-size-walk ()
+  "A window that starts to show the listing schedules the deferred walk.
+Batch Emacs runs no display, so the test calls the hook itself."
+  (tired-tests--with-fixture
+    (tired-tests--with-deferred-sizes
+      (let ((tired-directory-size t))
+        (tired root)
+        (should tired--size-deferred)
+        (let ((tired-tests--window-shown t))
+          (tired--window-buffer-changed (selected-window))
+          (should (timerp tired--size-timer))
+          (cancel-timer tired--size-timer)
+          (setq tired--size-timer nil))))))
 
 (ert-deftest tired-name-cell-fontifies-broken-symlink ()
   "A link that does not resolve gets the broken symlink face."

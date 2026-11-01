@@ -60,8 +60,12 @@ a symlink, and removes every Tired buffer it opened."
   `(let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
           (default-directory root)
           ;; The size table is global.  Bind a private one, so a test
-          ;; never sees a total that another test computed.
-          (tired--size-cache (make-hash-table :test #'equal)))
+          ;; never sees a total that another test computed.  Batch
+          ;; Emacs shows no window, so a walk needs the override and
+          ;; no budget.
+          (tired--size-cache (make-hash-table :test #'equal))
+          (tired--size-always t)
+          (tired-directory-size-budget nil))
      (unwind-protect
          (progn
            (with-temp-file (expand-file-name "alpha.txt") (insert "abc"))
@@ -88,6 +92,25 @@ a symlink, and removes every Tired buffer it opened."
                       (string-prefix-p root tired--directory))
              (kill-buffer buffer))))
        (delete-directory root t))))
+
+(defvar tired-tests--window-shown nil
+  "When non-nil, the size gate reads the listing as shown.
+Batch Emacs opens a window for `tired', so a test that needs a
+hidden listing stubs the gate through
+`tired-tests--with-deferred-sizes'.")
+
+(defmacro tired-tests--with-deferred-sizes (&rest body)
+  "Run BODY with the size walk gated as a hidden listing gates it.
+The walk then waits for a window, as it does in a buffer that no
+window shows.  Bind `tired-tests--window-shown' to t for the part of
+BODY that acts as the display does."
+  (declare (indent 0) (debug t))
+  `(let ((tired-tests--window-shown nil)
+         (tired--size-always nil)
+         (tired-directory-size-budget 0.2))
+     (cl-letf (((symbol-function 'tired--size-window-p)
+                (lambda () tired-tests--window-shown)))
+       ,@body)))
 
 (defun tired-tests--click (type position)
   "Return a mouse click event of TYPE at buffer POSITION.
