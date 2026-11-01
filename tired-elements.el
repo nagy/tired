@@ -37,6 +37,7 @@
   '(tired-elements-directory
     tired-elements-json
     tired-elements-markdown
+    tired-elements-csv
     tired-elements-sections)
   "Abnormal hook that counts the elements of one path.
 Each function receives the absolute file name and returns nil when
@@ -45,7 +46,8 @@ it has no opinion, an integer for a count that it knows now, or a
 non-nil result wins, so a cheap test belongs before an expensive
 read.  `tired-elements-directory' counts the immediate children of a
 directory, `tired-elements-json' counts a top-level JSON container,
-`tired-elements-markdown' counts the top-level Markdown headings, and
+`tired-elements-markdown' counts the top-level Markdown headings,
+`tired-elements-csv' counts the uncommented rows of a CSV file, and
 `tired-elements-sections' counts the sections at depth zero of any
 other file that a handler claims."
   :type 'hook
@@ -644,6 +646,125 @@ another name, so the next dissector decides."
     (tired--elements-job-create
      :step #'tired--markdown-step
      :state (tired--markdown-state-create :counts (make-vector 7 0)))))
+
+;;; CSV
+
+(cl-defstruct (tired--csv-state (:constructor tired--csv-state-create))
+  "Scanner state for the rows of a CSV file.
+COUNT holds the rows that the scan counted.  START holds whether the
+next byte starts a record.  CONTENT holds whether the current record
+holds a byte.  COMMENT holds whether the current record starts with
+`#'.  IN-STRING and PENDING track a quoted field, where a doubled
+quote stands for one quote.  FIELD holds whether the next byte may
+open a quoted field."
+  (count 0)
+  start
+  content
+  comment
+  in-string
+  pending
+  field)
+
+(defun tired--csv-byte (state char)
+  "Advance STATE over one byte CHAR.
+Return `:consumed', or `:again' when a closing quote asks the caller
+to feed CHAR a second time, now outside the field."
+  (cond
+   ((tired--csv-state-comment state)
+    (when (eq char ?\n)
+      (setf (tired--csv-state-comment state) nil
+            (tired--csv-state-start state) t
+            (tired--csv-state-content state) nil
+            (tired--csv-state-in-string state) nil
+            (tired--csv-state-pending state) nil
+            (tired--csv-state-field state) t))
+    :consumed)
+   ((tired--csv-state-in-string state)
+    (cond
+     ((tired--csv-state-pending state)
+      (if (eq char ?\")
+          (progn (setf (tired--csv-state-pending state) nil) :consumed)
+        (setf (tired--csv-state-in-string state) nil
+              (tired--csv-state-pending state) nil)
+        :again))
+     ((eq char ?\")
+      (setf (tired--csv-state-pending state) t)
+      :consumed)
+     (t :consumed)))
+   ((eq char ?\n)
+    (when (tired--csv-state-content state)
+      (setf (tired--csv-state-count state)
+            (1+ (tired--csv-state-count state))))
+    (setf (tired--csv-state-start state) t
+          (tired--csv-state-content state) nil
+          (tired--csv-state-field state) t)
+    :consumed)
+   ((eq char ?\r) :consumed)
+   ((tired--csv-state-start state)
+    (setf (tired--csv-state-start state) nil)
+    (if (eq char ?#)
+        (setf (tired--csv-state-comment state) t)
+      (setf (tired--csv-state-content state) t
+            (tired--csv-state-field state) nil)
+      (when (eq char ?\")
+        (setf (tired--csv-state-in-string state) t)))
+    :consumed)
+   ((eq char ?\,)
+    (setf (tired--csv-state-field state) t
+          (tired--csv-state-content state) t)
+    :consumed)
+   ((eq char ?\")
+    (setf (tired--csv-state-content state) t)
+    (when (tired--csv-state-field state)
+      (setf (tired--csv-state-in-string state) t
+            (tired--csv-state-field state) nil))
+    :consumed)
+   (t
+    (setf (tired--csv-state-content state) t
+          (tired--csv-state-field state) nil)
+    :consumed)))
+
+(defun tired--csv-scan (state string)
+  "Advance STATE over STRING and return STATE.
+A quote that closes a field asks for its byte a second time, so the
+loop keeps its index and drops it only on `:consumed'."
+  (let ((index 0)
+        (length (length string)))
+    (while (< index length)
+      (when (eq (tired--csv-byte state (aref string index)) :consumed)
+        (setq index (1+ index))))
+    state))
+
+(defun tired--csv-step (job)
+  "Advance JOB over the next chunk of its CSV file.
+Count a last row that the file ends without a newline.  Return
+`:done' when the file ended."
+  (let ((state (tired--elements-job-state job)))
+    (if (>= (or (tired--elements-job-offset job) 0)
+            (or (tired--elements-job-size job) 0))
+        (progn
+          (when (and (tired--csv-state-content state)
+                     (not (tired--csv-state-comment state)))
+            (setf (tired--csv-state-count state)
+                  (1+ (tired--csv-state-count state))))
+          (setf (tired--elements-job-count job)
+                (tired--csv-state-count state))
+          :done)
+      (when-let* ((chunk (tired--elements-read job)))
+        (tired--csv-scan state chunk))
+      :more)))
+
+(defun tired-elements-csv (path)
+  "Return a count or a job for the CSV file at PATH.
+Count every record that does not start with `#', the header line
+included, and skip a blank line.  A quoted field may hold a comma or
+a newline, so a `#' inside one never starts a comment.  Return nil
+for another name, so the next dissector decides."
+  (when (let ((case-fold-search t))
+          (string-match-p "\\.csv\\'" path))
+    (tired--elements-job-create
+     :step #'tired--csv-step
+     :state (tired--csv-state-create :start t :field t))))
 
 ;;; Sections
 

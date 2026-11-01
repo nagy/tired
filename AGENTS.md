@@ -675,6 +675,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   heading sets the top level, and a later shallower one joins it, so
   the number equals the rows that print at depth zero.  A count of the
   minimum level alone disagrees with the tree that TAB shows.
+- The CSV scanner feeds one byte back to itself when a closing quote
+  ends a field, so `tired--csv-scan` drops its index only on `:consumed'.
+  A quote opens a field at a record start or after a comma alone, so an
+  unquoted quote stays a literal byte.  A comment record ignores every
+  quote up to its newline, so an unbalanced quote never swallows the
+  rest of the file.
 - Batch Emacs runs no idle timer and no reprint timer.
   `tired-tests--with-fixture` binds a private element cache and an empty
   queue, stubs the two schedulers and sets `tired--elements-always`, so

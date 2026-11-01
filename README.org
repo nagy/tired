@@ -47,9 +47,10 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Single-child directory chains collapse into their last entry
 - Optional recursive size of a directory
 - Elements column that counts the children of a directory, the items of
-  a JSON array or object, the top-level Markdown headings, or the
-  top-level sections of any file with a handler, filled in the idle
-  state through a hook that the user extends
+  a JSON array or object, the top-level Markdown headings, the
+  uncommented rows of a CSV file, or the top-level sections of any file
+  with a handler, filled in the idle state through a hook that the user
+  extends
 - Optional evil bindings in =tired-evil.el=, with the evil motions kept
 - Native Elisp listing, no external process
 - A `thing-at-point' provider for `filename' and `existing-filename',
@@ -515,6 +516,7 @@ items that a row holds:
 | Directory                     | Every immediate child, dotfiles included    |
 | JSON file                     | The items of a top-level array, or the keys of a top-level object |
 | Markdown file                 | The headings at the top level of the tree   |
+| CSV file                      | The rows that do not start with `#`, the header included |
 | Any other file with a handler | The sections that print at depth zero       |
 | Section row                   | Nothing, because a section is not a file    |
 
@@ -523,7 +525,10 @@ Markdown file counts the headings that its section tree prints at depth
 zero: the first heading sets the top level, as it does in the tree, so
 a file whose first heading is `##` counts its `##` headings, and a later
 `#` heading joins them.  A fenced code block hides its headings, as it
-does in the tree.  Every other file with a handler counts through that
+does in the tree.  A CSV file counts the rows that do not start with a
+`#` character, and the header row counts too.  A quoted field may hold
+a comma or a newline, so a `#` inside one never starts a comment, and a
+blank line stays out.  Every other file with a handler counts through that
 handler: Org top-level headings, Emacs Lisp top-level forms, Rust
 items, Cargo tables, and SQLite tables and views.  A file without a
 handler keeps an empty cell, and so does a remote path, because every

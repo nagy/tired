@@ -16,9 +16,8 @@ short timer repaints them together.
 `tired-elements-functions` is an abnormal hook, so a user extends the
 column with `add-hook`.  A function receives the path and returns nil
 for no opinion, an integer for a count that it knows now, or a job for
-a count that it reads in chunks.  The built-in order runs the two
-streaming dissectors first, then the directory count, then the section
-fallback.  A file with a handler therefore counts without its own
+a count that it reads in chunks.  The built-in order runs the directory
+count first, then the streaming dissectors, then the section fallback.  A file with a handler therefore counts without its own
 dissector.  The fallback runs only below `tired-elements-sync-limit`,
 because `tired-file-sections` parses a whole file in one call.
 
@@ -69,7 +68,9 @@ The section fallback counts the sections that print at depth zero, so
 the first section sets the base and a later shallower section joins the
 top level.  The Markdown dissector keeps one bucket per level and
 applies the same rule, so the column agrees with the tree that TAB
-shows.
+shows.  The CSV dissector counts records rather than lines, because a
+quoted field may hold a newline, and a record that starts with `#` is a
+comment.
 
 A sort on the column places an unknown count last in both directions.
 A sort that reads a count that is still pending moves its row when the

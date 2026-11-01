@@ -193,6 +193,60 @@
     (tired-tests--flush-elements)
     (should-not (tired--elements-value (tired-tests--entry "a.md")))))
 
+;;; CSV
+
+(ert-deftest tired-elements-csv-counts-uncommented-rows ()
+  "A CSV file counts its rows and leaves a `#' row out.
+The header row counts, and a blank line stays out."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.csv" "name,qty\n# c\napple,2\n\n")
+    (tired root)
+    (tired-tests--flush-elements)
+    (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))
+    (should (equal "2" (tired-tests--elements-cell "a.csv")))))
+
+(ert-deftest tired-elements-csv-keeps-a-quoted-newline-in-one-row ()
+  "A quoted field holds a comma and a newline, so it never splits."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.csv" "id,note\n1,\"a\n# not a comment\"\n")
+    (tired-tests--write "b.csv" "\"a,b\",c\n")
+    (tired-tests--write "c.csv" "\"a\"\"b\",c\n")
+    (tired root)
+    (tired-tests--flush-elements)
+    (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))
+    (should (= 1 (tired--elements-value (tired-tests--entry "b.csv"))))
+    (should (= 1 (tired--elements-value (tired-tests--entry "c.csv"))))))
+
+(ert-deftest tired-elements-csv-takes-crlf-and-a-last-row ()
+  "A carriage return ends no row on its own, and the last row counts."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.csv" "a,b\r\n1,2\r\n3,4\r\n")
+    (tired-tests--write "b.csv" "a,b\n1,2")
+    (tired root)
+    (tired-tests--flush-elements)
+    (should (= 3 (tired--elements-value (tired-tests--entry "a.csv"))))
+    (should (= 2 (tired--elements-value (tired-tests--entry "b.csv"))))))
+
+(ert-deftest tired-elements-csv-counts-an-empty-file-as-zero ()
+  "An empty CSV file holds zero rows, and zero is a count."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.csv" "")
+    (tired-tests--write "b.csv" "# only a comment\n")
+    (tired root)
+    (tired-tests--flush-elements)
+    (should (= 0 (tired--elements-value (tired-tests--entry "a.csv"))))
+    (should (= 0 (tired--elements-value (tired-tests--entry "b.csv"))))
+    (should (equal "0" (tired-tests--elements-cell "a.csv")))))
+
+(ert-deftest tired-elements-csv-survives-a-chunk-boundary ()
+  "A quoted field and a comment cross a chunk boundary."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.csv" "name,qty\n# c\n1,\"a\nb\"\n")
+    (let ((tired-elements-chunk-size 3))
+      (tired root)
+      (tired-tests--flush-elements))
+    (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))))
+
 ;;; The section fallback
 
 (ert-deftest tired-elements-sections-count-the-top-level ()
