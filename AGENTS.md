@@ -23,8 +23,8 @@ README before you document a command.
   `tired-find-file-mode`, `tired-jump`), the evil hook
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, `tired-mode`
-- `tired-sections.el` — the Org, Emacs Lisp, Rust, Markdown, Cargo and
-  SQLite handlers
+- `tired-sections.el` — the Org, Emacs Lisp, Rust, Go, Markdown,
+  Cargo and SQLite handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the
   global count cache and the idle queue
 - `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
@@ -59,7 +59,7 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
   argument on the build does nothing; the default `emacsPackages` builds
   a wrapper that carries evil instead.  `packageRequires` stays empty, so
   the metadata names no elisp dependency.  `checkInputs` holds the
-  tree-sitter Rust, Markdown and TOML grammars, and `checkPhase` exports
+  tree-sitter Rust, Go, Markdown and TOML grammars, and `checkPhase` exports
   `TREESIT_EXTRA_LOAD_PATH`; a missing grammar skips its test instead of
   failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el`, `checkdoc` on
@@ -549,6 +549,16 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   re-parse.
 - The Emacs Lisp handler skips whitespace and comments with
   `forward-comment` before it records a form start.
+- The Go handler keeps a declaration that sits at the top level of the
+  file alone, so a `var`, a `const` or a `type` inside a function body
+  stays out of the listing.  A method indents one level under the type
+  that the file declares above it, through the map in
+  `tired--go-type-starts`.  `tired-file-sections-go` binds that map to
+  nil for one parse, and `tired--go-type-start` fills it on first use,
+  so the level function walks the type declarations once.  A method
+  that the file declares before its type stays at level zero, because
+  an indent with no parent row above it would read as a child of the
+  row before it.
 - A label takes its faces from the fontified temporary buffer, so the
   handler calls `font-lock-ensure` after it selects its major mode.
   Without that call a tree-sitter buffer holds no face and every row

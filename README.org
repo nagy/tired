@@ -789,13 +789,14 @@ extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
 on =TAB=.
 
-Six handlers ship with the package:
+Seven handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
 | Org (=.org=)  | Every heading, indented by its outline level, colored as =org-mode= colors the title |
 | Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source |
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants and macros, with the methods of an impl block nested under it.  A name carries the face of its source |
+| Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  A name carries the face of its source |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
@@ -809,9 +810,11 @@ subtree, so only the heading and its children show.  Use =C-x n w=
 to widen it again.  Set =tired-org-narrow-on-open= to =nil= to keep
 the whole file visible.
 
-The Rust, Markdown and Cargo handlers share one tree-sitter walker.  A
+The Rust, Go, Markdown and Cargo handlers share one tree-sitter walker.  A
 language contributes a spec of node types and fields, so a new grammar
-costs one entry.
+costs one entry.  A spec may also name a filter, a label function and
+a level function, so the Go handler keeps a declaration inside a
+function body out and indents a method under its own type.
 
 The Cargo handler reads only the manifest it parses.  Its table rows
 count their entries.  A dependency row holds
@@ -858,10 +861,10 @@ takes the face of its section kind, so a plain prefix such as a Rust
 item type and the padding of a Cargo row still show the section color.
 Every handler that reads source text fontifies its buffer for this
 reason: =emacs-lisp-mode= for a =defun= row, =org-mode= for a heading,
-and a tree-sitter mode for Rust, Markdown and Cargo.  A database has no
+and a tree-sitter mode for Rust, Go, Markdown and Cargo.  A database has no
 source text, so its rows stay plain.
 
-The Rust, Markdown and Cargo handlers call =font-lock-ensure= once per
+The Rust, Go, Markdown and Cargo handlers call =font-lock-ensure= once per
 parse, so the faces come from the same major mode that a visitor uses.
 
 A section is not selectable, because a section stands for its file.
@@ -874,8 +877,9 @@ The sections of an expanded file re-read when the file changes.  The
 listing watches every expanded file, because a directory watch does
 not report an edit to a file inside that directory.
 
-The Rust handler needs the tree-sitter grammar for Rust.  Without the
-grammar the handler returns no sections and the file row stays plain.
+The Rust handler needs the tree-sitter grammar for Rust, and the Go
+handler needs the grammar for Go.  Without the grammar the handler
+returns no sections and the file row stays plain.
 
 * Export
 
@@ -952,9 +956,9 @@ skip themselves without it.  The devShell provides an Emacs with evil
 installed, and the Nix check puts evil on the load path of its build
 Emacs.
 
-The Rust section test skips itself when no grammar is present.  Point
-=TREESIT_EXTRA_LOAD_PATH= at the directory that holds
-=libtree-sitter-rust.so= to run it.
+The Rust and Go section tests skip themselves when no grammar is
+present.  Point =TREESIT_EXTRA_LOAD_PATH= at the directory that holds
+=libtree-sitter-rust.so= and =libtree-sitter-go.so= to run them.
 
 * Design notes
 

@@ -258,6 +258,54 @@
                      ("function new" . 2)
                      ("function main" . 1))))))
 
+(ert-deftest tired-sections-of-a-go-file ()
+  "A Go file lists declarations and indents a method under its type."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "main.go"
+                        (concat "package main\n\n"
+                                "const Limit = 10\n\n"
+                                "var name = \"demo\"\n\n"
+                                "type Config struct {\n\tName string\n}\n\n"
+                                "func (c *Config) Label() string { return c.Name }\n\n"
+                                "func main() {\n\tvar local = 1\n\t_ = local\n}\n"))
+    (tired root)
+    (tired-tests--goto "main.go")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("const Limit" . 1)
+                     ("var name" . 1)
+                     ("type Config" . 1)
+                     ("method (Config) Label" . 2)
+                     ("function main" . 1))))))
+
+(ert-deftest tired-go-method-declared-before-its-type-stays-flat ()
+  "A method that precedes its type takes no indent from it."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "main.go"
+                        (concat "package main\n\n"
+                                "func (c *Config) Label() string { return c.Name }\n\n"
+                                "type Config struct {}\n"))
+    (tired root)
+    (tired-tests--goto "main.go")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("method (Config) Label" . 1)
+                     ("type Config" . 1))))))
+
+(ert-deftest tired-go-section-labels-take-mode-faces ()
+  "A Go label keeps the face of its source name."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "main.go" "package main\n\nfunc main() {}\n")
+    (let* ((path (expand-file-name "main.go" root))
+           (label (tired-section-label
+                   (car (tired-file-sections path)))))
+      (should (equal label "function main"))
+      (should (eq (get-text-property 9 'face label)
+                  'font-lock-function-name-face)))))
+
 (ert-deftest tired-sections-of-a-markdown-file ()
   "A Markdown file lists ATX and setext headings and skips code fences."
   (skip-unless (and (require 'treesit nil t)

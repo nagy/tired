@@ -133,6 +133,7 @@
               # keeps the build small and still passes.
               treesitGrammars ? emacs.pkgs.treesit-grammars.with-grammars (p: [
                 p.tree-sitter-rust
+                p.tree-sitter-go
                 p.tree-sitter-markdown
                 p.tree-sitter-markdown-inline
                 p.tree-sitter-toml
@@ -164,8 +165,8 @@
               # lint the package gets, and it keeps the source warning-free.
               turnCompilationWarningToError = true;
 
-              # The ERT suite reads this variable, so the Rust handler test
-              # finds libtree-sitter-rust and does not skip.
+              # The ERT suite reads this variable, so the Rust and Go
+              # handler tests find their grammar and do not skip.
               checkInputs = pkgs.lib.optional (treesitGrammars != null) treesitGrammars;
 
               checkPhase = ''

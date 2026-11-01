@@ -22,7 +22,7 @@
 ;;; Commentary:
 
 ;; The section handlers that turn one file into `tired-section'
-;; structs: Org, Emacs Lisp, Rust, Markdown, Cargo and SQLite.  The
+;; structs: Org, Emacs Lisp, Rust, Go, Markdown, Cargo and SQLite.  The
 ;; framework that calls a handler stays in `tired-core', so a new
 ;; handler costs one rule in `tired-file-handlers'.
 
@@ -49,7 +49,9 @@
 (declare-function treesit-node-child-by-field-name "treesit"
                   (node field-name))
 (declare-function treesit-node-child "treesit" (node n &optional named))
+(declare-function treesit-node-child-count "treesit" (node &optional named))
 (declare-function treesit-node-children "treesit" (node &optional named))
+(declare-function treesit-node-field-name "treesit" (node))
 (declare-function treesit-node-start "treesit" (node))
 (declare-function treesit-node-parent "treesit" (node))
 (declare-function treesit-node-text "treesit" (node &optional no-propertize))
@@ -366,6 +368,125 @@ Read ATX and setext headings through tree-sitter, so a heading
 inside a fenced code block stays out of the listing.  Return nil
 when the Markdown grammar is missing."
   (tired--treesit-sections tired--markdown-section-spec))
+
+(defvar tired--go-type-starts nil
+  "Hash table of every Go type name of the current buffer.
+The value is the start of the `type_spec' node, so a method indents
+under a type that the file declares above it.
+`tired-file-sections-go' binds the variable to nil for one parse, and
+`tired--go-type-start' fills it on first use.")
+
+(defun tired--go-collect-type-starts ()
+  "Return a hash table from each Go type name of the buffer to its start.
+The value of a name is the start of its `type_spec' node, so every
+name of one `type' block has its own position."
+  (let ((root (treesit-buffer-root-node 'go))
+        (table (make-hash-table :test #'equal)))
+    (dolist (declaration (and root (treesit-node-children root t)))
+      (when (equal (treesit-node-type declaration) "type_declaration")
+        (dolist (spec (treesit-node-children declaration t))
+          (when (equal (treesit-node-type spec) "type_spec")
+            (when-let* ((name (treesit-node-child-by-field-name spec "name")))
+              (puthash (treesit-node-text name t)
+                       (treesit-node-start spec)
+                       table))))))
+    table))
+
+(defun tired--go-type-start (name)
+  "Return the position of the Go type NAME in this buffer, or nil.
+Fill `tired--go-type-starts' on first use, so one parse walks the
+type declarations once."
+  (unless tired--go-type-starts
+    (setq tired--go-type-starts (tired--go-collect-type-starts)))
+  (gethash name tired--go-type-starts))
+
+(defun tired--go-receiver-name (node)
+  "Return the receiver type name of the Go method declaration NODE.
+Drop a pointer star and a type argument list, so a method of `*Set[T]'
+names the type `Set'.  Return nil when NODE names no receiver type."
+  (when-let* ((receiver (treesit-node-child-by-field-name node "receiver"))
+              (parameter (seq-find (lambda (child)
+                                     (equal (treesit-node-type child)
+                                            "parameter_declaration"))
+                                   (treesit-node-children receiver t)))
+              (type (treesit-node-child-by-field-name parameter "type")))
+    (let ((text (treesit-node-text type t)))
+      (setq text (replace-regexp-in-string "\\`\\*+" "" text))
+      (replace-regexp-in-string "\\[.*\\'" "" text))))
+
+(defun tired--go-name-texts (node)
+  "Return the declared names of the Go constant or variable spec NODE.
+Each name keeps the faces that the buffer fontification gave it."
+  (let (names)
+    (dotimes (index (treesit-node-child-count node t))
+      (let ((child (treesit-node-child node index t)))
+        (when (and (equal (treesit-node-type child) "identifier")
+                   (equal (treesit-node-field-name child) "name"))
+          (push (treesit-node-text child) names))))
+    (nreverse names)))
+
+(defun tired--go-section-label (node kind)
+  "Return the label for the Go NODE of KIND.
+A method names its receiver type, so two methods of one name stay
+apart.  A constant and a variable name every name that one spec
+declares."
+  (pcase (treesit-node-type node)
+    ("method_declaration"
+     (format "%s (%s) %s" kind
+             (or (tired--go-receiver-name node) "?")
+             (or (tired--treesit-field-text node '("name")) "?")))
+    ((or "const_spec" "var_spec")
+     (format "%s %s" kind
+             (or (string-join (tired--go-name-texts node) ", ") "?")))
+    (_
+     (format "%s %s" kind
+             (or (tired--treesit-field-text node '("name")) "?")))))
+
+(defun tired--go-node-shown-p (node)
+  "Return non-nil when NODE belongs in a Go listing.
+Keep a declaration at the top level of the file, and drop the one
+inside a function body or a nested block."
+  (let* ((parent (treesit-node-parent node))
+         (container (and parent (treesit-node-parent parent))))
+    (or (null parent)
+        (equal (treesit-node-type parent) "source_file")
+        (and container
+             (equal (treesit-node-type container) "source_file")))))
+
+(defun tired--go-node-level (node)
+  "Return the level of the Go NODE.
+A method indents one level under the type that the file declares
+above it.  Every other declaration sits at level zero."
+  (if (and (equal (treesit-node-type node) "method_declaration")
+           (when-let* ((name (tired--go-receiver-name node))
+                       (start (tired--go-type-start name)))
+             (< start (treesit-node-start node))))
+      1
+    0))
+
+(defconst tired--go-section-spec
+  '(:language go
+    :mode go-ts-mode
+    :require go-ts-mode
+    :kinds (("function_declaration" . function)
+            ("method_declaration" . method)
+            ("type_spec" . type)
+            ("const_spec" . const)
+            ("var_spec" . var))
+    :filter tired--go-node-shown-p
+    :label tired--go-section-label
+    :level tired--go-node-level)
+  "Tree-sitter section spec for a Go file.")
+
+(defun tired-file-sections-go (_path)
+  "Return the declarations of the current Go buffer as section plists.
+The buffer already holds the file, so the handler ignores PATH.
+Read functions, methods, types, constants and variables through
+tree-sitter.  A method indents under the type that the file declares
+above it, and a declaration inside a function body stays out.  Return
+nil when the Go grammar is missing."
+  (let ((tired--go-type-starts nil))
+    (tired--treesit-sections tired--go-section-spec)))
 
 (defconst tired--cargo-tables '("features" "dependencies"
                                 "dev-dependencies" "build-dependencies")

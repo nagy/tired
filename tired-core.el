@@ -248,6 +248,7 @@ name."
   '(("\\.org\\'" . tired-file-sections-org)
     ("\\.el\\'" . tired-file-sections-elisp)
     ("\\.rs\\'" . tired-file-sections-rust)
+    ("\\.go\\'" . tired-file-sections-go)
     ("\\.\\(?:md\\|markdown\\)\\'" . tired-file-sections-markdown)
     ("/Cargo\\.toml\\'" . tired-file-sections-cargo)
     ("\\.\\(?:db\\|sqlite\\|sqlite3\\)\\'" . tired-file-sections-sqlite))
