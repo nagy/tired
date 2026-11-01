@@ -106,6 +106,40 @@ The `tired-directory-size-budget` seconds that one redraw spends on size
 walks.  A spent budget stops the walk and defers the rest.
 _Avoid_: Timeout, walk limit, quota
 
+**Element**:
+One item that an entry holds, such as an immediate child of a
+directory, an item of a top-level JSON array, or a top-level Markdown
+heading.  An entry is a row of the listing, and an element is what that
+row counts.
+_Avoid_: Item, child, member
+
+**Dissector**:
+A function in `tired-elements-functions` that counts the elements of one
+path.  It returns nil for no opinion, an integer for a count that it
+knows now, or an element job for a count that it reads in steps.
+_Avoid_: Counter, analyzer, extractor, parser
+
+**Element count**:
+The number that a dissector returns for one path, printed in the
+Elements column.  Nil means no count, and the cell stays empty.
+_Avoid_: Size, total, tally
+
+**Element job**:
+One incremental read of one path for its element count.  A step reads a
+chunk, keeps its state, and ends with a count or with no count.
+_Avoid_: Task, work item, worker, background job
+
+**Element cache**:
+The global table `tired--elements-cache` that holds one element count per
+path with the modification time, the size and the hook value that the
+count came from.  Every Tired buffer shares it.
+_Avoid_: Memo, count table, tally cache
+
+**Section fallback**:
+The last dissector, which counts the sections that print at depth zero.
+It reaches every file that a section handler claims.
+_Avoid_: Default dissector, generic count
+
 **Collapse**:
 One row that represents a directory chain whose subtree holds exactly
 one file.

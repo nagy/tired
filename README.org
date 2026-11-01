@@ -45,6 +45,10 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Automatic refresh on directory changes, debounced
 - Single-child directory chains collapse into their last entry
 - Optional recursive size of a directory
+- Elements column that counts the children of a directory, the items of
+  a JSON array or object, the top-level Markdown headings, or the
+  top-level sections of any file with a handler, filled in the idle
+  state through a hook that the user extends
 - Optional evil bindings in =tired-evil.el=, with the evil motions kept
 - Native Elisp listing, no external process
 - A `thing-at-point' provider for `filename' and `existing-filename',
@@ -499,6 +503,104 @@ fills them:
 
 The walk of one single subtree still runs to its end.  Set the value
 to nil to walk every directory in one redraw.
+
+* Elements
+
+The =Elements= column sits between =Modified= and =Mode=.  It counts the
+items that a row holds:
+
+| Row                           | Elements                                    |
+|-------------------------------+---------------------------------------------|
+| Directory                     | Every immediate child, dotfiles included    |
+| JSON file                     | The items of a top-level array, or the keys of a top-level object |
+| Markdown file                 | The headings at the shallowest level        |
+| Any other file with a handler | The sections that print at depth zero       |
+| Section row                   | Nothing, because a section is not a file    |
+
+A directory counts its immediate children and never a subtree.  A
+fenced code block in Markdown hides its headings, as it does in the
+section tree.  Every other file with a handler counts through that
+handler: Org top-level headings, Emacs Lisp top-level forms, Rust
+items, Cargo tables, and SQLite tables and views.  A file without a
+handler keeps an empty cell, and so does a remote path, because every
+read there costs a network round trip.
+
+A count needs a file read, so the column fills after the listing
+prints.  Tired does the work in the idle state, one small step at a
+time.  A step reads one chunk and stops when the budget ends or when a
+key waits, so Emacs never blocks for a whole file:
+
+#+begin_src elisp
+  (setq tired-elements-budget 0.02
+        tired-elements-chunk-size 65536)
+#+end_src
+
+A finished count repaints its buffers once, after a short delay, so a
+directory of many files costs one reprint.  Set
+=tired-elements-reprint-delay= to change that delay.
+
+One global cache serves every Tired buffer.  A count keys on the
+absolute path, the modification time, the size and the value of
+=tired-elements-functions=, so one file costs one read, and an edit to
+the hook drops every count.  A count stays valid for
+=tired-elements-cache-ttl= seconds:
+
+#+begin_src elisp
+  (setq tired-elements-cache-ttl 60)
+#+end_src
+
+The section fallback parses a whole file in one step, so it runs only
+below =tired-elements-sync-limit= bytes.  A larger file keeps an empty
+cell until the user expands it:
+
+#+begin_src elisp
+  (setq tired-elements-sync-limit 1000000)
+#+end_src
+
+=tired-elements-functions= is an abnormal hook.  Each function receives
+the absolute file name and returns =nil= for no opinion, an integer for
+a count that it knows now, or an element job for a count that it reads
+in chunks.  The first non-nil result wins, so the default order runs
+the streaming dissectors first and the section fallback last:
+
+#+begin_src elisp
+  (setq tired-elements-functions
+        '(tired-elements-json
+          tired-elements-markdown
+          tired-elements-directory
+          tired-elements-sections))
+#+end_src
+
+Add your own counter with =add-hook=.  A function runs before the
+built-in dissectors when =add-hook= prepends it:
+
+#+begin_src elisp
+  (defun my-elements-count (path)
+    "Count the comment lines of a text file at PATH."
+    (when (string-suffix-p ".txt" path)
+      (with-temp-buffer
+        (insert-file-contents path)
+        (count-matches "^;" (point-min) (point-max)))))
+
+  (add-hook 'tired-elements-functions #'my-elements-count)
+#+end_src
+
+A dissector that reads a large file in steps returns a job instead of
+a number.  A step keeps its own state, reads one chunk, and returns
+=:more= or =:done=.  The job carries the count that the last step
+found.  =tired--elements-job-create= builds one.
+
+M-x tired-elements-clear-cache drops the whole cache and queues every
+shown row again.  The command has no key and no menu entry:
+
+#+begin_src elisp
+  (tired-elements-clear-cache)
+#+end_src
+
+The column also sorts.  =elements-asc= and =elements-desc= belong to
+=tired-sort-states=, and a click on the header sorts by it.  A row
+whose count is still pending sorts last in both directions, and the
+listing keeps point on its row when the number arrives.
 
 * Hidden entries
 
