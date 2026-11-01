@@ -146,7 +146,9 @@
 (defun tired-noselect (directory)
   "Return a Tired buffer for DIRECTORY, without selecting it.
 The buffer name depends on DIRECTORY, so a second call reuses the
-same buffer.  The buffer gets DIRECTORY as `default-directory'."
+same buffer.  The buffer gets DIRECTORY as `default-directory' and
+as `list-buffers-directory', so `list-buffers' names the directory
+in its file column."
   (let ((directory (file-name-as-directory (expand-file-name directory))))
     (unless (file-directory-p directory)
       (user-error "Not a directory: %s" directory))
@@ -162,6 +164,9 @@ same buffer.  The buffer gets DIRECTORY as `default-directory'."
           (tired--set-selection nil))
         (setq tired--directory directory)
         (setq default-directory directory)
+        ;; A Tired buffer visits no file, so `list-buffers' reads this
+        ;; variable for its file column.
+        (setq list-buffers-directory directory)
         (tired-refresh)
         ;; `recentf-mode' records files that a buffer visits, and a
         ;; Tired buffer visits a directory.

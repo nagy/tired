@@ -53,6 +53,8 @@
       (should (equal (tired--buffer-name root) (buffer-name buffer)))
       (should (eq 'tired-mode (buffer-local-value 'major-mode buffer)))
       (should (equal root (buffer-local-value 'default-directory buffer)))
+      (should (equal root
+                     (buffer-local-value 'list-buffers-directory buffer)))
       (should-not (get-buffer-window buffer)))))
 
 (ert-deftest tired-noselect-reuses-its-buffer ()

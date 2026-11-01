@@ -520,10 +520,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   add a `post-gc-hook` clear or weak keys: one walk triggers several
   collections and the table would empty itself.  The time window in
   `tired-size-cache-ttl` is the one freshness rule.
-- `tired-noselect` owns `default-directory`.  `tired-mode` runs before
-  the directory is known, so it must not set the variable.  The
-  function also feeds `recentf-add-file` while `recentf-mode` holds,
-  because a Tired buffer visits a directory and no file name reaches
+- `tired-noselect` owns `default-directory` and
+  `list-buffers-directory`.  `tired-mode` runs before the directory
+  is known, so it must not set either variable.  The function also
+  feeds `recentf-add-file` while `recentf-mode` holds, because a Tired
+  buffer visits a directory and no file name reaches
   `recentf-track-opened-file`.
 - The buffer name keys the directory, so `tired-noselect` reuses the
   buffer.  A renamed buffer would make a second one.
