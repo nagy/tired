@@ -11,8 +11,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Column listing with name, size, modification time and permission mode
 - Modification time column colored by `tired-date', which inherits
   `org-date'
-- Size column colored by `tired-file-size', which inherits
-  `marginalia-size'
+- Size column colored by `tired-file-size', which inherits `default'
 - Directory slash colored by `tired-directory-suffix-face', which
   inherits `parenthesis'
 - Name column fits the longest entry, clamped to the window width
@@ -555,8 +554,8 @@ inherits =org-date=, so a theme colors the stamp the way it colors a
 date inside an Org file.  No other column prints a date or a time.
 
 The size column takes the =tired-file-size= face.  That face inherits
-=marginalia-size=, so a theme colors a size the way it colors a size
-in the Minibuffer completion list.  An empty size cell keeps no face.
+=default=, so a theme sets the size color on this face alone and Tired
+names no outside package.  An empty size cell keeps no face.
 
 A directory row ends with a slash.  That slash takes the
 =tired-directory-suffix-face= face, which inherits =parenthesis=, so a

@@ -299,10 +299,10 @@ The column takes the Org date face, so a theme colors the stamp the
 way it colors a date in an Org file.")
 
 (defface tired-file-size
-  '((t :inherit marginalia-size))
+  '((t :inherit default))
   "Face for the size column.
-The column takes the Marginalia size face, so a theme colors a size
-the way it colors a size in the Minibuffer completion list.")
+The face inherits `default', so a theme colors a size through this
+face alone and Tired names no outside package.")
 
 (cl-defstruct (tired-entry (:constructor tired--entry-create))
   "One entry of a directory listing.
