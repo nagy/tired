@@ -28,17 +28,21 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 
 (require 'tired-core)
 
 (defcustom tired-elements-functions
-  '(tired-elements-directory)
+  '(tired-elements-directory
+    tired-elements-json)
   "Abnormal hook that counts the elements of one path.
 Each function receives the absolute file name and returns nil when
 it has no opinion, an integer for a count that it knows now, or a
 `tired--elements-job' for a count that it reads in steps.  The first
 non-nil result wins, so a cheap test belongs before an expensive
-read."
+read.  `tired-elements-directory' counts the immediate children of a
+directory, and `tired-elements-json' counts a top-level JSON
+container."
   :type 'hook
   :group 'tired)
 
@@ -184,6 +188,7 @@ one read serves every listing."
                       :path path
                       :stamp stamp
                       :size (nth 1 stamp)
+                      :offset 0
                       :step #'tired--elements-dispatch
                       :owners (list (current-buffer)))))
             (puthash path job tired--elements-queued)
@@ -205,12 +210,24 @@ section row has no count."
 (defun tired--elements-step (job)
   "Advance JOB by one step, inside the buffer that queued it.
 A dissector may read the entry table of the listing, so the buffer
-of the first owner stays current.  Return `:more' or `:done'."
+of the first owner stays current.  A dissector that signals finishes
+the job with no count, so one bad file never stops the queue.
+Return `:more' or `:done'."
   (let ((buffer (car (tired--elements-job-owners job))))
-    (if (buffer-live-p buffer)
-        (with-current-buffer buffer
+    (condition-case err
+        (if (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (funcall (tired--elements-job-step job) job))
           (funcall (tired--elements-job-step job) job))
-      (funcall (tired--elements-job-step job) job))))
+      (error
+       (display-warning
+        'tired
+        (format "Element dissector failed on %s: %s"
+                (abbreviate-file-name (tired--elements-job-path job))
+                (error-message-string err))
+        :warning)
+       (setf (tired--elements-job-count job) nil)
+       :done))))
 
 (defun tired--elements-dispatch (job)
   "Run `tired-elements-functions' for the path of JOB.
@@ -333,6 +350,151 @@ time or its size."
     (with-current-buffer buffer
       (when (derived-mode-p 'tired-mode)
         (tired--redraw)))))
+
+;;; Readers
+
+(defun tired--elements-read (job)
+  "Return the next chunk of JOB as a unibyte string, or nil.
+Read with `insert-file-contents-literally', so a dissector sees the
+bytes of the file and no decoded text.  A range read seeks on a local
+file, so one step costs one read, whatever the size of the file."
+  (let* ((offset (or (tired--elements-job-offset job) 0))
+         (end (min (or (tired--elements-job-size job) 0)
+                   (+ offset tired-elements-chunk-size))))
+    (when (< offset end)
+      (setf (tired--elements-job-offset job) end)
+      (with-temp-buffer
+        (set-buffer-multibyte nil)
+        (insert-file-contents-literally (tired--elements-job-path job)
+                                        nil offset end)
+        (buffer-string)))))
+
+;;; JSON
+
+(defconst tired--json-whitespace '(?\s ?\t ?\n ?\r)
+  "Characters that JSON reads as whitespace.")
+
+(cl-defstruct (tired--json-state (:constructor tired--json-state-create))
+  "Scanner state for the top-level items of a JSON file.
+MODE holds `array', `object' or nil before the root.  DEPTH counts
+the open containers.  COUNT holds the items that the scan found.
+IN-STRING and ESCAPE track a string, and KEY-OPEN marks the key
+string of an object.  EXPECT holds whether a new value or key may
+start.  DONE holds when the root closed, and INVALID holds when the
+first byte is no container."
+  mode
+  depth
+  count
+  in-string
+  escape
+  expect
+  key-open
+  done
+  invalid)
+
+(defun tired--json-scan (state string)
+  "Advance STATE over STRING and return STATE.
+Count the items of a top-level array and the keys of a top-level
+object.  A string, an escape and a chunk boundary carry over, so one
+chunk of a split string never changes the count."
+  (let ((index 0)
+        (length (length string)))
+    (while (and (< index length)
+                (not (tired--json-state-done state))
+                (not (tired--json-state-invalid state)))
+      (let ((char (aref string index)))
+        (cond
+         ((null (tired--json-state-mode state))
+          (unless (memq char tired--json-whitespace)
+            (pcase char
+              (?\[
+               (setf (tired--json-state-mode state) 'array
+                     (tired--json-state-depth state) 1
+                     (tired--json-state-count state) 0
+                     (tired--json-state-expect state) t))
+              (?\{
+               (setf (tired--json-state-mode state) 'object
+                     (tired--json-state-depth state) 1
+                     (tired--json-state-count state) 0
+                     (tired--json-state-expect state) t))
+              (_
+               (setf (tired--json-state-invalid state) t
+                     (tired--json-state-done state) t)))))
+         ((tired--json-state-in-string state)
+          (cond
+           ((tired--json-state-escape state)
+            (setf (tired--json-state-escape state) nil))
+           ((eq char ?\\)
+            (setf (tired--json-state-escape state) t))
+           ((eq char ?\")
+            (setf (tired--json-state-in-string state) nil)
+            (when (and (eq (tired--json-state-mode state) 'object)
+                       (= (tired--json-state-depth state) 1)
+                       (tired--json-state-key-open state))
+              (setf (tired--json-state-key-open state) nil
+                    (tired--json-state-expect state) nil
+                    (tired--json-state-count state)
+                    (1+ (tired--json-state-count state)))))))
+         ((memq char tired--json-whitespace) nil)
+         (t
+          (when (and (eq (tired--json-state-mode state) 'array)
+                     (= (tired--json-state-depth state) 1)
+                     (tired--json-state-expect state)
+                     (not (eq char ?\])))
+            (setf (tired--json-state-expect state) nil
+                  (tired--json-state-count state)
+                  (1+ (tired--json-state-count state))))
+          (cond
+           ((eq char ?\")
+            (setf (tired--json-state-in-string state) t)
+            (when (and (eq (tired--json-state-mode state) 'object)
+                       (= (tired--json-state-depth state) 1)
+                       (tired--json-state-expect state))
+              (setf (tired--json-state-key-open state) t)))
+           ((memq char '(?\[ ?\{))
+            (setf (tired--json-state-depth state)
+                  (1+ (tired--json-state-depth state))
+                  (tired--json-state-expect state) nil))
+           ((memq char '(?\] ?\}))
+            (setf (tired--json-state-depth state)
+                  (1- (tired--json-state-depth state)))
+            (when (= (tired--json-state-depth state) 0)
+              (setf (tired--json-state-done state) t)))
+           ((eq char ?\,)
+            (when (= (tired--json-state-depth state) 1)
+              (setf (tired--json-state-expect state) t)))))))
+      (setq index (1+ index))))
+  state)
+
+(defun tired--json-step (job)
+  "Advance JOB over the next chunk of its JSON file.
+Return `:done' when the root container closed or the file ended."
+  (let ((state (tired--elements-job-state job)))
+    (if (or (tired--json-state-done state)
+            (>= (or (tired--elements-job-offset job) 0)
+                (or (tired--elements-job-size job) 0)))
+        (progn
+          (setf (tired--elements-job-count job)
+                (and (tired--json-state-done state)
+                     (not (tired--json-state-invalid state))
+                     (tired--json-state-count state)))
+          :done)
+      (when-let* ((chunk (tired--elements-read job)))
+        (tired--json-scan state chunk))
+      :more)))
+
+(defun tired-elements-json (path)
+  "Return a count or a job for the JSON file at PATH.
+A top-level array counts its items, and a top-level object counts
+its keys.  Return nil for another name, so the next dissector
+decides."
+  (when (let ((case-fold-search t))
+          (string-match-p "\\.json\\'" path))
+    (tired--elements-job-create
+     :step #'tired--json-step
+     :state (tired--json-state-create))))
+
+;;; Directories
 
 (defun tired-elements-directory (path)
   "Return the number of immediate children of the directory at PATH.

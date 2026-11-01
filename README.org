@@ -566,9 +566,9 @@ the streaming dissectors first and the section fallback last:
 
 #+begin_src elisp
   (setq tired-elements-functions
-        '(tired-elements-json
+        '(tired-elements-directory
+          tired-elements-json
           tired-elements-markdown
-          tired-elements-directory
           tired-elements-sections))
 #+end_src
 
