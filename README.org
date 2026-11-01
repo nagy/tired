@@ -542,8 +542,9 @@ directory of many files costs one reprint.  Set
 One global cache serves every Tired buffer.  A count keys on the
 absolute path, the modification time, the size and the value of
 =tired-elements-functions=, so one file costs one read, and an edit to
-the hook drops every count.  A count stays valid for
-=tired-elements-cache-ttl= seconds:
+the hook drops every count.  A shown row counts as a read, and the
+cache drops an entry that no buffer read for =tired-elements-cache-ttl=
+seconds:
 
 #+begin_src elisp
   (setq tired-elements-cache-ttl 60)

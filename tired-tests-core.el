@@ -265,7 +265,7 @@ default `tired-file-handlers' names a void section handler.
     (tired-sort-previous)
     (should (eq (tired--sort-state) 'name-asc))
     (tired-sort-previous)
-    (should (eq (tired--sort-state) 'modified-desc))))
+    (should (eq (tired--sort-state) 'elements-desc))))
 
 (ert-deftest tired-sort-next-crosses-a-state-outside-the-list ()
   "A column that the state list leaves out gives way to the list."
@@ -277,7 +277,7 @@ default `tired-file-handlers' names a void section handler.
     (should (eq (tired--sort-state) 'name-asc))
     (tired-sort 'mode)
     (tired-sort-previous)
-    (should (eq (tired--sort-state) 'modified-desc))))
+    (should (eq (tired--sort-state) 'elements-desc))))
 
 (ert-deftest tired-sort-keys-cycle-the-states ()
   "The mode map puts the sort cycling on the two bracket keys."

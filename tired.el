@@ -110,6 +110,12 @@
 ;; `sqlite' support.  TAB expands a file row, and TAB on a section row
 ;; folds that section.
 ;;
+;; The Elements column counts the items that a row holds.  A redraw
+;; prints the cached number and queues the rest, so one global idle
+;; queue reads each file in small steps.  `tired-elements-functions'
+;; holds the dissectors, so a user extends the column with
+;; `add-hook'.
+;;
 ;; File operations act at once, without a confirmation question.
 ;; Delete moves each path into `tired-trash-directory', and a copy or
 ;; a move that replaces a path puts the old path there first.  Each
@@ -121,6 +127,7 @@
 
 (require 'tired-core)
 (require 'tired-sections)
+(require 'tired-elements)
 (require 'tired-file-ops)
 (require 'tired-export)
 

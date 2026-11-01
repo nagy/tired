@@ -95,7 +95,8 @@ that entry."
   :type 'boolean)
 
 (defcustom tired-sort-states
-  '(name-asc name-desc size-asc size-desc modified-asc modified-desc)
+  '(name-asc name-desc size-asc size-desc
+    modified-asc modified-desc elements-asc elements-desc)
   "Sort states that `tired-sort-next' and `tired-sort-previous' cycle.
 Each state names a column and a direction.  The text before the
 last hyphen is the column that `tired-sort' reads, and the suffix
@@ -108,6 +109,8 @@ Add `mode-asc' and `mode-desc' to cycle that column too."
                          (const :tag "Size, descending" size-desc)
                          (const :tag "Modified, ascending" modified-asc)
                          (const :tag "Modified, descending" modified-desc)
+                         (const :tag "Elements, ascending" elements-asc)
+                         (const :tag "Elements, descending" elements-desc)
                          (const :tag "Mode, ascending" mode-asc)
                          (const :tag "Mode, descending" mode-desc))))
 
@@ -369,7 +372,7 @@ its arguments."
 
 (defvar-local tired--sort-key 'name
   "Column used to sort the listing.
-One of `name', `size', `modified' or `mode'.")
+One of `name', `size', `modified', `elements' or `mode'.")
 
 (defvar-local tired--sort-flip nil
   "When non-nil, sort the listing in descending order.")
@@ -454,6 +457,22 @@ list.  A changed time re-parses the file.")
 `tired-name-edit-mode' sets it, and `tired-edit-names' turns that
 mode on.  A reprint then erases what the user typed, so
 `tired--redraw' draws nothing while the value holds.")
+
+(defvar tired--elements-value-function nil
+  "Function that returns the element count of a row, or nil.
+`tired-elements' installs it, so the core keeps the Elements column,
+its sort key and its cell while the library holds the counts.  A nil
+value prints an empty cell and sorts every row as unknown.")
+
+(defvar tired--elements-queue-function nil
+  "Function that queues the rows of the current redraw for a count.
+`tired--redraw-buffer' calls it after the print, and
+`tired-elements' installs it.")
+
+(defvar tired--elements-prune-function nil
+  "Function that drops stale element counts.
+`tired--reload-tables' calls it on refresh, and `tired-elements'
+installs it.")
 
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
@@ -560,13 +579,17 @@ short show nothing, so the value stays nil."
   "Return the value that `tired--sort-key' compares for ENTRY.
 The name value holds the folded extension, so a group of one
 extension stays together.  Without `tired-sort-by-extension' every
-name shares one empty extension, so the name alone decides."
+name shares one empty extension, so the name alone decides.  The
+elements value comes from `tired--elements-show', so the order
+follows the number that the column prints, and a row without a count
+stays nil."
   (pcase tired--sort-key
     ('name (if tired-sort-by-extension
                (tired--sort-extension entry)
              ""))
     ('size (or (tired--shown-size entry) (tired-entry-size entry) 0))
     ('modified (tired-entry-mtime entry))
+    ('elements (tired--elements-show entry))
     ('mode (tired-entry-mode entry))
     (_ (error "Unknown sort key: %S" tired--sort-key))))
 
@@ -598,7 +621,9 @@ that the row prints."
   "Return non-nil when sort row A lists before sort row B.
 With `tired-group-directories' set, a directory comes first.
 Within a group, rows follow `tired--sort-key' and `tired--sort-flip',
-with the name as the tie-breaker."
+with the name as the tie-breaker.  A row whose value is nil has no
+value yet, such as an element count that waits in the idle queue, so
+it lists after every row that has one, in both directions."
   (let ((a-dir (and tired-group-directories
                     (tired-entry-dirp (tired-sort-row-entry a))))
         (b-dir (and tired-group-directories
@@ -609,6 +634,11 @@ with the name as the tie-breaker."
      (t (let ((left (tired-sort-row-value a))
               (right (tired-sort-row-value b)))
           (cond
+           ((and (null left) (null right))
+            (string< (tired-sort-row-name a)
+                     (tired-sort-row-name b)))
+           ((null left) nil)
+           ((null right) t)
            ((if (numberp left) (< left right) (string< left right))
             (not tired--sort-flip))
            ((if (numberp left) (< right left) (string< right left))
@@ -1427,6 +1457,22 @@ nothing."
       (propertize text 'face 'tired-file-size
                   'font-lock-face 'tired-file-size))))
 
+(defun tired--elements-show (row)
+  "Return the element count that ROW shows, or nil.
+`tired-elements' supplies the count through
+`tired--elements-value-function'.  A row without a value sorts and
+prints as unknown."
+  (if tired--elements-value-function
+      (funcall tired--elements-value-function row)
+    nil))
+
+(defun tired--elements-cell (row)
+  "Return the Elements cell for ROW.
+A row without a count keeps the cell empty, so a pending count shows
+nothing until the idle queue fills it."
+  (let ((count (tired--elements-show row)))
+    (if (integerp count) (number-to-string count) "")))
+
 (defun tired--row (row depth)
   "Return the tabulated list row for ROW at DEPTH.
 ROW is a `tired-entry' or a `tired-section'.  A section fills the
@@ -1438,6 +1484,7 @@ Emacs 31 requires a vector of column descriptors here; a list makes
                       (tired--section-cell row))
               ""
               ""
+              ""
               "")
     (vector (concat (make-string (* 2 depth) ?\s)
                     (tired--name-cell row))
@@ -1446,6 +1493,7 @@ Emacs 31 requires a vector of column descriptors here; a list makes
                                             (tired-entry-mtime row))
                         'face 'tired-date
                         'font-lock-face 'tired-date)
+            (tired--elements-cell row)
             (tired-entry-mode row))))
 
 (defun tired--tabulated-entries ()
@@ -1495,10 +1543,10 @@ current sort column flips the direction."
               'mouse-face 'header-line-highlight
               'help-echo "mouse-1: sort by this column"))
 
-(defconst tired--fixed-column-width 38
+(defconst tired--fixed-column-width 48
   "Width of the columns that keep their size.
-This sum covers the size, modification time and mode columns, the
-left padding and the space after the name column.")
+This sum covers the size, modification time, elements and mode
+columns, the left padding and the space after the name column.")
 
 (defun tired--name-column-width (&optional window)
   "Return the width of the name column for WINDOW.
@@ -1527,6 +1575,7 @@ column from the current listing."
          nil)
    (list (tired--column-label "Size" 'size) 9 nil :right-align t)
    (list (tired--column-label "Modified" 'modified) 17 nil)
+   (list (tired--column-label "Elements" 'elements) 10 nil :right-align t)
    (list (tired--column-label "Mode" 'mode) 10 nil)))
 
 (defun tired--escape-mode-line (text)
@@ -2120,6 +2169,8 @@ rows that it left unwalked."
                           tired--header-base))))
           (tabulated-list-print t)
           (tired--paint-row-help)
+          (when tired--elements-queue-function
+            (funcall tired--elements-queue-function))
           ;; A pass that finished no walk makes no progress, so it
           ;; schedules no further pass.
           (when (> tired--size-walks 0)
@@ -2200,6 +2251,8 @@ one `tired-size-cache-ttl' window reads no directory twice."
   (setq tired--tables (make-hash-table :test #'equal))
   (setq tired--collapse-cache (make-hash-table :test #'equal))
   (tired--size-cache-prune)
+  (when tired--elements-prune-function
+    (funcall tired--elements-prune-function))
   (puthash (directory-file-name tired--directory)
            (tired--read-entries tired--directory)
            tired--tables)
@@ -2608,6 +2661,8 @@ An active region joins the selection first."
     ('size-desc (cons 'size t))
     ('modified-asc (cons 'modified nil))
     ('modified-desc (cons 'modified t))
+    ('elements-asc (cons 'elements nil))
+    ('elements-desc (cons 'elements t))
     ('mode-asc (cons 'mode nil))
     ('mode-desc (cons 'mode t))
     (_ (error "Unknown sort state: %S" state))))
@@ -2653,12 +2708,13 @@ The list wraps around at the start."
 
 (defun tired-sort (column &optional reverse)
   "Sort the listing by COLUMN.
-COLUMN is one of `name', `size', `modified' or `mode'.  Selecting
-the current column again flips the direction.  With REVERSE, start
-with the opposite direction."
+COLUMN is one of `name', `size', `modified', `elements' or `mode'.
+Selecting the current column again flips the direction.  With
+REVERSE, start with the opposite direction."
   (interactive
    (list (intern (completing-read "Sort by: "
-                                  '("name" "size" "modified" "mode")
+                                  '("name" "size" "modified"
+                                    "elements" "mode")
                                   nil t nil nil
                                   (symbol-name tired--sort-key)))
          current-prefix-arg))

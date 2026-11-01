@@ -18,13 +18,15 @@ README before you document a command.
 
 ## Files
 
-- `tired.el` — entry point: commentary, the four requires, the public
+- `tired.el` — entry point: commentary, the five requires, the public
   commands (`tired`, `tired-other-window`, `tired-noselect`,
   `tired-find-file-mode`, `tired-jump`), the evil hook
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, `tired-mode`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Markdown, Cargo and
   SQLite handlers
+- `tired-elements.el` — the Elements column, its dissector hook, the
+  global count cache and the idle queue
 - `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
   touch, shell, and the in-place name edit
 - `tired-export.el` — the CSV, text and `rclone lsjson` exports and
@@ -60,7 +62,7 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
   `TREESIT_EXTRA_LOAD_PATH`; a missing grammar skips its test instead of
   failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el`, `checkdoc` on
-  the six libraries, and `relint` on the same six.  `checkdoc` and
+  the seven libraries, and `relint` on the same seven.  `checkdoc` and
   `relint` exit 0 while they report, so the check gates on output.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix`.
@@ -72,10 +74,10 @@ emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
 ## Architecture
 
 Dependencies point one way: `tired-core` requires no sibling,
-`tired-sections`, `tired-file-ops` and `tired-export` require
-`tired-core`, and `tired` requires all four.  When `tired-core` names a
-command from another library, as `tired-mode-map` does, it adds a
-`declare-function`.
+`tired-sections`, `tired-elements`, `tired-file-ops` and
+`tired-export` require `tired-core`, and `tired` requires all five.
+When `tired-core` names a command from another library, as
+`tired-mode-map` does, it adds a `declare-function`.
 
 Every `;;;###autoload` cookie for a command sits in `tired.el`, because
 the file that holds a cookie names the file that its autoload loads.
@@ -214,10 +216,32 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     a section is not a file.  A whole-view export reuses one buffer per
     format and directory.  A partial export makes a new buffer, because
     another selection holds other rows.
+16. The Elements column sits between Modified and Mode.  The column,
+    its sort key and its cell live in `tired-core`, and the count lives
+    in `tired-elements.el`.  Core reads three variables that the
+    library fills at load time: `tired--elements-value-function`,
+    `tired--elements-queue-function` and
+    `tired--elements-prune-function`.  A nil value prints an empty
+    cell, so core redraws alone.  `tired--redraw-buffer` queues the
+    visible rows after the print, and `tired--reload-tables` prunes the
+    cache.  The number comes from `tired-elements-functions`, an
+    abnormal hook that `run-hook-with-args-until-success` walks.  A
+    dissector returns nil, an integer, or a `tired--elements-job`.  One
+    global queue holds one job per path, gives way to the next job
+    after every step, and stops on `tired-elements-budget` or on
+    `input-pending-p`.  A pass schedules its own successor through an
+    idle timer, because an idle timer fires once for one transition
+    into the idle state.  A finished count fills
+    `tired--elements-cache` under the path with the modification time,
+    the size and the hook value, then marks its owner buffers dirty,
+    and one timer repaints them together.
 
 ## Conventions
 
 - Package prefix `tired-`, private helpers `tired--`.
+- The Elements number has one owner: `tired--elements-value-function`.
+  Do not read `tired-elements-functions` from `tired-core`, and do not
+  call a dissector from a redraw.  A redraw reads the cache alone.
 - Public commands carry `;;;###autoload` only as entry points (`tired`,
   `tired-other-window`, `tired-noselect`, `tired-find-file-mode`,
   `tired-jump`).  Keep every cookie in `tired.el`: the autoload of a
@@ -623,3 +647,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - In batch Emacs the region needs `transient-mark-mode`, which starts
   off, and no command loop runs `post-command-hook`, so a test that needs
   either enables the first or runs the second.
+- A cached element count keys on the path, the modification time, the
+  size and the hook value.  A redraw refreshes the last-read stamp, and
+  `tired-elements-cache-ttl` drops an entry that no buffer read inside
+  that window.  A cached nil count is a hit, not a miss: an unreadable
+  file and a file without a dissector both store nil, and a miss would
+  read the file on every redraw.
+- A nil sort value lists last in both directions, and `tired--lessp`
+  breaks a two-nil tie by name.  Without that branch two rows that wait
+  for a count keep the hash order.
+- The Elements header label with the sort arrow is ten characters wide,
+  so the column and its share of `tired--fixed-column-width` are ten.
+- Batch Emacs runs no idle timer, so a test that waits for a count
+  binds `tired--elements-always`, binds `tired-elements-budget` to nil,
+  calls `tired--elements-run` and then calls `tired--elements-reprint`.
+  A test that needs the real timer stubs `tired--elements-schedule`.

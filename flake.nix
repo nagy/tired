@@ -48,7 +48,8 @@
           ''
             export HOME=$TMPDIR
             for file in tired.el tired-core.el tired-sections.el \
-              tired-file-ops.el tired-export.el tired-evil.el; do
+              tired-elements.el tired-file-ops.el tired-export.el \
+              tired-evil.el; do
               cp "$src/$file" .
             done
 
@@ -62,7 +63,8 @@
             # problems; gate on output.  The ERT files stay out: a test
             # docstring is a sentence, not a checkdoc argument list.
             for file in tired.el tired-core.el tired-sections.el \
-              tired-file-ops.el tired-export.el tired-evil.el; do
+              tired-elements.el tired-file-ops.el tired-export.el \
+              tired-evil.el; do
               doc=$(emacs --batch -l checkdoc \
                 --eval "(checkdoc-file \"$file\")" 2>&1)
               if [ -n "$doc" ]; then
@@ -74,7 +76,8 @@
             # relint reads a Lisp form and a file, so give it one file
             # per run.  A regexp finding prints a line for each problem.
             for file in tired.el tired-core.el tired-sections.el \
-              tired-file-ops.el tired-export.el tired-evil.el; do
+              tired-elements.el tired-file-ops.el tired-export.el \
+              tired-evil.el; do
               report=$(emacs --batch -l relint \
                 --eval "(relint-file \"$file\")" 2>&1)
               if [ -n "$report" ]; then
