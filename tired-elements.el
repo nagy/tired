@@ -28,21 +28,26 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'subr-x)
 
 (require 'tired-core)
 
 (defcustom tired-elements-functions
   '(tired-elements-directory
-    tired-elements-json)
+    tired-elements-json
+    tired-elements-markdown
+    tired-elements-sections)
   "Abnormal hook that counts the elements of one path.
 Each function receives the absolute file name and returns nil when
 it has no opinion, an integer for a count that it knows now, or a
 `tired--elements-job' for a count that it reads in steps.  The first
 non-nil result wins, so a cheap test belongs before an expensive
 read.  `tired-elements-directory' counts the immediate children of a
-directory, and `tired-elements-json' counts a top-level JSON
-container."
+directory, `tired-elements-json' counts a top-level JSON container,
+`tired-elements-markdown' counts the top-level Markdown headings, and
+`tired-elements-sections' counts the sections at depth zero of any
+other file that a handler claims."
   :type 'hook
   :group 'tired)
 
@@ -57,6 +62,13 @@ A nil value lets one pass run until the queue empties.
   "Bytes that one step reads from a file.
 Only a dissector that reads a file in steps uses the value."
   :type '(integer 1 *)
+  :group 'tired)
+
+(defcustom tired-elements-sync-limit 1000000
+  "Largest file, in bytes, that the section fallback parses.
+`tired-file-sections' parses a whole file in one call, so a larger
+file keeps an empty cell instead of blocking the idle pass."
+  :type '(integer 0 *)
   :group 'tired)
 
 (defcustom tired-elements-cache-ttl 60
@@ -493,6 +505,166 @@ decides."
     (tired--elements-job-create
      :step #'tired--json-step
      :state (tired--json-state-create))))
+
+;;; Markdown
+
+(cl-defstruct (tired--markdown-state (:constructor tired--markdown-state-create))
+  "Scanner state for the top-level headings of a Markdown file.
+COUNTS holds one bucket per heading level, index 1 to 6.  FIRST is
+the level of the first heading, or nil.  LEFTOVER holds the partial
+line that the last chunk ended with.  FENCE holds the open code
+fence as a cons of its character and its length, or nil.
+PREVIOUS holds whether the last line was a paragraph line, which a
+setext underline needs."
+  counts
+  first
+  leftover
+  fence
+  previous)
+
+(defun tired--markdown-fence-open (line)
+  "Return the code fence that LINE opens as a cons, or nil.
+The car is the fence character and the cdr holds its length."
+  (when (string-match "\\` \\{0,3\\}\\(`\\{3,\\}\\|~\\{3,\\}\\)" line)
+    (let ((runs (match-string 1 line)))
+      (cons (aref runs 0) (length runs)))))
+
+(defun tired--markdown-fence-closes-p (line fence)
+  "Return non-nil when LINE closes the code FENCE.
+The fence needs the same character and at least the same length."
+  (when (string-match "\\` \\{0,3\\}\\(`\\{3,\\}\\|~\\{3,\\}\\)[ \t]*\\'" line)
+    (let ((runs (match-string 1 line)))
+      (and (eq (aref runs 0) (car fence))
+           (>= (length runs) (cdr fence))))))
+
+(defun tired--markdown-atx-level (line)
+  "Return the level of the ATX heading in LINE, or nil."
+  (when (string-match "\\` \\{0,3\\}\\(#\\{1,6\\}\\)\\(?:[ \t]\\|\\'\\)" line)
+    (length (match-string 1 line))))
+
+(defun tired--markdown-setext-level (line)
+  "Return the level of the setext underline in LINE, or nil."
+  (when (string-match "\\` \\{0,3\\}\\(=\\{1,\\}\\|-\\{1,\\}\\)[ \t]*\\'" line)
+    (if (eq (aref (match-string 1 line) 0) ?=) 1 2)))
+
+(defun tired--markdown-record (state level)
+  "Add one heading at LEVEL to STATE and return STATE."
+  (unless (tired--markdown-state-first state)
+    (setf (tired--markdown-state-first state) level))
+  (let ((counts (tired--markdown-state-counts state)))
+    (aset counts level (1+ (aref counts level))))
+  state)
+
+(defun tired--markdown-line (state line)
+  "Record the heading of LINE in STATE and return STATE.
+A line inside a fence never counts, and a fence line never counts.
+A setext underline counts only under a paragraph line, so a thematic
+break after a blank line stays out."
+  (let ((fence (tired--markdown-state-fence state)))
+    (cond
+     (fence
+      (when (tired--markdown-fence-closes-p line fence)
+        (setf (tired--markdown-state-fence state) nil))
+      (setf (tired--markdown-state-previous state) nil))
+     ((tired--markdown-fence-open line)
+      (setf (tired--markdown-state-fence state)
+            (tired--markdown-fence-open line)
+            (tired--markdown-state-previous state) nil))
+     ((tired--markdown-atx-level line)
+      (tired--markdown-record state (tired--markdown-atx-level line))
+      (setf (tired--markdown-state-previous state) nil))
+     ((and (tired--markdown-state-previous state)
+           (tired--markdown-setext-level line))
+      (tired--markdown-record state (tired--markdown-setext-level line))
+      (setf (tired--markdown-state-previous state) nil))
+     ((string-empty-p (string-trim line))
+      (setf (tired--markdown-state-previous state) nil))
+     ((string-match-p "\\` \\{0,3\\}\\(?:[-*+] \\|[0-9]+[.)] \\|>\\||\\|#\\)"
+                       line)
+      (setf (tired--markdown-state-previous state) nil))
+     (t
+      (setf (tired--markdown-state-previous state) t))))
+  state)
+
+(defun tired--markdown-scan (state string)
+  "Advance STATE over STRING and return STATE.
+Keep the last partial line for the next chunk, so a heading that a
+chunk boundary cuts in two still counts."
+  (let ((text (concat (tired--markdown-state-leftover state) string))
+        (start 0))
+    (while (string-match "\n" text start)
+      ;; `tired--markdown-line' runs its own matches, so the end of
+      ;; this line needs its own binding.
+      (let ((end (match-end 0))
+            (line (substring text start (match-beginning 0))))
+        (tired--markdown-line state line)
+        (setq start end)))
+    (setf (tired--markdown-state-leftover state) (substring text start)))
+  state)
+
+(defun tired--markdown-count (state)
+  "Return the number of headings that STATE puts at depth zero.
+The first heading sets the base, as it does in the section tree, so
+a file whose first heading is `##' counts its `##' headings.  A later
+shallower heading also prints at depth zero, so it joins the count."
+  (when-let* ((first (tired--markdown-state-first state)))
+    (let ((total 0)
+          (level 1))
+      (while (<= level first)
+        (setq total (+ total
+                       (aref (tired--markdown-state-counts state) level)))
+        (setq level (1+ level)))
+      total)))
+
+(defun tired--markdown-step (job)
+  "Advance JOB over the next chunk of its Markdown file.
+Return `:done' when the file ended, after the last partial line."
+  (let ((state (tired--elements-job-state job)))
+    (if (>= (or (tired--elements-job-offset job) 0)
+            (or (tired--elements-job-size job) 0))
+        (progn
+          (let ((leftover (or (tired--markdown-state-leftover state) "")))
+            (unless (string-empty-p leftover)
+              (tired--markdown-line state leftover)
+              (setf (tired--markdown-state-leftover state) "")))
+          (setf (tired--elements-job-count job)
+                (tired--markdown-count state))
+          :done)
+      (when-let* ((chunk (tired--elements-read job)))
+        (tired--markdown-scan state chunk))
+      :more)))
+
+(defun tired-elements-markdown (path)
+  "Return a count or a job for the Markdown file at PATH.
+Count the headings that the section tree prints at depth zero, ATX
+and setext alike, and keep a fenced code block out.  Return nil for
+another name, so the next dissector decides."
+  (when (let ((case-fold-search t))
+          (string-match-p "\\.\\(?:md\\|markdown\\)\\'" path))
+    (tired--elements-job-create
+     :step #'tired--markdown-step
+     :state (tired--markdown-state-create :counts (make-vector 7 0)))))
+
+;;; Sections
+
+(defun tired-elements-sections (path)
+  "Return the number of top-level sections of PATH, or nil.
+Count the sections that print at depth zero, so the first section
+sets the base and a later shallower section joins the top level.
+Parse a file in one step, so a file above
+`tired-elements-sync-limit' returns nil and keeps an empty cell.
+Return nil when no handler claims PATH."
+  (let* ((attributes (file-attributes path))
+         (size (and attributes (file-attribute-size attributes))))
+    (when (and (integerp size)
+               (<= size tired-elements-sync-limit)
+               (tired-file-handler path))
+      (let ((sections (tired-file-sections path)))
+        (when sections
+          (let ((base (tired-section-level (car sections))))
+            (seq-count (lambda (section)
+                         (<= (tired-section-level section) base))
+                       sections)))))))
 
 ;;; Directories
 

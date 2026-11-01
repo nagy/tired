@@ -513,13 +513,16 @@ items that a row holds:
 |-------------------------------+---------------------------------------------|
 | Directory                     | Every immediate child, dotfiles included    |
 | JSON file                     | The items of a top-level array, or the keys of a top-level object |
-| Markdown file                 | The headings at the shallowest level        |
+| Markdown file                 | The headings at the top level of the tree   |
 | Any other file with a handler | The sections that print at depth zero       |
 | Section row                   | Nothing, because a section is not a file    |
 
 A directory counts its immediate children and never a subtree.  A
-fenced code block in Markdown hides its headings, as it does in the
-section tree.  Every other file with a handler counts through that
+Markdown file counts the headings that its section tree prints at depth
+zero: the first heading sets the top level, as it does in the tree, so
+a file whose first heading is `##` counts its `##` headings, and a later
+`#` heading joins them.  A fenced code block hides its headings, as it
+does in the tree.  Every other file with a handler counts through that
 handler: Org top-level headings, Emacs Lisp top-level forms, Rust
 items, Cargo tables, and SQLite tables and views.  A file without a
 handler keeps an empty cell, and so does a remote path, because every

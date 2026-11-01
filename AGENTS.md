@@ -658,6 +658,22 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   for a count keep the hash order.
 - The Elements header label with the sort arrow is ten characters wide,
   so the column and its share of `tired--fixed-column-width` are ten.
+- A line scanner must copy `(match-end 0)` into its own binding before
+  it calls a function, because that function runs its own regexp match
+  and overwrites the match data.  `tired--markdown-scan` lost the end of
+  its newline match to `tired--markdown-line` and looped forever.
+- The Markdown scanner keeps the partial last line in its state, and a
+  fence, a string and an escape all carry over a chunk boundary.  Do
+  not decode the chunk: `tired--elements-read` returns the literal
+  bytes, so only ASCII structure decides a count.
+- The section fallback parses a whole file in one step, so it runs only
+  below `tired-elements-sync-limit`.  Do not raise that limit without
+  making the section handlers resumable, or one idle pass blocks Emacs
+  for the length of a large parse.
+- The Elements count follows the section tree: the first section or
+  heading sets the top level, and a later shallower one joins it, so
+  the number equals the rows that print at depth zero.  A count of the
+  minimum level alone disagrees with the tree that TAB shows.
 - Batch Emacs runs no idle timer, so a test that waits for a count
   binds `tired--elements-always`, binds `tired-elements-budget` to nil,
   calls `tired--elements-run` and then calls `tired--elements-reprint`.
