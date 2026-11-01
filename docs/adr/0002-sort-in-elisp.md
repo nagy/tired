@@ -9,3 +9,11 @@ first in both sort directions, and the name column is the tie-breaker
 for equal keys.  Rejected alternative: a `tabulated-list` sorter run
 over the flat entry list, which interleaves the inserted subtree.  See
 `0014-sort-on-the-value-the-row-prints.md` for the sort value itself.
+
+Consequence: because `tabulated-list-mode` sorts no Tired column, it
+writes no arrow either.  `tired--column-label` adds the arrow itself,
+and it reads `tabulated-list-gui-sort-indicator-asc` and
+`tabulated-list-gui-sort-indicator-desc`, so the marker stays an Emacs
+option and not a Tired constant.  A text terminal shows the two tty
+options, through the buffer-local `glyphless-char-display` table that
+`tabulated-list-mode` installs for its own header line.

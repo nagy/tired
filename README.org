@@ -204,6 +204,17 @@ Every column header takes a click.  =mouse-1= on =Name=, =Size=,
 the column that already sorts flips the direction, as =s= does.  The
 arrow in the label shows the current column and direction.
 
+The arrow is the one that =tabulated-list-mode= draws.  The listing
+reads =tabulated-list-gui-sort-indicator-asc= and
+=tabulated-list-gui-sort-indicator-desc=, and a text terminal shows
+=tabulated-list-tty-sort-indicator-asc= and
+=tabulated-list-tty-sort-indicator-desc= instead:
+
+#+begin_src elisp
+  (setq tabulated-list-gui-sort-indicator-asc ?↑
+        tabulated-list-gui-sort-indicator-desc ?↓)
+#+end_src
+
 Directories come first on every column.  Set
 `tired-group-directories' to nil to interleave directories and
 files, the way =dired= sorts by time:

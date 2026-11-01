@@ -350,6 +350,15 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   the header line from those labels and keeps their text properties, so
   the clicks reach `tired-sort`.  Bind both buttons: `follow-link` can
   turn a click into the second one.
+- `tired--sort-indicator` reads `tabulated-list-gui-sort-indicator-asc`
+  and `tabulated-list-gui-sort-indicator-desc`, so the user sets the
+  sort arrow through the Emacs options and Tired hardcodes no
+  character.  A text terminal shows the two tty options in its place,
+  because `tabulated-list-mode` installs a buffer-local
+  `glyphless-char-display` table that maps each GUI character to its
+  tty partner.  Do not test the feature with a literal `^` or `v`: the
+  header string holds the GUI character, and no display runs in batch
+  Emacs.
 - Evil binds `down-mouse-1` in its motion state map, so a double click
   selects text and never reaches `tired-mouse-toggle`.  Only `mouse-2`
   needs a key in `tired-evil-keys`, and no mouse event goes in

@@ -1420,13 +1420,25 @@ column that already sorts the listing flips the direction."
     (define-key map [header-line mouse-2] command)
     map))
 
+(defun tired--sort-indicator ()
+  "Return the character that marks the current sort direction.
+The character comes from `tabulated-list-gui-sort-indicator-asc'
+and `tabulated-list-gui-sort-indicator-desc', so the user sets the
+marker through the Emacs options.  `tabulated-list-mode' supplies a
+buffer-local `glyphless-char-display' table, so a text terminal frame
+shows `tabulated-list-tty-sort-indicator-asc' or
+`tabulated-list-tty-sort-indicator-desc' in its place."
+  (if tired--sort-flip
+      tabulated-list-gui-sort-indicator-desc
+    tabulated-list-gui-sort-indicator-asc))
+
 (defun tired--column-label (label key)
   "Return LABEL with a direction indicator when KEY is the sort key.
 The label carries a key map, so a click on the header sorts by that
 column.  The indicator stays in the string, and a click on the
 current sort column flips the direction."
   (propertize (if (eq key tired--sort-key)
-                  (concat label (if tired--sort-flip " v" " ^"))
+                  (concat label (format " %c" (tired--sort-indicator)))
                 label)
               'keymap (tired--column-sort-keymap key)
               'mouse-face 'header-line-highlight

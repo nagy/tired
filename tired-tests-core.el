@@ -367,10 +367,37 @@ The option nil lets a file sit between two directories, the way
   "The label of the sort column carries the arrow and a key map."
   (tired-tests--with-fixture
     (tired root)
-    (should (string-match-p "Name \\^" (tired-tests--header-string)))
-    (tired-tests--click-header "Modified")
-    (should (string-match-p "Modified \\^" (tired-tests--header-string)))
-    (should-not (string-match-p "Name \\^" (tired-tests--header-string)))))
+    (let ((asc (format "Name %c" tabulated-list-gui-sort-indicator-asc))
+          (desc (format "Name %c" tabulated-list-gui-sort-indicator-desc))
+          (header nil))
+      (setq header (tired-tests--header-string))
+      (should (string-match-p (regexp-quote asc) header))
+      (tired-tests--click-header "Modified")
+      (setq header (tired-tests--header-string))
+      (should (string-match-p
+               (regexp-quote (format "Modified %c"
+                                     tabulated-list-gui-sort-indicator-asc))
+               header))
+      (should-not (string-match-p (regexp-quote desc) header))
+      (should-not (string-match-p (regexp-quote asc) header))
+      (tired-sort 'name)
+      (tired-sort 'name)
+      (should (string-match-p
+               (regexp-quote (format "Name %c"
+                                     tabulated-list-gui-sort-indicator-desc))
+               (tired-tests--header-string))))))
+
+(ert-deftest tired-header-indicator-follows-the-emacs-options ()
+  "A user setting of the tabulated-list indicators reaches the header.
+The two options are the ones that `tabulated-list-mode' itself reads
+for its own header line."
+  (tired-tests--with-fixture
+    (let ((tabulated-list-gui-sort-indicator-asc ?A)
+          (tabulated-list-gui-sort-indicator-desc ?D))
+      (tired root)
+      (should (string-match-p "Name A" (tired-tests--header-string)))
+      (tired-sort 'size 'reverse)
+      (should (string-match-p "Size D" (tired-tests--header-string))))))
 
 (ert-deftest tired-name-column-grows-to-longest-name ()
   "The name column width follows the longest visible entry."
