@@ -23,6 +23,13 @@ The entry attribute that orders the listing: name, size, modification
 time or mode.
 _Avoid_: Sort column, order
 
+**Sort state**:
+One column and one direction together, named by a symbol such as
+`name-desc`.  `tired-sort-states` lists the states that
+`tired-sort-next` and `tired-sort-previous` cycle, and `tired-sort`
+sets a column directly.
+_Avoid_: Sort mode, order, preset
+
 **Selection**:
 The transient set of entry paths that commands act on in a directory
 buffer.  An active region joins it before a command acts.

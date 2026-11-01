@@ -22,6 +22,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   interleaves directories and files
 - The name sort groups files by extension, as `ls -X` does, and
   `tired-sort-by-extension' turns the grouping off
+- `tired-sort-states' lists the sort states that `>` and `<` cycle, and
+  `mode-asc' joins the list on request
 - Insert subdirectories as nested, indented sections
 - Expand a file into sections: org headings, Emacs Lisp top-level
   forms, Rust items and Markdown headings through tree-sitter, and
@@ -180,6 +182,28 @@ directory adds its whole subtree, and a remote directory adds
 nothing, because a walk over the network costs one round trip per
 file.  A region reports the same size.
 
+* Sorting
+
+=s= reads a column with completion and sorts the listing by it.
+Calling =s= on the column that already sorts flips the direction.
+
+=>= moves to the next sort state and =<= moves to the previous one.
+The two keys walk `tired-sort-states' and wrap around at both ends.
+The default list holds the name, size and modification time states
+in both directions, and it leaves the mode column out:
+
+#+begin_src elisp
+  (setq tired-sort-states
+        '(name-asc name-desc size-asc size-desc
+          modified-asc modified-desc))
+#+end_src
+
+Add =mode-asc= and =mode-desc= to cycle that column too, or drop a
+state that you never use.  A column that the list leaves out, such
+as mode, gives way to the first state on =>= and to the last state
+on =<=.  A click on a column header still sorts and flips that
+column.  Under evil, the =↑= and =↓= characters walk the same list.
+
 * Mouse
 
 The help text of a row names the two mouse commands.  The indent of a
@@ -261,6 +285,14 @@ because the plain motion stops on the empty line below the listing.
 The replace key, =r=, renames the row at point, because
 =evil-replace= has no meaning in a listing.  =R= keeps
 =tired-move=.
+
+The characters =↑= and =↓= cycle the sort states, so =↑= runs
+=tired-sort-previous= and =↓= runs =tired-sort-next=.  Evil keeps
+its line motion on the arrow keys themselves, so =j= and =k= stay
+line motions.  Type the character with =C-x 8 RET 2191= for
+=UPWARDS ARROW= or =C-x 8 RET 2193= for =DOWNWARDS ARROW=.  The
+=>= and =<= keys keep their evil shift commands, and the plain
+listing carries the sort cycling on those two keys instead.
 
 The key tables are =tired-evil-keys= for normal state and
 =tired-evil-visual-keys= for visual state.  =M-x describe-keymap RET

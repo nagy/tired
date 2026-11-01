@@ -28,7 +28,8 @@
 ;; keep the motions: j, k, gg, C-d, C-u, n and N keep their meaning,
 ;; and every Tired command gets a direct key.  The two line motions
 ;; land on the name of the row, like the `n' and `p' keys of
-;; `tired-mode-map'.  The search
+;; `tired-mode-map'.  The two arrow characters walk the sort states,
+;; because evil keeps line motion on the arrow keys.  The search
 ;; key, /, runs `tired-filter' instead of `evil-ex-search-forward'.
 ;; G reaches the last row through `tired-goto-last-entry', because the
 ;; plain motion stops on the empty line below the listing.
@@ -97,6 +98,11 @@
     ("<remap> <evil-next-line>" . tired-next-line)
     ("<remap> <evil-previous-line>" . tired-previous-line)
     ("s" . tired-sort)
+    ;; The two arrow characters cycle the sort states.  Evil keeps its
+    ;; line motion on the arrow keys themselves, so the buffer takes
+    ;; the characters and `j' and `k' stay motions too.
+    ("↓" . tired-sort-next)
+    ("↑" . tired-sort-previous)
     ("F" . tired-clear-filter)
     ("." . tired-toggle-dotfiles)
     ("~" . tired-toggle-hidden)

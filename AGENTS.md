@@ -99,6 +99,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `tired-sort-by-extension' set, the name value holds the case-folded
    extension, the way `ls -X' does, and the name breaks a tie.
    `tired--sorted-directory-entries` maps the same rows back to entries.
+   `tired-sort-states` names the states that `tired-sort-next` and
+   `tired-sort-previous` cycle: one symbol per column and direction,
+   such as `name-asc`.  `tired--sort-step` wraps the walk, and a
+   column that the option leaves out gives way to the first state
+   forward and to the last state back.  The default list leaves the
+   mode column out.
 3. `tired--display-rows` walks depth-first and returns `(ROW . DEPTH)`
    conses.  A `file-truename` set stops symlink cycles.
    `tired--directory-entry-p` decides whether a row takes children and
@@ -226,7 +232,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - A new key belongs in `tired-mode-map` and in `tired-evil-keys`, and in
   `tired-evil-visual-keys` when it reads the region.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
-  shadows it.
+  shadows it.  `tired-mode-map` puts the sort cycling on `>` and `<`,
+  and `tired-evil-keys` puts it on the two arrow characters `↑` and
+  `↓`, because evil binds the arrow keys and the two bracket keys to
+  its own commands.
 - The mode map remaps `csv-mode`, `text-mode` and `js-json-mode` to the
   three export commands.  The JSON mode reads `js-json-mode`; no
   `json-js-mode` exists.  A remap reaches a key that runs the major
@@ -339,7 +348,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `evil-define-minor-mode-key` with `key-parse`.  `define-key` reads
   `"RET"` as three characters.  A remap entry reads
   `"<remap> <evil-replace>"`, because `key-parse` treats the bracket form
-  as literal characters.  The normal table remaps `evil-replace`,
+  as literal characters.  The table of `tired-evil-keys` types the
+  sort cycling as the literal characters `↑` and `↓`, so `key-parse`
+  reads one character event each.  The normal table remaps `evil-replace`,
   `evil-goto-line`, `evil-next-line` and `evil-previous-line`, so `r`
   renames and `j`, `k` and `G` stop on a row.  `j` and `k` keep their
   key through the remap.  A remap reaches the visual state, because

@@ -94,6 +94,23 @@ chain row keeps the group of its entry, because the row stands for
 that entry."
   :type 'boolean)
 
+(defcustom tired-sort-states
+  '(name-asc name-desc size-asc size-desc modified-asc modified-desc)
+  "Sort states that `tired-sort-next' and `tired-sort-previous' cycle.
+Each state names a column and a direction.  The text before the
+last hyphen is the column that `tired-sort' reads, and the suffix
+`asc' or `desc' gives the direction.  The default leaves out the
+`mode' column, because a mode sorts by a number that says little.
+Add `mode-asc' and `mode-desc' to cycle that column too."
+  :type '(repeat (choice (const :tag "Name, ascending" name-asc)
+                         (const :tag "Name, descending" name-desc)
+                         (const :tag "Size, ascending" size-asc)
+                         (const :tag "Size, descending" size-desc)
+                         (const :tag "Modified, ascending" modified-asc)
+                         (const :tag "Modified, descending" modified-desc)
+                         (const :tag "Mode, ascending" mode-asc)
+                         (const :tag "Mode, descending" mode-desc))))
+
 (defcustom tired-date-format "%Y-%m-%d %H:%M"
   "Format string for the modification time column.
 See `format-time-string' for the available conversions."
@@ -2582,6 +2599,58 @@ An active region joins the selection first."
       (tired-widen)
     (tired-narrow-to-selection)))
 
+(defun tired--sort-state-parts (state)
+  "Return the `(KEY . FLIP)' pair that sort STATE stands for."
+  (pcase state
+    ('name-asc (cons 'name nil))
+    ('name-desc (cons 'name t))
+    ('size-asc (cons 'size nil))
+    ('size-desc (cons 'size t))
+    ('modified-asc (cons 'modified nil))
+    ('modified-desc (cons 'modified t))
+    ('mode-asc (cons 'mode nil))
+    ('mode-desc (cons 'mode t))
+    (_ (error "Unknown sort state: %S" state))))
+
+(defun tired--sort-state ()
+  "Return the sort state of the listing, or nil.
+The value stays nil when `tired-sort-states' leaves out the
+current column or the current direction."
+  (let ((parts (cons tired--sort-key (and tired--sort-flip t))))
+    (seq-find (lambda (state)
+                (equal (tired--sort-state-parts state) parts))
+              tired-sort-states)))
+
+(defun tired--sort-step (step)
+  "Move STEP places along `tired-sort-states' and apply that state.
+A negative STEP moves back, and the walk wraps around.  A current
+state that the list leaves out gives way to the first state when
+STEP is positive and to the last state when it is negative."
+  (let ((states tired-sort-states))
+    (unless states
+      (user-error "No sort state to cycle"))
+    (let* ((current (tired--sort-state))
+           (start (cond (current (seq-position states current))
+                        ((< step 0) 0)
+                        (t -1)))
+           (state (nth (mod (+ start step) (length states)) states))
+           (parts (tired--sort-state-parts state)))
+      (setq tired--sort-key (car parts)
+            tired--sort-flip (cdr parts))
+      (tired--redraw))))
+
+(defun tired-sort-next ()
+  "Switch the listing to the next state of `tired-sort-states'.
+The list wraps around at the end."
+  (interactive)
+  (tired--sort-step 1))
+
+(defun tired-sort-previous ()
+  "Switch the listing to the previous state of `tired-sort-states'.
+The list wraps around at the start."
+  (interactive)
+  (tired--sort-step -1))
+
 (defun tired-sort (column &optional reverse)
   "Sort the listing by COLUMN.
 COLUMN is one of `name', `size', `modified' or `mode'.  Selecting
@@ -2992,6 +3061,8 @@ into `context-menu-functions' locally."
   "j" #'tired-find-file
   "J" #'tired-find-file-other-window
   "s" #'tired-sort
+  ">" #'tired-sort-next
+  "<" #'tired-sort-previous
   "SPC" #'tired-select-toggle-next
   "M-SPC" #'tired-select-toggle
   "S-SPC" #'tired-select-toggle
@@ -3086,7 +3157,12 @@ command that needs an entry stays insensitive on an empty row."
      ["Modified" (tired-sort 'modified)
       :style radio :selected (eq tired--sort-key 'modified)]
      ["Mode" (tired-sort 'mode)
-      :style radio :selected (eq tired--sort-key 'mode)])
+      :style radio :selected (eq tired--sort-key 'mode)]
+     "--"
+     ["Next sort state" tired-sort-next
+      :help "Cycle to the next state of `tired-sort-states'"]
+     ["Previous sort state" tired-sort-previous
+      :help "Cycle to the previous state of `tired-sort-states'"])
     "--"
     ["Copy here" tired-copy
      :active (tired--selection-targets)]

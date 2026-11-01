@@ -87,7 +87,18 @@
                       #'evil-goto-first-line))
           ;; G skips the empty line below the listing.
           (should (eq (key-binding (key-parse "G"))
-                      #'tired-goto-last-entry)))
+                      #'tired-goto-last-entry))
+          ;; The two arrow characters cycle the sort states, and the
+          ;; arrow keys keep their evil line motion.
+          (should (eq (key-binding (key-parse "↓"))
+                      #'tired-sort-next))
+          (should (eq (key-binding (key-parse "↑"))
+                      #'tired-sort-previous))
+          (should-not (eq (key-binding (key-parse "<down>"))
+                          #'tired-sort-next))
+          ;; The bracket keys keep their evil shift commands.
+          (should-not (eq (key-binding (key-parse ">"))
+                          #'tired-sort-next)))
       (tired-evil-mode -1)
       (evil-local-mode -1))
     (should-not (bound-and-true-p tired-evil-local-mode))))

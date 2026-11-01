@@ -247,6 +247,43 @@ default `tired-file-handlers' names a void section handler.
     (should (equal (tired-tests--names)
                    '("sub" "beta.txt" "link" "alpha.txt" ".hidden")))))
 
+(ert-deftest tired-sort-next-walks-the-sort-states ()
+  "The sort state commands walk `tired-sort-states' and wrap around."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq (tired--sort-state) 'name-asc))
+    (tired-sort-next)
+    (should (eq (tired--sort-state) 'name-desc))
+    (should (equal (tired-tests--names)
+                   '("sub" "alpha.txt" "beta.txt" ".hidden" "link")))
+    (tired-sort-next)
+    (should (eq (tired--sort-state) 'size-asc))
+    (should (equal (tired-tests--names)
+                   '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
+    (tired-sort-previous)
+    (should (eq (tired--sort-state) 'name-desc))
+    (tired-sort-previous)
+    (should (eq (tired--sort-state) 'name-asc))
+    (tired-sort-previous)
+    (should (eq (tired--sort-state) 'modified-desc))))
+
+(ert-deftest tired-sort-next-crosses-a-state-outside-the-list ()
+  "A column that the state list leaves out gives way to the list."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-sort 'mode)
+    (should-not (tired--sort-state))
+    (tired-sort-next)
+    (should (eq (tired--sort-state) 'name-asc))
+    (tired-sort 'mode)
+    (tired-sort-previous)
+    (should (eq (tired--sort-state) 'modified-desc))))
+
+(ert-deftest tired-sort-keys-cycle-the-states ()
+  "The mode map puts the sort cycling on the two bracket keys."
+  (should (eq (lookup-key tired-mode-map ">") #'tired-sort-next))
+  (should (eq (lookup-key tired-mode-map "<") #'tired-sort-previous)))
+
 (ert-deftest tired-sort-by-name-keeps-directories-first ()
   "The name sort keeps directories first in both directions."
   (tired-tests--with-fixture
