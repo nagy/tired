@@ -361,6 +361,7 @@ inode size ties and falls back to the name, which puts `big' first."
     (let ((tired-directory-size t)
           (tired-collapse-single-child nil))
       (tired root)
+      (tired-tests--flush-sizes)
       (tired-sort 'size)
       (let ((names (tired-tests--names)))
         (should (equal (tired--size-cell (tired-tests--entry "small"))
@@ -1087,63 +1088,73 @@ key map alone."
   "A remote directory shows no total, because the walk would cross the network."
   (tired-tests--with-fixture
     (let ((tired-directory-size t)
-          (walked nil)
           (original (symbol-function 'file-remote-p)))
       (tired root)
       (cl-letf (((symbol-function 'file-remote-p)
                  (lambda (name &rest args)
                    (if (string-prefix-p "/ssh:" name)
                        "/ssh:"
-                     (apply original name args))))
-                ((symbol-function 'tired--subtree-size)
-                 (lambda (&rest _) (setq walked t) 0)))
+                     (apply original name args)))))
         (should (equal ""
                        (tired--size-cell
                         (tired--entry-create :name "sub"
                                              :path "/ssh:host:/tmp/sub"
                                              :type 'directory
                                              :dirp t))))
-        (should-not walked)
-        (tired--size-cache-clear)
-        (tired--size-cell (tired-tests--entry "sub"))
-        (should walked)))))
+        (should-not (tired--queue-job
+                     (tired--size-key "/ssh:host:/tmp/sub")))
+        (should (tired--queue-job
+                 (tired--size-key (expand-file-name "sub" root))))))))
 
 (ert-deftest tired-size-cell-sums-a-directory-recursively ()
   "With `tired-directory-size' on, a directory sums its files."
   (tired-tests--with-fixture
     (let ((tired-directory-size t))
       (tired root)
+      (tired-tests--flush-sizes)
       (should (equal (file-size-human-readable 9)
                      (tired--size-cell (tired-tests--entry "sub"))))
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root))))
+      (tired--size-enqueue (tired--size-key root) root)
+      (tired-tests--flush-sizes)
       (should (equal 53 (tired--directory-total root))))))
 
-(ert-deftest tired--subtree-size-memoizes-each-directory ()
-  "One calculation reads each nested directory once, and links stay unfollowed."
+(ert-deftest tired--size-walk-reads-each-directory-once ()
+  "One walk reads each nested directory once, and a second pass reads nothing."
   (tired-tests--with-fixture
-    (let ((calls 0)
+    (let ((tired-directory-size t)
+          (calls 0)
           (original (symbol-function 'directory-files-and-attributes)))
+      (tired root)
       (cl-letf (((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
                    (setq calls (1+ calls))
                    (apply original args))))
-        (should (equal 53 (tired--subtree-size root)))
-        (should (equal 53 (tired--subtree-size root))))
-      ;; The root, its child and its grandchild, once each.  The link
-      ;; back to the root stays unfollowed.
-      (should (= 3 calls)))))
+        (tired-tests--flush-sizes)
+        (should (equal 9 (tired--directory-total
+                          (expand-file-name "sub" root))))
+        ;; The child and its grandchild, once each.  The link back to
+        ;; the root stays unfollowed.
+        (should (= 2 calls))
+        (tired--redraw)
+        (tired-tests--flush-sizes)
+        (should (= 2 calls))))))
 
 (ert-deftest tired--size-key-needs-no-truename ()
   "The size memo keys on the absolute name, not on a resolved link."
   (tired-tests--with-fixture
-    (should (equal (directory-file-name root) (tired--size-key root)))
-    (should (equal (expand-file-name "sub" root)
-                   (tired--size-key (expand-file-name "sub/" root))))
-    (let ((resolved 0))
+    (let ((tired-directory-size t)
+          (resolved 0))
+      (should (equal (directory-file-name root) (tired--size-key root)))
+      (should (equal (expand-file-name "sub" root)
+                     (tired--size-key (expand-file-name "sub/" root))))
+      (tired root)
       (cl-letf (((symbol-function 'file-truename)
                  (lambda (&rest _) (setq resolved (1+ resolved)) 'never)))
-        (should (equal 53 (tired--subtree-size root))))
+        (tired--queue-run))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root))))
       (should (= 0 resolved)))))
 
 (ert-deftest tired-redraw-reuses-the-size-memo ()
@@ -1152,43 +1163,48 @@ key map alone."
     (let ((tired-directory-size t)
           (calls 0)
           (original (symbol-function 'directory-files-and-attributes)))
+      (tired root)
+      (tired-tests--flush-sizes)
       (cl-letf (((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
                    (setq calls (1+ calls))
                    (apply original args))))
-        (tired root)
-        (let ((first calls))
-          (should (> first 0))
-          (tired--redraw)
-          (tired--redraw)
-          (should (= first calls)))))))
+        (tired--redraw)
+        (tired--redraw)
+        (tired-tests--flush-sizes)
+        (should (= 0 calls))))))
 
 (ert-deftest tired-refresh-keeps-a-young-size-total ()
   "A refresh inside `tired-size-cache-ttl' reuses the cached total."
   (tired-tests--with-fixture
     (let ((tired-directory-size t))
       (tired root)
+      (tired-tests--flush-sizes)
       (should (equal (file-size-human-readable 9)
                      (tired--size-cell (tired-tests--entry "sub"))))
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
       (tired-refresh)
+      (tired-tests--flush-sizes)
       (should (equal (file-size-human-readable 9)
                      (tired--size-cell (tired-tests--entry "sub"))))
       (tired--size-cache-clear)
       (tired-refresh)
+      (tired-tests--flush-sizes)
       (should (equal (file-size-human-readable 104)
                      (tired--size-cell (tired-tests--entry "sub")))))))
 
 (ert-deftest tired-size-cache-ttl-zero-sums-every-refresh ()
-  "A zero `tired-size-cache-ttl' makes each refresh read the subtree."
+  "A zero `tired-size-cache-ttl' makes each refresh walk the subtree."
   (tired-tests--with-fixture
     (let ((tired-directory-size t)
           (tired-size-cache-ttl 0))
       (tired root)
+      (tired-tests--flush-sizes)
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
       (tired-refresh)
+      (tired-tests--flush-sizes)
       (should (equal (file-size-human-readable 104)
                      (tired--size-cell (tired-tests--entry "sub")))))))
 
@@ -1210,7 +1226,7 @@ key map alone."
     (should (gethash "/young" tired--size-cache))))
 
 (ert-deftest tired--size-cache-clear-drops-every-total ()
-  "Clearing the table makes the next row read the subtree again."
+  "Clearing the table makes the next row walk the subtree again."
   (tired-tests--with-fixture
     (let ((tired-directory-size t)
           (sub-reads 0)
@@ -1222,26 +1238,25 @@ key map alone."
                      (setq sub-reads (1+ sub-reads)))
                    (apply original directory args))))
         (tired root)
+        (tired-tests--flush-sizes)
         (should (= 1 sub-reads))
         (tired--size-cache-clear)
         (tired--redraw)
+        (tired-tests--flush-sizes)
         (should (= 2 sub-reads))))))
 
 (ert-deftest tired-size-walk-waits-for-a-window ()
-  "A listing that no window shows leaves every directory size unwalked.
+  "A listing that no window shows queues no directory size walk.
 Batch Emacs runs no display, so the gate stub keeps the listing
 hidden."
   (tired-tests--with-fixture
     (tired-tests--with-deferred-sizes
-      (let ((tired-directory-size t)
-            (walked nil))
-        (cl-letf (((symbol-function 'tired--subtree-size)
-                   (lambda (&rest _) (setq walked t) 0)))
-          (tired root)
-          (should-not walked)
-          (should tired--size-deferred)
-          (should-not (timerp tired--size-timer))
-          (should (equal "" (tired--size-cell (tired-tests--entry "sub")))))))))
+      (let ((tired-directory-size t))
+        (tired root)
+        (should-not tired--queue-jobs)
+        (should tired--size-deferred)
+        (should-not (timerp tired--size-timer))
+        (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))))))
 
 (ert-deftest tired-size-walk-serves-a-young-total-without-a-window ()
   "A listing that no window shows still reads a young total from the table."
@@ -1250,29 +1265,100 @@ hidden."
       (puthash (tired--size-key root) (cons 42 (float-time)) tired--size-cache)
       (should (equal 42 (tired--directory-total root))))))
 
-(ert-deftest tired--directory-total-stops-at-its-deadline ()
-  "A walk past `tired--size-deadline' returns nil and defers."
+(ert-deftest tired--directory-total-reads-the-table-alone ()
+  "A missing total returns nil and reads no directory."
   (tired-tests--with-fixture
-    (let ((tired--size-deadline (- (float-time) 1))
-          (walked nil))
-      (cl-letf (((symbol-function 'tired--subtree-size)
-                 (lambda (&rest _) (setq walked t) 0)))
-        (should-not (tired--directory-total root))
-        (should-not walked)
-        (should tired--size-deferred)))))
+    (let ((tired-directory-size t)
+          (reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (tired root)
+      (let ((key (tired--size-key (expand-file-name "sub" root))))
+        (remhash key tired--size-cache))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq reads (1+ reads))
+                   (apply original args))))
+        (should-not (tired--directory-total (expand-file-name "sub" root)))
+        (should (= 0 reads))))))
+
+(ert-deftest tired-size-budget-stops-a-pass ()
+  "A spent budget leaves the walk in the queue for a later pass."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-budget 0))
+      (tired root)
+      (let ((key (tired--size-key (expand-file-name "sub" root))))
+        (should (tired--queue-job key))
+        (tired--queue-run)
+        (should (tired--queue-job key))
+        (should-not (tired--directory-total (expand-file-name "sub" root)))
+        (setf (tired--job-budget (tired--queue-job key)) nil)
+        (tired--queue-run)
+        (should-not tired--queue-jobs)
+        (should (equal 9 (tired--directory-total
+                          (expand-file-name "sub" root))))))))
+
+(ert-deftest tired--size-walk-advances-one-directory-per-step ()
+  "One step reads one directory, so one pass holds a bounded read."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (tired root)
+      (let ((job (tired--queue-job
+                  (tired--size-key (expand-file-name "sub" root)))))
+        (should job)
+        (cl-letf (((symbol-function 'directory-files-and-attributes)
+                   (lambda (&rest args)
+                     (setq reads (1+ reads))
+                     (apply original args))))
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (= 1 reads))
+          ;; The next step pushes the child frame and reads nothing.
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (= 1 reads))
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (= 2 reads))
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (eq :done (tired--size-walk-advance job)))
+          (should (= 2 reads)))))))
+
+(ert-deftest tired-refresh-drops-a-running-size-walk ()
+  "A refresh drops the walk that a stale directory started."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (let* ((key (tired--size-key (expand-file-name "sub" root)))
+             (job (tired--queue-job key)))
+        (should job)
+        (tired-refresh)
+        (should-not (memq job tired--queue-jobs))
+        (should (tired--queue-job key))))))
+
+(ert-deftest tired-redraw-reads-no-directory-for-a-size ()
+  "A redraw prints from the memo table alone."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (let ((reads 0)
+            (original (symbol-function 'directory-files-and-attributes)))
+        (cl-letf (((symbol-function 'directory-files-and-attributes)
+                   (lambda (&rest args)
+                     (setq reads (1+ reads))
+                     (apply original args))))
+          (tired--redraw)
+          (should (= 0 reads)))))))
 
 (ert-deftest tired-redraw-defers-a-walk-past-its-budget ()
-  "A zero budget leaves the size cell of every directory empty.
-The pass finishes no walk, so it schedules no second pass."
+  "A zero budget leaves the size cell of every directory empty."
   (tired-tests--with-fixture
-    (tired-tests--with-deferred-sizes
-      (let ((tired-directory-size t)
-            (tired-directory-size-budget 0))
-        (tired root)
-        (should tired--size-deferred)
-        (should-not (timerp tired--size-timer))
-        (should-not (gethash (tired--size-key (expand-file-name "sub" root))
-                             tired--size-cache))))))
+    (let ((tired-directory-size t)
+          (tired-directory-size-budget 0))
+      (tired root)
+      (tired--queue-run)
+      (should-not (gethash (tired--size-key (expand-file-name "sub" root))
+                           tired--size-cache))
+      (should (equal "" (tired--size-cell (tired-tests--entry "sub")))))))
 
 (ert-deftest tired-empty-directory-mark-waits-for-a-window ()
   "A deferred walk keeps the plain directory face and no byte total."
@@ -1328,6 +1414,7 @@ The slash follows the name, so the row dims as one run."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "hollow" root))
     (tired root)
+    (tired-tests--flush-sizes)
     (let* ((entry (tired-tests--entry "hollow"))
            (cell (tired--name-cell entry)))
       (should (zerop (tired--directory-total (tired-entry-path entry))))
@@ -1345,6 +1432,7 @@ The slash follows the name, so the row dims as one run."
     (make-directory (expand-file-name "hollow/deeper" root) t)
     (with-temp-file (expand-file-name "hollow/blank.txt") nil)
     (tired root)
+    (tired-tests--flush-sizes)
     (should (eq 'tired-ignored-face
                 (tired-tests--cell-face (tired-tests--entry "hollow"))))))
 
@@ -1354,23 +1442,27 @@ The slash follows the name, so the row dims as one run."
     (let ((tired-directory-size nil))
       (make-directory (expand-file-name "hollow" root))
       (tired root)
+      (tired-tests--flush-sizes)
       (should (eq 'tired-ignored-face
                   (tired-tests--cell-face (tired-tests--entry "hollow")))))))
 
 (ert-deftest tired-name-face-keeps-a-remote-directory-plain ()
   "A remote directory keeps the directory face and costs no walk."
-  (let ((walked nil))
+  (let ((reads 0)
+        (original (symbol-function 'directory-files-and-attributes)))
     (cl-letf (((symbol-function 'file-remote-p)
                (lambda (&rest _) "/ssh:host:"))
-              ((symbol-function 'tired--subtree-size)
-               (lambda (&rest _) (setq walked t) 0)))
+              ((symbol-function 'directory-files-and-attributes)
+               (lambda (&rest args)
+                 (setq reads (1+ reads))
+                 (apply original args))))
       (should (eq 'tired-directory-face
                   (tired--name-face
                    (tired--entry-create :name "sub"
                                         :path "/ssh:host:/tmp/sub"
                                         :type 'directory
                                         :dirp t))))
-      (should-not walked))))
+      (should (= 0 reads)))))
 
 (ert-deftest tired-name-faces-colorizes-a-matching-name ()
   "A `tired-name-faces' rule sets the name face, and a directory keeps its own."
@@ -1858,6 +1950,7 @@ A directory in the region adds its whole subtree, as a selected
 directory does."
   (tired-tests--with-fixture
     (tired root)
+    (tired-tests--flush-sizes)
     (tired-tests--mark-row-range "alpha.txt" "beta.txt")
     (tired--update-mode-line)
     (should (string-match-p "2 in region, 43" (tired--mode-line)))
@@ -2029,6 +2122,7 @@ The same substitution rules apply to the header line."
   "The selection size adds file sizes and each directory subtree."
   (tired-tests--with-fixture
     (tired root)
+    (tired-tests--flush-sizes)
     (tired-tests--goto "alpha.txt")
     (tired-select-toggle)
     (tired-tests--goto "beta.txt")
@@ -2192,16 +2286,22 @@ reaches the network."
           (tired-auto-revert-remote nil)
           (tired-directory-size t)
           (added nil)
-          (walked nil))
+          (reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
       (tired-tests--with-remote root added
-        (cl-letf (((symbol-function 'tired--subtree-size)
-                   (lambda (&rest _) (setq walked t) 0)))
+        (cl-letf (((symbol-function 'directory-files-and-attributes)
+                   (lambda (&rest args)
+                     (setq reads (1+ reads))
+                     (apply original args))))
           (tired root)
           (should-not added)
           (let ((entry (tired--entry-for-path (expand-file-name "chain" root))))
             (should-not (tired--collapsed-display-entry root entry)))
           (should (equal "" (tired--size-cell (tired-tests--entry "chain"))))
-          (should-not walked))))))
+          (setq reads 0)
+          (tired-tests--flush-sizes)
+          (should (equal "" (tired--size-cell (tired-tests--entry "chain"))))
+          (should (= 0 reads)))))))
 
 (ert-deftest tired-file-change-coalesces-into-one-timer ()
   "A second event keeps the pending timer instead of adding another."

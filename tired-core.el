@@ -191,10 +191,11 @@ one network round trip per link."
   "When non-nil, show the recursive size of each directory.
 The size column then sums the bytes of every regular file under the
 directory.  Symbolic links stay unfollowed.  A deep tree costs one
-directory read per directory on the first walk, so the option stays
-nil by default.  `tired-size-cache-ttl' then serves every later
-refresh from a global memo table.  A remote directory never shows a
-total, because the walk would cost one network round trip per file."
+directory read per directory, and the idle queue spreads those
+reads over several passes.  `tired-size-cache-ttl' then serves every
+later refresh from a global memo table.  A remote directory never
+shows a total, because the walk would cost one network round trip
+per file."
   :type 'boolean)
 
 (defcustom tired-size-cache-ttl 60
@@ -209,13 +210,11 @@ tree, so such a hook would empty the table faster than it fills."
   :type 'natnum)
 
 (defcustom tired-directory-size-budget 0.2
-  "Seconds one redraw may spend on directory size walks.
-A walk of a deep tree blocks the redraw, so the redraw stops walking
-when this budget ends and leaves the remaining size cells empty.
-An idle timer then redraws and walks the next part, so the column
-fills in several passes.  The walk of one single subtree still runs
-to its end.  Set the value to nil to walk every directory in one
-redraw."
+  "Seconds one idle pass may spend on directory size walks.
+The redraw itself reads the memo table alone, so it never walks a
+tree.  A queue pass stops when this budget ends and leaves the
+remaining totals for the next idle pass.  Set the value to nil to
+walk every queued directory in one pass."
   :type '(choice (natnum :tag "Seconds") (const :tag "No budget" nil)))
 
 (defcustom tired-dwim-target t
@@ -487,6 +486,157 @@ value prints an empty cell and sorts every row as unknown.")
 `tired--reload-tables' calls it on refresh, and `tired-elements'
 installs it.")
 
+;;; Idle queue
+
+(defcustom tired-queue-reprint-delay 0.2
+  "Seconds between the last finished idle job and its repaint.
+One timer repaints every buffer that a job marked dirty, so a long
+walk costs few reprints."
+  :type 'number
+  :group 'tired)
+
+(cl-defstruct (tired--job (:constructor tired--job-create))
+  "One resumable unit of work on the idle queue.
+KEY names the job, so one key costs one job while it waits.  STEP
+advances the job and returns `:more' or `:done'.  FINISH runs once
+after STEP returns `:done'.  BUDGET holds the seconds that one pass
+may spend on this job, or nil for no limit.  OWNERS holds the
+buffers that wait for a repaint.  DATA holds the state of the job
+kind."
+  key
+  step
+  finish
+  budget
+  owners
+  data)
+
+(defvar tired--queue-jobs nil
+  "Jobs that wait for a step.  The head runs first.")
+
+(defvar tired--queue-index (make-hash-table :test #'equal)
+  "Hash table that maps a job key to the job that holds it.")
+
+(defvar tired--queue-timer nil
+  "Idle timer that runs one more pass over `tired--queue-jobs'.")
+
+(defvar tired--queue-dirty nil
+  "Buffers that wait for a repaint after a finished job.")
+
+(defvar tired--queue-reprint-timer nil
+  "Timer that repaints the buffers in `tired--queue-dirty'.")
+
+(defun tired--queue-job (key)
+  "Return the job that holds KEY, or nil."
+  (when key
+    (gethash key tired--queue-index)))
+
+(defun tired--queue-drop (job)
+  "Remove JOB from the queue without a finish."
+  (setq tired--queue-jobs (delq job tired--queue-jobs))
+  (let ((key (tired--job-key job)))
+    (when (and key (eq (gethash key tired--queue-index) job))
+      (remhash key tired--queue-index))))
+
+(defun tired--queue-drop-where (predicate)
+  "Drop every queued job that PREDICATE accepts."
+  (dolist (job (copy-sequence tired--queue-jobs))
+    (when (funcall predicate job)
+      (tired--queue-drop job))))
+
+(defun tired--queue-enqueue (job)
+  "Push JOB onto the queue unless a job already holds its key.
+Return JOB when it joins the queue, and nil when it does not."
+  (let ((key (tired--job-key job)))
+    (unless (tired--queue-job key)
+      (when key
+        (puthash key job tired--queue-index))
+      (push job tired--queue-jobs)
+      (tired--queue-schedule)
+      job)))
+
+(defun tired--queue-adopt (job buffer)
+  "Make BUFFER wait for the repaint of JOB."
+  (unless (memq buffer (tired--job-owners job))
+    (push buffer (tired--job-owners job))))
+
+(defun tired--queue-mark-dirty (buffers)
+  "Mark BUFFERS for a repaint after a finished job."
+  (dolist (buffer buffers)
+    (when (and (buffer-live-p buffer)
+               (not (memq buffer tired--queue-dirty)))
+      (push buffer tired--queue-dirty))))
+
+(defun tired--queue-forget-buffer (buffer)
+  "Drop BUFFER as an owner and drop every job that loses all owners."
+  (setq tired--queue-dirty (delq buffer tired--queue-dirty))
+  (dolist (job (copy-sequence tired--queue-jobs))
+    (when (memq buffer (tired--job-owners job))
+      (setf (tired--job-owners job) (delq buffer (tired--job-owners job)))
+      (when (null (tired--job-owners job))
+        (tired--queue-drop job)))))
+
+(defun tired--queue-forget-current ()
+  "Drop every idle job that the current buffer owns.
+`kill-buffer-hook' runs this, because a dead buffer never repaints."
+  (tired--queue-forget-buffer (current-buffer)))
+
+(defun tired--queue-finish (job)
+  "Drop JOB from the queue and run its finish function."
+  (tired--queue-drop job)
+  (when (functionp (tired--job-finish job))
+    (funcall (tired--job-finish job) job)))
+
+(defun tired--queue-run ()
+  "Advance the queue until a budget ends or a key waits.
+Each step gives way to the next job, so one large job never holds
+the others.  A pass that leaves work schedules another idle pass."
+  (setq tired--queue-timer nil)
+  (let* ((head (car tired--queue-jobs))
+         (budget (and head (tired--job-budget head)))
+         (deadline (and budget (+ (float-time) budget))))
+    (while (and tired--queue-jobs
+                (not (input-pending-p))
+                (or (null deadline) (< (float-time) deadline)))
+      (let ((job (car tired--queue-jobs)))
+        (if (eq (funcall (tired--job-step job) job) :done)
+            (tired--queue-finish job)
+          (setq tired--queue-jobs
+                (nconc (cdr tired--queue-jobs) (list job)))))))
+  (when tired--queue-jobs
+    (tired--queue-schedule))
+  (when tired--queue-dirty
+    (tired--queue-reprint-schedule)))
+
+(defun tired--queue-schedule ()
+  "Arrange one more pass at the next idle period.
+An idle timer fires once for one transition into the idle state, so
+each pass schedules its own successor."
+  (unless (timerp tired--queue-timer)
+    (setq tired--queue-timer
+          (run-with-idle-timer 0 nil #'tired--queue-run))))
+
+(defun tired--queue-reprint-schedule ()
+  "Arrange one reprint for every buffer that waits for a job."
+  (unless (timerp tired--queue-reprint-timer)
+    (setq tired--queue-reprint-timer
+          (run-at-time tired-queue-reprint-delay nil
+                       #'tired--queue-reprint))))
+
+(defun tired--queue-reprint ()
+  "Repaint every dirty buffer that a window shows.
+A buffer that no window shows keeps its state and prints it at its
+next redraw."
+  (setq tired--queue-reprint-timer nil)
+  (let ((dirty tired--queue-dirty))
+    (setq tired--queue-dirty nil)
+    (dolist (buffer (delete-dups dirty))
+      (when (and (buffer-live-p buffer)
+                 (get-buffer-window buffer t)
+                 (with-current-buffer buffer
+                   (derived-mode-p 'tired-mode)))
+        (with-current-buffer buffer
+          (tired--redraw))))))
+
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
 The table maps file names to `tired-entry' structs."
@@ -579,9 +729,9 @@ before every real extension."
 (defun tired--shown-size (entry)
   "Return the byte count that the size column shows for ENTRY, or nil.
 A file shows its own size.  A directory shows the total of its
-subtree when `tired-directory-size' holds and a walk reaches it.  A
-remote directory and a walk that `tired-directory-size-budget' cut
-short show nothing, so the value stays nil."
+subtree when `tired-directory-size' holds and the memo table holds a
+total.  A remote directory and a walk that the idle queue has not
+finished show nothing, so the value stays nil."
   (cond
    ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
    ((not tired-directory-size) nil)
@@ -1105,8 +1255,10 @@ face.  NAME itself stays unchanged."
 
 (defun tired--directory-empty-p (directory)
   "Return non-nil when the subtree of DIRECTORY holds no byte.
-A remote directory counts as non-empty, because its walk costs one
-round trip per file."
+Read the memo table alone, so a redraw never walks a subtree.  A
+directory with no cached total counts as non-empty, and the idle
+walk dims it one pass later.  A remote directory counts as
+non-empty, because its walk costs one round trip per file."
   (and (stringp directory)
        (not (file-remote-p directory))
        (let ((total (tired--directory-total directory)))
@@ -1267,7 +1419,7 @@ leaves the rest of the row alone."
         (forward-line 1)))))
 
 (defvar tired--size-cache (make-hash-table :test #'equal)
-  "Global memo table for `tired--subtree-size'.
+  "Global memo table for the directory size walks.
 Every Tired buffer shares the table.  A key holds the absolute name
 of a directory, so a walk needs no `file-truename' call to build
 one.  A value holds `(TOTAL . STAMP)', where STAMP is the
@@ -1275,34 +1427,29 @@ one.  A value holds `(TOTAL . STAMP)', where STAMP is the
 `tired-size-cache-ttl' bounds the age of a total and
 `tired--size-cache-prune' drops the totals that expire.")
 
-(defvar tired--size-stamp nil
-  "Stamp that the running size walk stores in `tired--size-cache'.
-A walk binds one timestamp, so every directory that the walk
-reaches carries the same age.")
-
-(defvar tired--size-deadline nil
-  "Time at which the running redraw stops walking a directory size.
-Nil means no deadline, so every walk runs to its end.")
-
 (defvar tired--size-always nil
-  "When non-nil, walk a directory size with no window and no budget.
+  "When non-nil, queue a directory size walk with no window.
 Batch Emacs shows no window, so the test suite binds this to t.")
 
-(defvar tired--size-walks 0
-  "Number of directory walks that the running redraw finished.
-A pass that finishes no walk makes no progress, and
-`tired--redraw-buffer' then schedules no further pass.")
-
 (defvar-local tired--size-deferred nil
-  "Non-nil when a redraw left a directory size unwalked.
-`tired--size-walk-skipped-p' sets it, and a display, an idle timer
-or the next redraw reads it.")
+  "Non-nil when a redraw left a directory size unqueued.
+`tired--size-queue' sets it while no window shows the listing, and
+a display, an idle timer or the next redraw reads it.")
 
 (defvar-local tired--size-timer nil
-  "Timer that redraws the listing to walk a deferred directory size.")
+  "Timer that redraws the listing to queue its directory size walks.")
 
 (defconst tired--size-redraw-delay 0.3
-  "Idle seconds before a redraw walks a deferred directory size.")
+  "Idle seconds before a redraw queues a deferred directory size.")
+
+(cl-defstruct (tired--size-walk (:constructor tired--size-walk-create))
+  "State of one resumable directory size walk.
+STAMP holds the `float-time' at which the walk started, so every
+directory that the walk reaches carries one cache age.  STACK holds
+the frames of the walk, the deepest first.  A frame is a plist with
+`:directory', `:scanned' and `:total'."
+  stamp
+  stack)
 
 (defun tired--size-key (directory)
   "Return the `tired--size-cache' key for DIRECTORY.
@@ -1340,60 +1487,172 @@ buffer in a window."
   (or tired--size-always
       (and (get-buffer-window-list (current-buffer) nil t) t)))
 
-(defun tired--size-walk-skipped-p ()
-  "Return non-nil when this redraw leaves a directory size unwalked.
-A listing that no window shows costs no walk, and a walk that
-`tired-directory-size-budget' stops ends there.  Set
-`tired--size-deferred' in either case, so a later display or an idle
-timer walks the size again."
-  (when (or (not (tired--size-window-p))
-            (and tired--size-deadline
-                 (> (float-time) tired--size-deadline)))
-    (setq tired--size-deferred t)
-    t))
+(defun tired--size-store (key total walk)
+  "Store TOTAL for KEY under the start stamp of WALK."
+  (puthash key (cons total (or (tired--size-walk-stamp walk) (float-time)))
+           tired--size-cache))
 
-(defun tired--subtree-size (directory)
-  "Return the number of bytes in every regular file under DIRECTORY.
-Skip symbolic links, so a link cycle cannot loop.  Store each
-visited directory in `tired--size-cache', so one calculation reads a
-nested directory once and a later walk inside the cache window
-reads nothing.  An unreadable directory counts as zero."
-  (let* ((key (tired--size-key directory))
-         (hit (gethash key tired--size-cache)))
-    (if (tired--size-cache-valid-p hit)
-        (car hit)
-      (let ((total 0))
-        (dolist (pair (ignore-errors
-                       (directory-files-and-attributes directory nil nil t)))
-          (let* ((name (car pair))
-                 (attributes (cdr pair))
-                 (type (file-attribute-type attributes)))
-            (unless (member name '("." ".."))
-              (cond
-               ((eq t type)
-                (setq total (+ total (tired--subtree-size
-                                      (expand-file-name name directory)))))
-               ((stringp type) nil)
-               (t (setq total (+ total
-                                 (or (file-attribute-size attributes) 0))))))))
-        (puthash key (cons total (or tired--size-stamp (float-time)))
-                 tired--size-cache)
-        total))))
+(defun tired--size-walk-scan (walk)
+  "Read the children of the head frame of WALK.
+Count every regular file in the total of the frame and record the
+subdirectories that the frame still visits.  Keep the order of the
+directory.  Skip symbolic links, so a link cycle cannot loop.  An
+unreadable directory counts as empty."
+  (let* ((stack (tired--size-walk-stack walk))
+         (frame (car stack))
+         (directory (plist-get frame :directory))
+         (total 0)
+         children)
+    (dolist (pair (ignore-errors
+                   (directory-files-and-attributes directory nil nil t)))
+      (unless (member (car pair) '("." ".."))
+        (let ((type (file-attribute-type (cdr pair))))
+          (cond
+           ((eq t type)
+            (push (expand-file-name (car pair) directory) children))
+           ((stringp type) nil)
+           (t (setq total (+ total (or (file-attribute-size (cdr pair)) 0))))))))
+    (setcar stack (plist-put (plist-put (plist-put frame :total total)
+                                        :names (nreverse children))
+                             :scanned t))))
+
+(defun tired--size-walk-visit (walk)
+  "Push the next child directory of the head frame of WALK."
+  (let* ((stack (tired--size-walk-stack walk))
+         (frame (car stack))
+         (names (plist-get frame :names)))
+    (setcar stack (plist-put frame :names (cdr names)))
+    (setf (tired--size-walk-stack walk)
+          (cons (list :directory (car names)
+                      :scanned nil
+                      :total 0
+                      :names nil)
+                stack))))
+
+(defun tired--size-walk-close (walk)
+  "Close the head frame of WALK and add its total to the parent.
+Store the total of the frame first, so a nested directory keeps its
+own number.  Return `:more' while a frame stays in WALK and `:done'
+at its root."
+  (let* ((stack (tired--size-walk-stack walk))
+         (frame (car stack))
+         (total (plist-get frame :total))
+         (rest (cdr stack)))
+    (tired--size-store (tired--size-key (plist-get frame :directory))
+                       total walk)
+    (setf (tired--size-walk-stack walk) rest)
+    (if (null rest)
+        :done
+      (let ((parent (car rest)))
+        (setcar rest (plist-put parent :total
+                                (+ (plist-get parent :total) total)))
+        :more))))
+
+(defun tired--size-walk-step (job)
+  "Advance the walk of JOB by one directory.
+Return `:more' while a frame waits and `:done' after the root total
+lands in the cache."
+  (let* ((walk (tired--job-data job))
+         (stack (tired--size-walk-stack walk)))
+    (cond
+     ((null stack) :done)
+     ((not (plist-get (car stack) :scanned))
+      (tired--size-walk-scan walk)
+      :more)
+     ((plist-get (car stack) :names)
+      (tired--size-walk-visit walk)
+      :more)
+     (t (tired--size-walk-close walk)))))
+
+(defun tired--size-walk-advance (job)
+  "Advance JOB by one directory and stop a walk that signals.
+Store a zero total for the root, so a tree that raises an error
+costs one pass and no second walk inside the cache window."
+  (condition-case err
+      (tired--size-walk-step job)
+    (error
+     (display-warning
+      'tired
+      (format "Directory size walk failed on %s: %s"
+              (abbreviate-file-name (tired--job-key job))
+              (error-message-string err))
+      :warning)
+     (tired--size-store (tired--job-key job) 0 (tired--job-data job))
+     :done)))
+
+(defun tired--size-walk-finish (job)
+  "Repaint the buffers that wait for the walk of JOB."
+  (tired--queue-mark-dirty (tired--job-owners job)))
+
+(defun tired--size-walk-job-p (job)
+  "Return non-nil when JOB walks a directory size."
+  (eq (tired--job-step job) #'tired--size-walk-advance))
+
+(defun tired--size-enqueue (key directory)
+  "Queue an idle walk of DIRECTORY under the cache key KEY.
+A young total, a remote directory and a queued walk cost no walk."
+  (when (and (not (file-remote-p directory))
+             (not (tired--size-cache-valid-p (gethash key tired--size-cache)))
+             (null (tired--queue-job key)))
+    (tired--queue-enqueue
+     (tired--job-create
+      :key key
+      :step #'tired--size-walk-advance
+      :finish #'tired--size-walk-finish
+      :budget tired-directory-size-budget
+      :owners (list (current-buffer))
+      :data (tired--size-walk-create
+             :stamp (float-time)
+             :stack (list (list :directory (expand-file-name directory)
+                                :scanned nil
+                                :total 0
+                                :names nil)))))))
+
+(defun tired--size-ancestor-p (key directories)
+  "Return non-nil when a directory above KEY waits for a walk.
+DIRECTORIES holds the keys that the redraw collected.  Stop at the
+shown directory, so no row above the listing counts as an ancestor."
+  (let ((ceiling (tired--size-key tired--directory))
+        (parent (directory-file-name (file-name-directory key)))
+        found)
+    (while (and parent
+                (not found)
+                (string-prefix-p (file-name-as-directory ceiling)
+                                 (file-name-as-directory parent)))
+      (setq found (gethash parent directories)
+            parent (directory-file-name (file-name-directory parent))))
+    found))
+
+(defun tired--size-queue ()
+  "Queue the visible directory rows for an idle size walk.
+`tired--redraw-buffer' calls this after the print.  A listing that
+no window shows queues nothing and sets `tired--size-deferred', so
+the next display starts the walk.  Only the topmost row of a chain
+queues, because a walk covers the subtree of its row."
+  (if (not (tired--size-window-p))
+      (setq tired--size-deferred t)
+    (let ((directories (make-hash-table :test #'equal)))
+      (dolist (cell (tired--visible-rows))
+        (let ((row (car cell)))
+          (when (and (tired-entry-p row)
+                     (tired-entry-dirp row)
+                     (not (file-remote-p (tired-entry-path row))))
+            (puthash (tired--size-key (tired-entry-path row)) row
+                     directories))))
+      (maphash (lambda (key _row)
+                 (unless (tired--size-ancestor-p key directories)
+                   (tired--size-enqueue key key)))
+               directories))))
 
 (defun tired--directory-total (directory)
-  "Return the number of bytes in every regular file under DIRECTORY.
-Serve the value from `tired--size-cache' when it stays young enough
-and sum the subtree otherwise.  One walk stamps every directory it
-reaches with the same start time.  Return nil when the walk waits for
-a window or for the budget of the next redraw."
-  (let* ((key (tired--size-key directory))
-         (hit (gethash key tired--size-cache)))
-    (cond
-     ((tired--size-cache-valid-p hit) (car hit))
-     ((tired--size-walk-skipped-p) nil)
-     (t (setq tired--size-walks (1+ tired--size-walks))
-        (let ((tired--size-stamp (float-time)))
-          (tired--subtree-size directory))))))
+  "Return the byte total that the memo table holds for DIRECTORY, or nil.
+The redraw reads this table alone, so no redraw walks a tree.  A
+refresh drops the totals that `tired-size-cache-ttl' expired, and
+`tired--size-queue' queues a new walk for a directory without a
+young total."
+  (let ((hit (gethash (tired--size-key directory) tired--size-cache)))
+    (when (consp hit)
+      (car hit))))
 
 (defvar-local tired--width-window nil
   "Window that decides the name column width, or nil before a redraw.
@@ -1430,10 +1689,10 @@ window shows keeps a stale pin out of its way."
     window))
 
 (defun tired--schedule-size-redraw (&optional delay)
-  "Redraw the listing after DELAY seconds to walk a deferred size.
+  "Redraw the listing after DELAY seconds to queue a deferred size.
 DELAY defaults to `tired--size-redraw-delay'.  A zero delay moves the
 redraw out of a display hook, where a reprint must wait.  A listing
-that no window shows stays unwalked, and the next display starts the
+that no window shows queues nothing, and the next display starts the
 walk."
   (when (and tired--size-deferred
              (tired--size-window-p)
@@ -1444,9 +1703,7 @@ walk."
                          nil #'tired--size-redraw buffer)))))
 
 (defun tired--size-redraw (buffer)
-  "Redraw BUFFER when a directory size still waits for a walk.
-A redraw that spends its budget again sets the flag, and the function
-then schedules one more pass."
+  "Redraw BUFFER so a shown listing queues its directory size walks."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq tired--size-timer nil)
@@ -1457,9 +1714,9 @@ then schedules one more pass."
 
 (defun tired--window-buffer-changed (_window)
   "Redraw the listing after a window starts to show it.
-A redraw that no window shows leaves the directory sizes unwalked,
-so the first redisplay of the buffer walks them.  Redisplay runs this
-hook, so the reprint goes through a timer."
+A redraw that no window shows queues no directory size walk, so the
+first redisplay of the buffer queues them.  Redisplay runs this hook,
+so the reprint goes through a timer."
   (when tired--size-deferred
     (tired--schedule-size-redraw 0)))
 
@@ -2162,15 +2419,11 @@ WINDOW is the window that shows the buffer, or nil for the pin in
 `tired--width-window'.  Its width limits the name column.  The
 redraw keeps the point and the scroll position of every window that
 shows the listing.
-The redraw walks a directory size until `tired-directory-size-budget'
-ends, and `tired--size-deferred' then sends a later pass over the
-rows that it left unwalked."
+The redraw reads the directory size memo table alone, so it blocks
+on no subtree.  `tired--size-queue' then queues the visible
+directory rows and the idle queue fills the size cells."
   (setq tired--size-deferred nil)
   (let* ((window (tired--pin-width-window window))
-         (tired--size-walks 0)
-         (tired--size-deadline
-          (and tired-directory-size-budget
-               (+ (float-time) tired-directory-size-budget)))
          (point-entry (tired--point-row window))
          (point-line (line-number-at-pos))
          (mark-entry (tired--row-at (mark t)))
@@ -2195,10 +2448,7 @@ rows that it left unwalked."
           (tired--paint-row-help)
           (when tired--elements-queue-function
             (funcall tired--elements-queue-function))
-          ;; A pass that finished no walk makes no progress, so it
-          ;; schedules no further pass.
-          (when (> tired--size-walks 0)
-            (tired--schedule-size-redraw)))
+          (tired--size-queue))
       (setq tired--rows nil))
     (unless (tired--goto-entry point-entry)
       ;; The printed row is gone, and the print left point on the first
@@ -2270,10 +2520,13 @@ watch."
 (defun tired--reload-tables ()
   "Read the root directory and every inserted directory.
 Drop inserted directories that no longer exist.  Drop expanded
-files that vanished.  Keep `tired--size-cache', so a refresh inside
-one `tired-size-cache-ttl' window reads no directory twice."
+files that vanished.  Drop the directory size walks that a refresh
+or a directory change made stale, and keep `tired--size-cache', so a
+refresh inside one `tired-size-cache-ttl' window reads no directory
+twice."
   (setq tired--tables (make-hash-table :test #'equal))
   (setq tired--collapse-cache (make-hash-table :test #'equal))
+  (tired--queue-drop-where #'tired--size-walk-job-p)
   (tired--size-cache-prune)
   (when tired--elements-prune-function
     (funcall tired--elements-prune-function))
@@ -3297,6 +3550,7 @@ The directory contents come from `directory-files' and
   (setq-local tired--sections (make-hash-table :test #'equal))
   (setq-local tired--folded (make-hash-table :test #'equal))
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
+  (add-hook 'kill-buffer-hook #'tired--queue-forget-current nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
   ;; Emacs draws the sort arrow in the padding, and every Tired column

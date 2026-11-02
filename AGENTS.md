@@ -139,10 +139,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    its old line, clamped to the last row, so a removal never sends point
    to the first line.  A view change (filter, sort, dotfile, hidden,
    insert, expand, fold) calls it.  `tired-refresh` re-reads the tables,
-   prunes dead state and then redraws.  A redraw binds
-   `tired--size-deadline` from `tired-directory-size-budget` and
-   `tired--size-walks` at zero, so a size walk stops when the budget
-   ends.  The name column width comes from `tired--pin-width-window`,
+   prunes dead state and then redraws.  A redraw reads the size memo
+   table alone, so it blocks on no subtree, and `tired--size-queue'
+   then queues the visible directory rows for an idle walk.  The name
+   column width comes from `tired--pin-width-window`,
    which pins the window that renders the listing in
    `tired--width-window` and returns it.
 7. Selection and region share one target path.  `tired--selection`
@@ -244,6 +244,19 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     `tired--elements-cache` under the path with the modification time,
     the size and the hook value, then marks its owner buffers dirty,
     and one timer repaints them together.
+17. `tired--queue-enqueue` holds the idle jobs of the process, one per
+    key.  A job holds a step function that returns `:more' or `:done',
+    a finish function, a budget in seconds, the buffers that wait for
+    a repaint and a data slot for the job kind.  A pass advances the
+    head job, rotates it to the tail, and stops on its budget or on
+    `input-pending-p`.  A pass that leaves work schedules its own
+    successor through an idle timer, because an idle timer fires once
+    for one transition into the idle state.  A finished job marks its
+    owners dirty, and one timer repaints them after
+    `tired-queue-reprint-delay'.  `tired--queue-forget-current` drops
+    the jobs of a killed buffer from `kill-buffer-hook', and
+    `tired--reload-tables` drops every size walk through
+    `tired--queue-drop-where` and `tired--size-walk-job-p`.
 
 ## Conventions
 
@@ -445,8 +458,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - `tired--entries-size` counts a directory by its subtree, and it
   reads no `tired-directory-size`, because that option governs the
   size column alone.  A remote directory adds nothing.  The walk goes
-  through `tired--directory-total', so `tired--size-cache' serves a
-  second read inside `tired-size-cache-ttl'.  The mode line still
+  through `tired--directory-total', so `tired--size-cache' serves the
+  sum and a directory whose walk has not landed adds zero until the
+  idle pass fills it.  The mode line still
   rebuilds on a region change, through `post-command-hook', and a new
   directory inside the region starts one walk per cache window.
 - Evil shadows `i` (text objects), `e` and `E` (word motion) and `TAB`
@@ -473,16 +487,26 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - An empty directory row takes `tired-ignored-face`, and its slash
   follows the name through `tired--directory-slash-face`.  Empty means
   that `tired--directory-total` returns zero, so `tired--name-face`
-  reads the size cache and a redraw walks a subtree even with
-  `tired-directory-size` nil.  That cache bounds the cost.  A remote
-  directory keeps the directory face and costs no walk.
-- A size walk waits for a window.  `tired--size-walk-skipped-p` skips
-  the walk when no window shows the buffer or when
-  `tired-directory-size-budget` ended, and it sets
-  `tired--size-deferred`.  `tired--directory-total` then returns nil, so
-  every caller tests the value: a nil total prints an empty cell, keeps
-  the plain directory face and counts as no byte.  A cached total still
-  serves a hidden listing, because the cache read costs nothing.
+  reads the size cache and the idle queue walks a subtree even with
+  `tired-directory-size` nil.  A directory without a total keeps the
+  directory face until the walk lands.  A remote directory keeps the
+  directory face and costs no walk.
+- A size walk runs in the idle queue, one directory read per step.
+  `tired--size-walk-step` scans the head frame, visits each child
+  frame in turn, and stores a total when a frame closes, so a nested
+  directory keeps its own number and a partial walk writes nothing.
+  `tired--directory-total` reads the table alone: a nil total prints
+  an empty cell, keeps the plain directory face and counts as no byte.
+  A walk that signals stores a zero total for its root, so a broken
+  tree costs one pass and not one pass per redraw.
+- `tired--size-queue` queues the topmost visible directory row of a
+  chain alone, because a walk covers the subtree of its row, and it
+  skips a remote directory and a directory with a young total.  It
+  queues nothing while no window shows the listing, and sets
+  `tired--size-deferred`, so the next display walks the sizes.
+- `tired-directory-size-budget` limits one idle pass, not one redraw.
+  A zero budget leaves the job in the queue, and a nil budget walks
+  every queued directory in one pass.
 - `tabulated-list-format` is buffer-local and permanent-local, so one
   name column width serves every window and every frame that shows the
   listing.  `tired--pin-width-window` pins the window that renders the
@@ -499,19 +523,19 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   restyles the column again.  A window that does not show the listing
   never pins itself, so `tired-noselect` keeps its stale pin out of the
   way until a window shows the buffer.
-- `tired-noselect` redraws before a window exists, so its sizes stay
-  unwalked.  A buffer-local `window-buffer-change-functions` entry calls
-  `tired--window-buffer-changed`, which schedules a redraw through
-  `tired--schedule-size-redraw`.  Redisplay runs that hook, so the
-  reprint goes through a timer.  `tired--size-redraw` clears the flag
-  and redraws, and a redraw that spends its budget again schedules one
-  more pass.  A pass that finished no walk schedules nothing, so a
-  budget too small for one subtree costs one reprint and ends.
+- `tired-noselect` redraws before a window exists, so it queues no
+  size walk.  A buffer-local `window-buffer-change-functions` entry
+  calls `tired--window-buffer-changed`, which schedules a redraw
+  through `tired--schedule-size-redraw`.  Redisplay runs that hook, so
+  the reprint goes through a timer, and `tired--size-redraw` clears
+  the flag and redraws.
 - Batch Emacs opens a window for `tired`, so a test that needs a hidden
   listing binds `tired-tests--with-deferred-sizes`, which stubs
   `tired--size-window-p`.  Bind `tired-tests--window-shown` to t inside
   that macro to act as the display does.  `tired--size-always` belongs
-  to `tired-tests--with-fixture`, which also sets the budget to nil.
+  to `tired-tests--with-fixture`, which also sets the budget to nil and
+  stubs both schedulers, so a test flushes the idle queue through
+  `tired-tests--flush-sizes`.
 - `minibuffer-contents` returns the current buffer text outside a
   minibuffer, so read it before `with-current-buffer`.
 - `tabulated-list-print` erases the buffer, and the erase strands the
