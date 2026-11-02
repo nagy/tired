@@ -17,7 +17,8 @@ A visible redraw stops walking when `tired-directory-size-budget`
 seconds end.  Rows that it reaches keep their total, rows that it leaves
 print empty, and an idle timer redraws.  The next pass reads the cache
 for the finished rows, so every pass moves forward and no row costs two
-walks.
+walks.  ADR 0017 later replaced that check with an idle queue, so a
+redraw walks nothing at all.
 
 Alternatives were rejected.  Skipping only the offscreen rows needs the
 window range inside the printer, and a printed cell of another width

@@ -85,4 +85,6 @@ count.
 
 Deferred: a tar top-level member count, a WASM section count, and async
 directory sizes.  Each one joins this queue as one more dissector, or as
-one more kind of job.
+one more kind of job.  ADR 0017 later moved the queue into the core and
+made async directory sizes its second kind, so the Elements count keeps
+its own job state and the core owns the queue.
