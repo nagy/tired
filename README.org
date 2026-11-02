@@ -214,10 +214,11 @@ column.  Under evil, the =↑= and =↓= characters walk the same list.
 
 The help text of a row names the two mouse commands.  The indent of a
 nested row and the space beside the columns carry it too.  The
-pointer does not highlight a row.  The key map binds
-=follow-link= to a predicate that returns nil, because
-=tabulated-list-mode= turns a click on a =mouse-face= row into a click
-on the other button.
+pointer highlights the name of a row, as Dired highlights a file
+name, and leaves the indent and the other columns plain.  The key
+map binds =follow-link= to a predicate that returns nil, because
+=tabulated-list-mode= turns a click on a =mouse-face= region into a
+click on the other button.
 
 - =double-mouse-1= toggles the row under the pointer.  A directory row
   inserts or removes its children.  A file row with a section handler

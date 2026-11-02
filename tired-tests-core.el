@@ -873,7 +873,7 @@ costs one redraw and not one per character."
       (should (eq (current-buffer) origin)))))
 
 (ert-deftest tired-row-carries-the-help-text ()
-  "A printed row explains the mouse commands, and does not highlight."
+  "A printed row explains the mouse commands, and its name highlights."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "sub")
@@ -890,8 +890,18 @@ costs one redraw and not one per character."
     (should (string-match-p "mouse-2"
                             (get-text-property (line-beginning-position)
                                                'help-echo)))
-    ;; The pointer leaves the row alone, so no face follows the mouse.
-    (should-not (text-property-not-all (point-min) (point-max)
+    ;; The pointer highlights the name alone, so a hover shows the file
+    ;; name that the row stands for.
+    (let ((name (tired--name-region)))
+      (should name)
+      (should (eq (get-text-property (car name) 'mouse-face) 'highlight))
+      (should (eq (get-text-property (1- (cdr name)) 'mouse-face) 'highlight)))
+    ;; The indent, the slash and the rest of the line stay plain.
+    (should-not (get-text-property (line-beginning-position) 'mouse-face))
+    (should-not (get-text-property (1+ (cdr (tired--name-region)))
+                                  'mouse-face))
+    (should-not (text-property-not-all (1+ (cdr (tired--name-region)))
+                                       (line-end-position)
                                        'mouse-face nil))))
 
 (ert-deftest tired-mouse-click-does-not-follow-a-link ()

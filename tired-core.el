@@ -1245,11 +1245,13 @@ a double click toggles it."
    (t "mouse-2: visit in another window")))
 
 (defun tired--paint-row-help ()
-  "Add the help text to every printed row.
+  "Add the help text and the mouse face to every printed row.
 `tabulated-list-print' erases and reprints the buffer, so this pass
-runs after each print.  The whole line carries the text, so the
+runs after each print.  The whole line carries the help text, so the
 indent of a nested row and the space beside the columns explain the
-mouse commands too."
+mouse commands too.  The name alone carries `mouse-face', as Dired
+paints the name of a file, so the pointer highlights the name and
+leaves the rest of the row alone."
   (let ((inhibit-read-only t))
     (save-excursion
       (goto-char (point-min))
@@ -1258,7 +1260,10 @@ mouse commands too."
           (when row
             (add-text-properties
              (line-beginning-position) (line-end-position)
-             (list 'help-echo (tired--mouse-help row)))))
+             (list 'help-echo (tired--mouse-help row)))
+            (when-let* ((name (tired--name-region)))
+              (add-text-properties (car name) (cdr name)
+                                   (list 'mouse-face 'highlight)))))
         (forward-line 1)))))
 
 (defvar tired--size-cache (make-hash-table :test #'equal)
@@ -3025,9 +3030,11 @@ one that the click started."
   "Return nil, so one click selects a row and follows no link.
 `tabulated-list-mode' binds `follow-link' to `mouse-face', and that
 binding turns a click on a marked row into a click on its other
-binding.  A Tired row needs one click to move point, a second click
-to toggle the row and a drag to make a region, so no click opens an
-entry.  The middle button opens a row instead."
+binding.  The name cell of a row carries `mouse-face', so the pointer
+highlights a name, and this predicate keeps that highlight from
+turning a click into a link.  A Tired row needs one click to move
+point, a second click to toggle the row and a drag to make a region,
+so no click opens an entry.  The middle button opens a row instead."
   nil)
 
 (defun tired-browse-url-of-file (&optional secondary)

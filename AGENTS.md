@@ -200,9 +200,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     editable and turns the rows that succeeded read only.
 13. `tired--paint-row-help` runs after `tabulated-list-print` and gives
     every printed line the `help-echo` from `tired--mouse-help`, so the
-    whole row explains the mouse.  It sets no `mouse-face`: the pointer
-    leaves a row alone.  Bind `inhibit-read-only`, because the listing
-    buffer is read-only.
+    whole row explains the mouse.  It paints `mouse-face' on the region
+    that `tired--name-region` returns, the way Dired paints the name of
+    a file, so the pointer highlights the name alone and the indent, the
+    directory slash, the symlink arrow and the other columns stay plain.
+    Bind `inhibit-read-only`, because the listing buffer is read-only.
     `tired--click-row` reads the row under a click from the buffer of the
     clicked window.  `tired-mouse-find-file-other-window` opens that row
     in another window and `tired-mouse-toggle` runs `tired-toggle-subdir`
@@ -373,6 +375,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired--paint-row-help` adds properties after every print, so a
   listing buffer counts as modified.  Do not read that flag as a sign
   of an unsaved name edit.
+- A printed row carries `mouse-face' on its name alone, so
+  `tabulated-list-mode` turns a click there into a link click unless
+  `follow-link` says no.  `tired-mode-map` keeps its
+  `tired--click-selects-row` binding, which returns nil, so the
+  highlight costs no click.  Do not paint `mouse-face' on the whole
+  line, or a hover hides the row that the pointer reads.
 - `evil-define-key` is a macro, so `tired-evil.el` uses the function
   `evil-define-minor-mode-key` with `key-parse`.  `define-key` reads
   `"RET"` as three characters.  A remap entry reads
@@ -391,12 +399,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - `define-minor-mode` defines a defcustom, so a mode without
   `:group 'tired` fails byte compilation.
 - `tabulated-list-mode` binds `follow-link` to `mouse-face`, and with
-  that value a click on a `mouse-face` row arrives as `mouse-2`, so a
-  single click would open a row.  A printed row sets no `mouse-face`,
-  but the binding stays: `tired-mode-map` binds `follow-link` to
-  `tired--click-selects-row`, which returns nil, and `mouse-on-link-p`
-  calls that binding as a predicate.  Do not drop the binding, or a
-  `mouse-face` from another source opens a row on one click.
+  that value a click on a `mouse-face` region arrives as `mouse-2`, so a
+  single click would open a row.  A printed row carries `mouse-face` on
+  its name, so the binding decides that path: `tired-mode-map` binds
+  `follow-link` to `tired--click-selects-row`, which returns nil, and
+  `mouse-on-link-p` calls that binding as a predicate.  Do not drop the
+  binding, or the name highlight opens a row on one click.
 - `tired--column-label` propertizes each header label with a key map for
   `[header-line mouse-1]` and `[header-line mouse-2]`.  Emacs 31 builds
   the header line from those labels and keeps their text properties, so
