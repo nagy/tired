@@ -85,13 +85,6 @@ inside this window.  A nil value keeps every entry for the session."
   :type '(choice (number :tag "Seconds") (const :tag "Never" nil))
   :group 'tired)
 
-(defcustom tired-elements-reprint-delay 0.2
-  "Seconds between a finished element count and the reprint.
-One reprint serves every count that finished inside the window, so a
-directory of many files costs one print."
-  :type 'number
-  :group 'tired)
-
 (cl-defstruct (tired--elements-job (:constructor tired--elements-job-create))
   "One incremental read for the element count of one path.
 PATH is absolute.  STAMP holds the modification time and the size
@@ -100,15 +93,13 @@ lands in the cache for the file that the read saw.  HOOKS holds the
 hook value that the dissector ran with.  STEP is a function of this
 job that returns `:more' or `:done'.  STATE holds whatever the
 dissector keeps between steps.  COUNT holds the finished number, or
-nil for no count.  OWNERS lists the buffers that show the path.
-OFFSET and SIZE drive a chunked read."
+nil for no count.  OFFSET and SIZE drive a chunked read."
   path
   stamp
   hooks
   step
   state
   count
-  owners
   offset
   size)
 
@@ -122,21 +113,6 @@ costs one read.")
 
 (defconst tired--elements-missing (make-symbol "tired--elements-missing")
   "Value that marks a path with no entry in `tired--elements-cache'.")
-
-(defvar tired--elements-jobs nil
-  "Jobs that wait for a step.  The head runs first.")
-
-(defvar tired--elements-queued (make-hash-table :test #'equal)
-  "Hash table that maps a path to the job that counts it.")
-
-(defvar tired--elements-timer nil
-  "Idle timer that runs one more pass over `tired--elements-jobs'.")
-
-(defvar tired--elements-dirty nil
-  "Buffers that wait for a reprint after a finished count.")
-
-(defvar tired--elements-reprint-timer nil
-  "Timer that repaints the buffers in `tired--elements-dirty'.")
 
 (defvar tired--elements-always nil
   "When non-nil, queue element counts with no window.
@@ -195,23 +171,26 @@ one read serves every listing."
   (let ((path (tired--elements-key (tired-entry-path row)))
         (stamp (tired--elements-stamp row)))
     (when stamp
-      (let ((job (gethash path tired--elements-queued)))
+      (let ((job (tired--queue-job 'elements path)))
         (cond
          ((tired--elements-entry path stamp) nil)
          (job
-          (unless (memq (current-buffer) (tired--elements-job-owners job))
-            (push (current-buffer) (tired--elements-job-owners job))))
+          (tired--queue-adopt job (current-buffer)))
          (t
-          (let ((job (tired--elements-job-create
-                      :path path
-                      :stamp stamp
-                      :size (nth 1 stamp)
-                      :offset 0
-                      :step #'tired--elements-dispatch
-                      :owners (list (current-buffer)))))
-            (puthash path job tired--elements-queued)
-            (push job tired--elements-jobs)
-            (tired--elements-schedule))))))))
+          (tired--queue-enqueue
+           (tired--job-create
+            :kind 'elements
+            :key path
+            :step #'tired--elements-advance
+            :finish #'tired--elements-finish
+            :budget tired-elements-budget
+            :owners (list (current-buffer))
+            :data (tired--elements-job-create
+                   :path path
+                   :stamp stamp
+                   :size (nth 1 stamp)
+                   :offset 0
+                   :step #'tired--elements-dispatch)))))))))
 
 (defun tired--elements-queue ()
   "Queue every visible row of the listing for an element count.
@@ -225,32 +204,37 @@ section row has no count."
         (when (tired-entry-p row)
           (tired--elements-enqueue row))))))
 
-(defun tired--elements-step (job)
+(defun tired--elements-queue-job-p (job)
+  "Return non-nil when JOB counts an element of a file."
+  (eq (tired--job-kind job) 'elements))
+
+(defun tired--elements-advance (job)
   "Advance JOB by one step, inside the buffer that queued it.
 A dissector may read the entry table of the listing, so the buffer
 of the first owner stays current.  A dissector that signals finishes
 the job with no count, so one bad file never stops the queue.
 Return `:more' or `:done'."
-  (let ((buffer (car (tired--elements-job-owners job))))
+  (let* ((data (tired--job-data job))
+         (buffer (car (tired--job-owners job))))
     (condition-case err
         (if (buffer-live-p buffer)
             (with-current-buffer buffer
-              (funcall (tired--elements-job-step job) job))
-          (funcall (tired--elements-job-step job) job))
+              (funcall (tired--elements-job-step data) data))
+          (funcall (tired--elements-job-step data) data))
       (error
        (display-warning
         'tired
         (format "Element dissector failed on %s: %s"
-                (abbreviate-file-name (tired--elements-job-path job))
+                (abbreviate-file-name (tired--elements-job-path data))
                 (error-message-string err))
         :warning)
-       (setf (tired--elements-job-count job) nil)
+       (setf (tired--elements-job-count data) nil)
        :done))))
 
 (defun tired--elements-dispatch (job)
   "Run `tired-elements-functions' for the path of JOB.
 An integer finishes the job.  A job hands its step and its state
-over, and the same pass steps it.  No dissector finishes the job
+over, and the next step advances it.  No dissector finishes the job
 with no count."
   (setf (tired--elements-job-hooks job)
         (copy-sequence tired-elements-functions))
@@ -269,78 +253,23 @@ with no count."
             (tired--elements-job-step result)
             (tired--elements-job-state job)
             (tired--elements-job-state result))
-      (tired--elements-step job))
+      :more)
      (t (setf (tired--elements-job-count job) nil)
         :done))))
 
 (defun tired--elements-finish (job)
-  "Store the count of JOB and mark its buffers for a reprint.
+  "Store the count of JOB and mark its buffers for a repaint.
 Store a nil count as well, so a file that no dissector understands
 costs no second read."
-  (let ((path (tired--elements-job-path job)))
-    (remhash path tired--elements-queued)
-    (setq tired--elements-jobs (delq job tired--elements-jobs))
+  (let* ((data (tired--job-data job))
+         (path (tired--elements-job-path data)))
     (puthash path
-             (list (tired--elements-job-stamp job)
-                   (tired--elements-job-hooks job)
+             (list (tired--elements-job-stamp data)
+                   (tired--elements-job-hooks data)
                    (float-time)
-                   (tired--elements-job-count job))
+                   (tired--elements-job-count data))
              tired--elements-cache)
-    (dolist (buffer (tired--elements-job-owners job))
-      (when (and (buffer-live-p buffer)
-                 (not (memq buffer tired--elements-dirty)))
-        (push buffer tired--elements-dirty)))))
-
-(defun tired--elements-run ()
-  "Advance the queue until the budget ends or a key waits.
-Each step gives way to the next job, so one large file never holds
-the counts of the other rows.  A pass that leaves work schedules
-another idle pass."
-  (setq tired--elements-timer nil)
-  (let ((deadline (and tired-elements-budget
-                       (+ (float-time) tired-elements-budget))))
-    (while (and tired--elements-jobs
-                (not (input-pending-p))
-                (or (null deadline) (< (float-time) deadline)))
-      (let ((job (car tired--elements-jobs)))
-        (if (eq (tired--elements-step job) :done)
-            (tired--elements-finish job)
-          (setq tired--elements-jobs
-                (nconc (cdr tired--elements-jobs) (list job)))))))
-  (when tired--elements-jobs
-    (tired--elements-schedule))
-  (when tired--elements-dirty
-    (tired--elements-reprint-schedule)))
-
-(defun tired--elements-schedule ()
-  "Arrange one more pass at the next idle period.
-An idle timer fires once for one transition into the idle state, so
-each pass schedules its own successor."
-  (unless (timerp tired--elements-timer)
-    (setq tired--elements-timer
-          (run-with-idle-timer 0 nil #'tired--elements-run))))
-
-(defun tired--elements-reprint-schedule ()
-  "Arrange one reprint for every buffer that waits for a count."
-  (unless (timerp tired--elements-reprint-timer)
-    (setq tired--elements-reprint-timer
-          (run-at-time tired-elements-reprint-delay nil
-                       #'tired--elements-reprint))))
-
-(defun tired--elements-reprint ()
-  "Repaint every dirty buffer that a window shows.
-A buffer that no window shows keeps its counts and prints them at
-its next redraw."
-  (setq tired--elements-reprint-timer nil)
-  (let ((dirty tired--elements-dirty))
-    (setq tired--elements-dirty nil)
-    (dolist (buffer (delete-dups dirty))
-      (when (and (buffer-live-p buffer)
-                 (get-buffer-window buffer t)
-                 (with-current-buffer buffer
-                   (derived-mode-p 'tired-mode)))
-        (with-current-buffer buffer
-          (tired--redraw))))))
+    (tired--queue-mark-dirty (tired--job-owners job))))
 
 (defun tired--elements-prune ()
   "Drop the cached counts that no buffer read for the cache window.
@@ -362,8 +291,7 @@ It serves a file that changed without a move of its modification
 time or its size."
   (interactive)
   (clrhash tired--elements-cache)
-  (setq tired--elements-jobs nil
-        tired--elements-queued (make-hash-table :test #'equal))
+  (tired--queue-drop-where #'tired--elements-queue-job-p)
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (when (derived-mode-p 'tired-mode)

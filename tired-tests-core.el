@@ -1102,9 +1102,9 @@ key map alone."
                                              :type 'directory
                                              :dirp t))))
         (should-not (tired--queue-job
-                     (tired--size-key "/ssh:host:/tmp/sub")))
+                     'size (tired--size-key "/ssh:host:/tmp/sub")))
         (should (tired--queue-job
-                 (tired--size-key (expand-file-name "sub" root))))))))
+                 'size (tired--size-key (expand-file-name "sub" root))))))))
 
 (ert-deftest tired-size-cell-sums-a-directory-recursively ()
   "With `tired-directory-size' on, a directory sums its files."
@@ -1253,7 +1253,9 @@ hidden."
     (tired-tests--with-deferred-sizes
       (let ((tired-directory-size t))
         (tired root)
-        (should-not tired--queue-jobs)
+        (should-not (seq-some #'tired--size-walk-job-p tired--queue-jobs))
+        (should-not (tired--queue-job
+                     'size (tired--size-key (expand-file-name "sub" root))))
         (should tired--size-deferred)
         (should-not (timerp tired--size-timer))
         (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))))))
@@ -1288,11 +1290,11 @@ hidden."
           (tired-directory-size-budget 0))
       (tired root)
       (let ((key (tired--size-key (expand-file-name "sub" root))))
-        (should (tired--queue-job key))
+        (should (tired--queue-job 'size key))
         (tired--queue-run)
-        (should (tired--queue-job key))
+        (should (tired--queue-job 'size key))
         (should-not (tired--directory-total (expand-file-name "sub" root)))
-        (setf (tired--job-budget (tired--queue-job key)) nil)
+        (setf (tired--job-budget (tired--queue-job 'size key)) nil)
         (tired--queue-run)
         (should-not tired--queue-jobs)
         (should (equal 9 (tired--directory-total
@@ -1306,7 +1308,7 @@ hidden."
           (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
       (let ((job (tired--queue-job
-                  (tired--size-key (expand-file-name "sub" root)))))
+                  'size (tired--size-key (expand-file-name "sub" root)))))
         (should job)
         (cl-letf (((symbol-function 'directory-files-and-attributes)
                    (lambda (&rest args)
@@ -1329,11 +1331,11 @@ hidden."
     (let ((tired-directory-size t))
       (tired root)
       (let* ((key (tired--size-key (expand-file-name "sub" root)))
-             (job (tired--queue-job key)))
+             (job (tired--queue-job 'size key)))
         (should job)
         (tired-refresh)
         (should-not (memq job tired--queue-jobs))
-        (should (tired--queue-job key))))))
+        (should (tired--queue-job 'size key))))))
 
 (ert-deftest tired-redraw-reads-no-directory-for-a-size ()
   "A redraw prints from the memo table alone."

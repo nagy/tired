@@ -497,12 +497,13 @@ walk costs few reprints."
 
 (cl-defstruct (tired--job (:constructor tired--job-create))
   "One resumable unit of work on the idle queue.
-KEY names the job, so one key costs one job while it waits.  STEP
-advances the job and returns `:more' or `:done'.  FINISH runs once
-after STEP returns `:done'.  BUDGET holds the seconds that one pass
-may spend on this job, or nil for no limit.  OWNERS holds the
-buffers that wait for a repaint.  DATA holds the state of the job
-kind."
+KEY names the job inside its KIND, so one key costs one job while it
+waits.  STEP advances the job and returns `:more' or `:done'.
+FINISH runs once after STEP returns `:done'.  BUDGET holds the
+seconds that one pass may spend on this job, or nil for no limit.
+OWNERS holds the buffers that wait for a repaint.  DATA holds the
+state of the job kind."
+  kind
   key
   step
   finish
@@ -525,15 +526,23 @@ kind."
 (defvar tired--queue-reprint-timer nil
   "Timer that repaints the buffers in `tired--queue-dirty'.")
 
-(defun tired--queue-job (key)
-  "Return the job that holds KEY, or nil."
+(defun tired--queue-index-key (job)
+  "Return the key that `tired--queue-index' maps to JOB.
+The kind joins the key, so a size walk and an element count of one
+directory stay two jobs."
+  (let ((key (tired--job-key job)))
+    (when key
+      (cons (tired--job-kind job) key))))
+
+(defun tired--queue-job (kind key)
+  "Return the queued job of KIND that holds KEY, or nil."
   (when key
-    (gethash key tired--queue-index)))
+    (gethash (cons kind key) tired--queue-index)))
 
 (defun tired--queue-drop (job)
   "Remove JOB from the queue without a finish."
   (setq tired--queue-jobs (delq job tired--queue-jobs))
-  (let ((key (tired--job-key job)))
+  (let ((key (tired--queue-index-key job)))
     (when (and key (eq (gethash key tired--queue-index) job))
       (remhash key tired--queue-index))))
 
@@ -546,8 +555,8 @@ kind."
 (defun tired--queue-enqueue (job)
   "Push JOB onto the queue unless a job already holds its key.
 Return JOB when it joins the queue, and nil when it does not."
-  (let ((key (tired--job-key job)))
-    (unless (tired--queue-job key)
+  (let ((key (tired--queue-index-key job)))
+    (unless (and key (gethash key tired--queue-index))
       (when key
         (puthash key job tired--queue-index))
       (push job tired--queue-jobs)
@@ -1586,16 +1595,17 @@ costs one pass and no second walk inside the cache window."
 
 (defun tired--size-walk-job-p (job)
   "Return non-nil when JOB walks a directory size."
-  (eq (tired--job-step job) #'tired--size-walk-advance))
+  (eq (tired--job-kind job) 'size))
 
 (defun tired--size-enqueue (key directory)
   "Queue an idle walk of DIRECTORY under the cache key KEY.
 A young total, a remote directory and a queued walk cost no walk."
   (when (and (not (file-remote-p directory))
              (not (tired--size-cache-valid-p (gethash key tired--size-cache)))
-             (null (tired--queue-job key)))
+             (null (tired--queue-job 'size key)))
     (tired--queue-enqueue
      (tired--job-create
+      :kind 'size
       :key key
       :step #'tired--size-walk-advance
       :finish #'tired--size-walk-finish

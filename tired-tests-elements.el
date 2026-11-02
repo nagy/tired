@@ -32,11 +32,6 @@
 
 (require 'tired-tests-fixtures)
 
-(defun tired-tests--flush-elements ()
-  "Finish every queued element job and repaint the listing."
-  (tired--elements-run)
-  (tired--elements-reprint))
-
 (defun tired-tests--elements-cell (name)
   "Return the Elements cell of the entry called NAME."
   (aref (tired--row (tired-tests--entry name) 0) 2))
@@ -383,7 +378,7 @@ The header row counts, and a blank line stays out."
     (tired root)
     (tired-tests--flush-elements)
     (tired-refresh)
-    (should-not tired--elements-jobs)))
+    (should-not tired--queue-jobs)))
 
 (ert-deftest tired-elements-cache-follows-the-file ()
   "A changed file reaches the column as a new count."
@@ -394,7 +389,7 @@ The header row counts, and a blank line stays out."
     (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
     (tired-tests--write "a.json" "[1,2]")
     (tired-refresh)
-    (should (= 1 (length tired--elements-jobs)))
+    (should (= 1 (length tired--queue-jobs)))
     (tired-tests--flush-elements)
     (should (= 2 (tired--elements-value (tired-tests--entry "a.json"))))))
 
@@ -422,7 +417,7 @@ The header row counts, and a blank line stays out."
     (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
     (tired-elements-clear-cache)
     (should-not (tired--elements-value (tired-tests--entry "a.json")))
-    (should tired--elements-jobs)
+    (should tired--queue-jobs)
     (tired-tests--flush-elements)
     (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))))
 
@@ -450,12 +445,16 @@ The header row counts, and a blank line stays out."
   "A spent budget leaves the job in the queue."
   (tired-tests--with-fixture
     (tired-tests--write "a.json" "[1,2,3]")
-    (tired root)
-    (let ((tired-elements-budget 0))
-      (tired--elements-run)
-      (should tired--elements-jobs))
-    (tired--elements-run)
-    (should-not tired--elements-jobs)))
+    (let ((tired-elements-budget 0)
+          (tired-directory-size-budget 0))
+      (tired root)
+      (should tired--queue-jobs)
+      (tired--queue-run)
+      (should tired--queue-jobs)
+      (dolist (job tired--queue-jobs)
+        (setf (tired--job-budget job) nil))
+      (tired--queue-run)
+      (should-not tired--queue-jobs))))
 
 (ert-deftest tired-elements-queue-gives-way-after-a-step ()
   "Two jobs that need more than one step interleave."
@@ -469,26 +468,31 @@ The header row counts, and a blank line stays out."
                          :done)
                      (setf (tired--elements-job-state job) 'second)
                      :more)))
-           (first (tired--elements-job-create
-                   :path "/one" :step step :owners (list (current-buffer))))
-           (second (tired--elements-job-create
-                    :path "/two" :step step :owners (list (current-buffer)))))
-      (setq tired--elements-jobs (list first second))
-      (tired--elements-run)
+           (jobs (mapcar (lambda (path)
+                           (tired--job-create
+                            :key path
+                            :step #'tired--elements-advance
+                            :finish #'tired--elements-finish
+                            :owners (list (current-buffer))
+                            :data (tired--elements-job-create
+                                   :path path :step step)))
+                         '("/one" "/two"))))
+      (mapc #'tired--queue-enqueue (reverse jobs))
+      (tired--queue-run)
       (should (equal (nreverse calls) '("/one" "/two" "/one" "/two")))
-      (should-not tired--elements-jobs))))
+      (should-not tired--queue-jobs))))
 
 (ert-deftest tired-elements-queue-holds-one-job-per-path ()
   "A second queue pass adds no second job for the same path."
   (tired-tests--with-fixture
     (tired-tests--write "a.json" "[1,2,3]")
     (tired root)
-    (let ((count (length tired--elements-jobs)))
+    (let ((count (length tired--queue-jobs)))
       (tired-refresh)
-      (should (= count (length tired--elements-jobs))))
+      (should (= count (length tired--queue-jobs))))
     (tired-tests--flush-elements)
     (tired-refresh)
-    (should-not tired--elements-jobs)))
+    (should-not tired--queue-jobs)))
 
 (ert-deftest tired-elements-dissector-error-finishes-the-job ()
   "A dissector that signals leaves no count and stops no queue."
@@ -500,7 +504,7 @@ The header row counts, and a blank line stays out."
       (tired root)
       (tired-tests--flush-elements))
     (should-not (tired--elements-value (tired-tests--entry "a.json")))
-    (should-not tired--elements-jobs)))
+    (should-not tired--queue-jobs)))
 
 (ert-deftest tired-elements-reprint-repaints-a-shown-buffer ()
   "One finished count repaints its buffer once."
@@ -510,11 +514,11 @@ The header row counts, and a blank line stays out."
     (let ((count 0))
       (cl-letf (((symbol-function 'tired--redraw)
                  (lambda (&rest _) (setq count (1+ count)))))
-        (tired--elements-run)
+        (tired--queue-run)
         (should (= 0 count))
-        (tired--elements-reprint)
+        (tired--queue-reprint)
         (should (= 1 count))
-        (tired--elements-reprint)
+        (tired--queue-reprint)
         (should (= 1 count))))))
 
 (ert-deftest tired-elements-directory-counts-an-inserted-directory ()
@@ -535,33 +539,33 @@ count of that directory needs no second `directory-files' call."
 (ert-deftest tired-elements-schedule-keeps-one-idle-timer ()
   "A pass that already waits takes no second timer."
   (let ((timers 0)
-        (tired--elements-timer nil))
+        (tired--queue-timer nil))
     (cl-letf (((symbol-function 'run-with-idle-timer)
                (lambda (&rest _)
                  (setq timers (1+ timers))
                  (run-at-time 60 nil #'ignore))))
       (unwind-protect
           (progn
-            (tired--elements-schedule)
-            (tired--elements-schedule)
+            (tired--queue-schedule)
+            (tired--queue-schedule)
             (should (= 1 timers)))
-        (when (timerp tired--elements-timer)
-          (cancel-timer tired--elements-timer))))))
+        (when (timerp tired--queue-timer)
+          (cancel-timer tired--queue-timer))))))
 
 (ert-deftest tired-elements-run-schedules-the-next-idle-pass ()
   "A pass that leaves a job arranges its successor."
   (let ((scheduled 0)
-        (tired--elements-jobs
-         (list (tired--elements-job-create
-                :path "/one"
+        (tired--queue-jobs
+         (list (tired--job-create
+                :key "/one"
                 :step (lambda (_job) :more)
-                :owners nil)))
-        (tired-elements-budget 0))
-    (cl-letf (((symbol-function 'tired--elements-schedule)
+                :budget 0)))
+        (tired--queue-index (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'tired--queue-schedule)
                (lambda () (setq scheduled (1+ scheduled)))))
-      (tired--elements-run)
+      (tired--queue-run)
       (should (= 1 scheduled))
-      (should tired--elements-jobs))))
+      (should tired--queue-jobs))))
 
 ;;; The sort
 

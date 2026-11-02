@@ -66,23 +66,17 @@ a symlink, and removes every Tired buffer it opened."
           (tired--size-cache (make-hash-table :test #'equal))
           (tired--size-always t)
           (tired-directory-size-budget nil)
-          ;; The element cache and the idle queues are global too.
-          ;; Stub the schedulers, because batch Emacs runs no idle
-          ;; timer and a test flushes a queue itself.
+          ;; The element cache and the idle queue are global too.
+          ;; Stub the two schedulers, because batch Emacs runs no idle
+          ;; timer and a test flushes the queue itself.
           (tired--queue-jobs nil)
           (tired--queue-index (make-hash-table :test #'equal))
           (tired--queue-dirty nil)
           (tired--elements-cache (make-hash-table :test #'equal))
-          (tired--elements-queued (make-hash-table :test #'equal))
-          (tired--elements-jobs nil)
-          (tired--elements-dirty nil)
           (tired--elements-always t)
           (tired-elements-budget nil))
      (cl-letf (((symbol-function 'tired--queue-schedule) #'ignore)
-               ((symbol-function 'tired--queue-reprint-schedule) #'ignore)
-               ((symbol-function 'tired--elements-schedule) #'ignore)
-               ((symbol-function 'tired--elements-reprint-schedule)
-                #'ignore))
+               ((symbol-function 'tired--queue-reprint-schedule) #'ignore))
        (unwind-protect
            (progn
              (with-temp-file (expand-file-name "alpha.txt") (insert "abc"))
@@ -114,6 +108,10 @@ a symlink, and removes every Tired buffer it opened."
   "Finish every queued idle job and repaint the listing."
   (tired--queue-run)
   (tired--queue-reprint))
+
+(defun tired-tests--flush-elements ()
+  "Finish every queued idle job and repaint the listing."
+  (tired-tests--flush-sizes))
 
 (defvar tired-tests--window-shown nil
   "When non-nil, the size gate reads the listing as shown.

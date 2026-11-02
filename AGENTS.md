@@ -235,26 +235,26 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     visible rows after the print, and `tired--reload-tables` prunes the
     cache.  The number comes from `tired-elements-functions`, an
     abnormal hook that `run-hook-with-args-until-success` walks.  A
-    dissector returns nil, an integer, or a `tired--elements-job`.  One
-    global queue holds one job per path, gives way to the next job
-    after every step, and stops on `tired-elements-budget` or on
-    `input-pending-p`.  A pass schedules its own successor through an
-    idle timer, because an idle timer fires once for one transition
-    into the idle state.  A finished count fills
-    `tired--elements-cache` under the path with the modification time,
-    the size and the hook value, then marks its owner buffers dirty,
-    and one timer repaints them together.
+    dissector returns nil, an integer, or a `tired--elements-job`.
+    The library keeps the count state of a job in a
+    `tired--elements-job` and wraps that in a `tired--job` of kind
+    `elements`, so the shared queue carries it.  A dissector that hands
+    its own job over costs one extra step, because
+    `tired--elements-dispatch` returns `:more` and the next pass
+    advances the new step.
 17. `tired--queue-enqueue` holds the idle jobs of the process, one per
-    key.  A job holds a step function that returns `:more' or `:done',
-    a finish function, a budget in seconds, the buffers that wait for
-    a repaint and a data slot for the job kind.  A pass advances the
-    head job, rotates it to the tail, and stops on its budget or on
-    `input-pending-p`.  A pass that leaves work schedules its own
-    successor through an idle timer, because an idle timer fires once
-    for one transition into the idle state.  A finished job marks its
-    owners dirty, and one timer repaints them after
-    `tired-queue-reprint-delay'.  `tired--queue-forget-current` drops
-    the jobs of a killed buffer from `kill-buffer-hook', and
+    kind and key.  A job holds a kind, a key, a step function that
+    returns `:more' or `:done', a finish function, a budget in
+    seconds, the buffers that wait for a repaint and a data slot for
+    the job kind.  The kind joins the key in `tired--queue-index`, so
+    a size walk and an element count of one directory stay two jobs.
+    A pass advances the head job, rotates it to the tail, and stops on
+    its budget or on `input-pending-p`.  A pass that leaves work
+    schedules its own successor through an idle timer, because an idle
+    timer fires once for one transition into the idle state.  A
+    finished job marks its owners dirty, and one timer repaints them
+    after `tired-queue-reprint-delay'.  `tired--queue-forget-current`
+    drops the jobs of a killed buffer from `kill-buffer-hook`, and
     `tired--reload-tables` drops every size walk through
     `tired--queue-drop-where` and `tired--size-walk-job-p`.
 
@@ -767,8 +767,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   alone, so no codec reaches the count, and the tail magic `PARE` marks
   an encrypted footer that the dissector refuses.
 - Batch Emacs runs no idle timer and no reprint timer.
-  `tired-tests--with-fixture` binds a private element cache and an empty
-  queue, stubs the two schedulers and sets `tired--elements-always`, so
-  no test leaks a timer.  `tired-tests--flush-elements` calls
-  `tired--elements-run` and then `tired--elements-reprint`.  A test that
+  `tired-tests--with-fixture` binds a private element cache and an
+  empty idle queue, stubs the two schedulers and sets
+  `tired-elements-always`, so no test leaks a timer.
+  `tired-tests--flush-sizes` and `tired-tests--flush-elements` both
+  call `tired--queue-run` and then `tired--queue-reprint`.  A test that
   needs the real scheduler stubs `run-with-idle-timer` itself.
