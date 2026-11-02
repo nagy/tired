@@ -173,7 +173,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `tired-filter-delay`; the exit and quit paths flush at once.
 10. `tired--apply-to-targets` runs one function over the targets, deepest
     path first, then clears the selection, refreshes, repairs point and
-    reports.  A row that leaves the listing under point keeps its line.
+    reports.  The report is one line: the verb, the count, the
+    destination, and the first failed path when a target failed.  A row
+    that leaves the listing under point keeps its line.
     Otherwise point takes the row below the nearest row that stays
     above point, so a removed block above point does not push it down.
     Each command pushes one undo function.  `tired-rename` stays outside
@@ -644,6 +646,14 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   walks its trash list parents first, because a child cannot move back
   before its parent exists.  `tired--restore-path` stays silent when the
   original path exists again.
+- A command that changes the disk prints exactly one line through
+  `message`, and no `display-warning` runs beside it.  The line names the
+  verb, the count, the destination and the first failed path.
+  `tired--report-operation` builds it for copy, move, delete and commit,
+  and the other commands print their own line.  An undo function returns
+  the number of paths that it put back, and `tired-undo` prints that
+  count.  `tired--undo-restore` counts the restores and stays silent on
+  a failure.
 - Single-child collapse and the size walk skip a remote directory,
   because every read there costs a network round trip.- A collapsed row takes the leaf of the chain, so `tired-entry-path`
   names the leaf and the name holds the relative path.  The leaf can

@@ -125,29 +125,34 @@ the action.  Otherwise the action joins `tired--undo-actions'."
 
 (defun tired-undo ()
   "Undo the last file operation of this session.
-`tired-undo-push-functions' owns the action when the hook is
-non-nil, so the command signals a user error then."
+Print one line that names the action and the number of paths that
+moved back.  `tired-undo-push-functions' owns the action when the
+hook is non-nil, so the command signals a user error then."
   (interactive)
   (let ((action (pop tired--undo-actions)))
     (unless action
       (user-error "Nothing for Tired to undo"))
-    (funcall (cdr action))
-    (message "Undid %s" (car action))))
+    (let ((restored (funcall (cdr action))))
+      (message "Undid %s%s"
+               (car action)
+               (if (integerp restored)
+                   (format " (%d %s)" restored
+                           (if (= restored 1) "entry" "entries"))
+                 "")))))
 
-(defun tired--report-operation (description done failures)
-  "Announce DONE successes and FAILURES for DESCRIPTION."
-  (if (null failures)
-      (message "%s %d %s" description done (if (= done 1) "entry" "entries"))
-    (display-warning
-     'tired
-     (concat (format "%s: %d done, %d failed."
-                     description done (length failures))
-             (mapconcat (lambda (failure)
-                          (format "\n  %s: %s" (car failure) (cdr failure)))
-                        failures ""))
-     :warning)
-    (message "%s: %d done, %d failed.  See *Warnings*"
-             description done (length failures))))
+(defun tired--report-operation (verb place done failures)
+  "Print one line that names DONE successes of VERB at PLACE.
+PLACE holds the destination name, or nil when the verb needs none.
+FAILURES holds `(PATH . MESSAGE)' conses, and the line names the
+first failed path."
+  (message "%s %d %s%s%s"
+           verb done (if (= done 1) "entry" "entries")
+           (if place (format " to %s" place) "")
+           (if (null failures)
+               ""
+             (format ", %d failed: %s"
+                     (length failures)
+                     (abbreviate-file-name (car (car failures)))))))
 
 (defun tired--path-under-p (path parent)
   "Return non-nil when PATH is PARENT or lies below it."
@@ -192,9 +197,11 @@ no longer shows leaves point where the refresh put it."
      ((null row)
       (goto-char (point-min))))))
 
-(defun tired--apply-to-targets (description function)
+(defun tired--apply-to-targets (verb place function)
   "Call FUNCTION with each target path and then clear the selection.
-DESCRIPTION names the action.  Deepest paths run first, so a
+VERB names the action and PLACE names its destination.  The
+command prints one line that names the count, the destination and
+the first failed path.  Deepest paths run first, so a
 selection that holds a directory and its children reaches the
 children first.  A failure does not stop the remaining targets.
 A command that removed the row at point moves point to the row
@@ -203,9 +210,9 @@ above point does not push point down.  A row that leaves the
 listing under point keeps its line through the refresh, so a
 collapsed chain row that still shows a path under a removed leaf
 keeps focus.  A shorter listing clamps point to its last row,
-never to the first line.  Report the failures and refresh the
-listing.  A name edit holds the buffer text, so the command signals
-a user error there, because its redraw would draw nothing."
+never to the first line.  Refresh the listing after the line.  A
+name edit holds the buffer text, so the command signals a user
+error there, because its redraw would draw nothing."
   (when tired--name-edit
     (user-error "Commit or abort the name edit first"))
   (let ((targets (tired--targets)))
@@ -232,30 +239,40 @@ a user error there, because its redraw would draw nothing."
       (unless (tired--row-position point-row)
         (tired--goto-row-below anchor))
       (deactivate-mark)
-      (tired--report-operation description done (nreverse failures)))))
+      (tired--report-operation verb place done (nreverse failures)))))
+
+(defun tired--undo-restore (pairs)
+  "Put every PAIRS entry back and return the number restored.
+Each pair holds the trashed path and the original path."
+  (let ((restored 0))
+    (dolist (pair pairs)
+      (when (ignore-errors (tired--restore-path (car pair) (cdr pair)))
+        (setq restored (1+ restored))))
+    restored))
 
 (defun tired--undo-copy (created trashed)
-  "Remove CREATED paths and put TRASHED paths back."
-  (dolist (path created)
-    (when (tired--path-exists-p path)
-      (ignore-errors (tired--trash-move path))))
-  (dolist (pair trashed)
-    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
-  (tired--refresh-buffers))
+  "Remove CREATED paths, put TRASHED paths back and return the count."
+  (let ((restored 0))
+    (dolist (path created)
+      (when (and (tired--path-exists-p path)
+                 (ignore-errors (tired--trash-move path) t))
+        (setq restored (1+ restored))))
+    (setq restored (+ restored (tired--undo-restore trashed)))
+    (tired--refresh-buffers)
+    restored))
 
 (defun tired--undo-move (moved trashed)
-  "Move every MOVED pair back and put TRASHED paths back."
-  (dolist (pair moved)
-    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
-  (dolist (pair trashed)
-    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
-  (tired--refresh-buffers))
+  "Move every MOVED pair back, put TRASHED paths back and return the count."
+  (let ((restored (tired--undo-restore moved)))
+    (setq restored (+ restored (tired--undo-restore trashed)))
+    (tired--refresh-buffers)
+    restored))
 
 (defun tired--undo-delete (trashed)
-  "Put every TRASHED pair back, parents first."
-  (dolist (pair trashed)
-    (ignore-errors (tired--restore-path (car pair) (cdr pair))))
-  (tired--refresh-buffers))
+  "Put every TRASHED pair back, parents first, and return the count."
+  (let ((restored (tired--undo-restore trashed)))
+    (tired--refresh-buffers)
+    restored))
 
 (defun tired--replace-with-trash (path)
   "Move PATH into the session trash and return the new name.
@@ -317,7 +334,7 @@ first, so `tired-undo' puts it back.  The copy never calls a shell."
         (created nil)
         (trashed nil))
     (tired--apply-to-targets
-     "Copied"
+     "Copied" (abbreviate-file-name (directory-file-name destination))
      (lambda (path)
        (let* ((name (file-name-nondirectory (directory-file-name path)))
               (target (expand-file-name name destination))
@@ -336,7 +353,8 @@ first, so `tired-undo' puts it back.  The copy never calls a shell."
          (push target created))))
     (when created
       (tired--push-undo
-       (format "copy into %s" (abbreviate-file-name destination))
+       (format "copy into %s"
+               (abbreviate-file-name (directory-file-name destination)))
        (lambda () (tired--undo-copy created trashed))))))
 
 (defun tired-move (destination)
@@ -375,7 +393,7 @@ move never calls a shell."
          (moved nil)
          (trashed nil))
     (tired--apply-to-targets
-     "Moved"
+     "Moved" (abbreviate-file-name (directory-file-name directory))
      (lambda (path)
        (let* ((target (or full-path
                           (expand-file-name
@@ -398,7 +416,8 @@ move never calls a shell."
          (push (cons target path) moved))))
     (when moved
       (tired--push-undo
-       (format "move to %s" (abbreviate-file-name directory))
+       (format "move to %s"
+               (abbreviate-file-name (directory-file-name directory)))
        (lambda () (tired--undo-move moved trashed))))))
 
 (defun tired-rename (name)
@@ -448,10 +467,14 @@ user error while a name edit holds the buffer text."
           (tired--push-undo
            (format "rename %s to %s" old name)
            (lambda ()
-             (ignore-errors (tired--restore-path target path))
-             (when previous
-               (ignore-errors (tired--restore-path previous target)))
-             (tired--refresh-buffers)))
+             (let ((restored (tired--undo-restore (list (cons target path)))))
+               (when previous
+                 (setq restored
+                       (+ restored
+                          (tired--undo-restore
+                           (list (cons previous target))))))
+               (tired--refresh-buffers)
+               restored)))
           (tired-refresh)
           (tired--goto-path target)
           (message "Renamed %s to %s" old name))))))
@@ -766,9 +789,7 @@ that failed.  One undo action holds the whole commit, so
               (tired-refresh))
           (tired-name-edit-mode -1)
           (tired-refresh))
-        (tired--report-operation "Renamed" done failures)
-        (when failures
-          (message "Fix the failed names, C-c C-c retries, C-c C-k drops"))))))
+        (tired--report-operation "Renamed" nil done failures)))))
 
 (defun tired-delete ()
   "Move the targets into `tired-trash-directory'.
@@ -777,7 +798,7 @@ The command asks no question and never calls a shell.  A later
   (interactive)
   (let ((trashed nil))
     (tired--apply-to-targets
-     "Deleted"
+     "Deleted" "trash"
      (lambda (path)
        (push (cons (tired--trash-move path) path) trashed)))
     (when trashed
@@ -815,12 +836,16 @@ new directory and the parents that it created."
     (tired--push-undo
      (format "mkdir %s" (abbreviate-file-name path))
      (lambda ()
-       (when (file-directory-p path)
-         (tired--trash-move path))
-       (dolist (dir (reverse missing))
-         (when (and (file-directory-p dir)
-                    (null (directory-files dir nil "\\`[^.]")))
-           (delete-directory dir)))))
+       (let ((removed 0))
+         (when (and (file-directory-p path)
+                    (ignore-errors (tired--trash-move path) t))
+           (setq removed 1))
+         (dolist (dir (reverse missing))
+           (when (and (file-directory-p dir)
+                      (null (directory-files dir nil "\\`[^.]")))
+             (delete-directory dir)
+             (setq removed (1+ removed))))
+         removed)))
     (tired-refresh)
     (message "Created %s" (abbreviate-file-name path))))
 
@@ -843,10 +868,12 @@ created file, or puts the earlier modification time back."
      (format "touch %s" (abbreviate-file-name path))
      (lambda ()
        (cond ((not exists)
-              (when (tired--path-exists-p path)
-                (tired--trash-move path)))
+              (if (and (tired--path-exists-p path)
+                       (ignore-errors (tired--trash-move path) t))
+                  1
+                0))
              (mtime
-              (set-file-times path mtime)))))
+              (if (ignore-errors (set-file-times path mtime) t) 1 0)))))
     (tired-refresh)
     (message "%s %s" (if exists "Touched" "Created")
              (abbreviate-file-name path))))

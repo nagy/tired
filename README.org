@@ -352,8 +352,9 @@ target, because a copy or a move into that directory would change
 nothing.  =M-x tired-undo= undoes a copy and a move.  Set
 =tired-dwim-target= to nil to keep the minibuffer question.
 
-Every command reports the paths that failed and continues with the
-rest of the targets.  The *Warnings* buffer holds the full list.
+Every command prints one line that names the verb, the count and the
+destination.  A failed target joins that line with its path, and the
+command continues with the rest of the targets.
 
 The commands move a removed path into =tired-trash-directory=.  The
 default value is nil, and nil means a directory under
@@ -361,9 +362,10 @@ default value is nil, and nil means a directory under
 Emacs process id, so two Emacs sessions never share one trash.  The
 system removes it on reboot.  A copy or a move that replaces a path
 moves the old path there first, so no bytes get lost.  =M-x
-tired-undo= undoes the last operation.  A reversed delete, copy,
-move, mkdir or touch puts the paths back where they were.  Set the
-option to keep the removed paths elsewhere:
+tired-undo= undoes the last operation.  The line names the action and
+the number of paths that moved back.  A reversed delete, copy, move,
+mkdir or touch puts the paths back where they were.  Set the option to
+keep the removed paths elsewhere:
 
 #+begin_src elisp
   (setq tired-trash-directory "~/.local/state/tired/trash/")

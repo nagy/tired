@@ -238,6 +238,17 @@ name cell alone."
     (insert-file-contents path)
     (buffer-string)))
 
+(defmacro tired-tests--with-messages (&rest body)
+  "Run BODY and return the lines that it prints, in order."
+  (declare (indent 0) (debug t))
+  `(let ((lines nil))
+     (cl-letf (((symbol-function 'message)
+                (lambda (format-string &rest arguments)
+                  (push (apply #'format-message format-string arguments) lines)
+                  format-string)))
+       ,@body)
+     (nreverse lines)))
+
 (defmacro tired-tests--with-other-window (directory &rest body)
   "Show DIRECTORY in another window and run BODY.
 The selected window keeps the current buffer.  The window is

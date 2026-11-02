@@ -503,7 +503,9 @@ signal after the check passed."
       (let ((long (concat (make-string 300 ?y) ".txt")))
         (tired-tests--edit-name "alpha.txt" "one.txt")
         (tired-tests--edit-name "beta.txt" long)
-        (tired-commit-edits)
+        (let ((lines (tired-tests--with-messages (tired-commit-edits))))
+          (should (= (length lines) 1))
+          (should (string-match-p "1 failed" (car lines))))
         (should tired--name-edit)
         (should (file-regular-p (expand-file-name "one.txt" root)))
         (should (file-regular-p (expand-file-name "beta.txt" root)))
@@ -527,7 +529,7 @@ the disk."
       (tired root)
       (tired-tests--goto "alpha.txt")
       (tired-edit-names)
-      (should-error (tired--apply-to-targets "Ignored" #'ignore)
+      (should-error (tired--apply-to-targets "Ignored" nil #'ignore)
                     :type 'user-error)
       (should-error (tired-delete) :type 'user-error)
       (should-error (tired-rename "other.txt") :type 'user-error)
@@ -949,7 +951,8 @@ run, not on the first line."
       (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt")))))
 
 (ert-deftest tired-delete-reports-partial-failure ()
-  "A vanished target does not stop the remaining targets."
+  "A vanished target does not stop the remaining targets.
+The command prints one line that names the failed path."
   (tired-tests--with-fixture
     (tired-tests--with-trash
       (tired root)
@@ -958,15 +961,41 @@ run, not on the first line."
       (tired-tests--goto "beta.txt")
       (tired-select-toggle)
       (delete-file (expand-file-name "beta.txt" root))
-      (let ((reported nil))
-        (cl-letf (((symbol-function 'display-warning)
-                   (lambda (_type message &rest _)
-                     (setq reported message))))
-          (tired-delete))
-        (should (string-match-p "beta\\.txt" reported))
-        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
-        (tired-undo)
-        (should (file-regular-p (expand-file-name "alpha.txt" root)))))))
+      (let ((lines (tired-tests--with-messages (tired-delete))))
+        (should (= (length lines) 1))
+        (should (string-match-p "beta\\.txt" (car lines)))
+        (should (string-match-p "1 failed" (car lines))))
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-copy-prints-one-summary-line ()
+  "A copy prints one line with the count and the destination."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (should (equal (tired-tests--with-messages (tired-copy destination))
+                       (list (format "Copied 1 entry to %s"
+                                     (abbreviate-file-name destination)))))))))
+
+(ert-deftest tired-undo-prints-the-restored-count ()
+  "Undo prints one line with the number of paths that moved back."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (tired-copy destination)
+        (should (equal (tired-tests--with-messages (tired-undo))
+                       (list (format "Undid copy into %s (2 entries)"
+                                     (abbreviate-file-name destination)))))))))
 
 (ert-deftest tired-mkdir-creates-a-directory ()
   "mkdir creates the directory and undo removes it again."
