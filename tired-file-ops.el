@@ -70,12 +70,14 @@ The most recent action comes first.")
   "Return the directory that holds this session's removed paths.
 Serve `tired-trash-directory' when the user set it, and the
 per-process temporary directory otherwise."
+  (declare (side-effect-free t))
   (or tired-trash-directory
       (expand-file-name (format "tired-trash-%d-%d/" (user-uid) (emacs-pid))
                         temporary-file-directory)))
 
 (defun tired--path-exists-p (path)
   "Return non-nil when PATH exists, including a dangling symbolic link."
+  (declare (side-effect-free t))
   (or (file-exists-p path) (file-symlink-p path)))
 
 (defun tired--trash-name (path)
@@ -156,6 +158,7 @@ first failed path."
 
 (defun tired--path-under-p (path parent)
   "Return non-nil when PATH is PARENT or lies below it."
+  (declare (side-effect-free t))
   (let ((path (directory-file-name (expand-file-name path)))
         (parent (directory-file-name (expand-file-name parent))))
     (or (equal path parent)
@@ -285,6 +288,7 @@ Return nil when PATH is absent."
 The result joins PATH's directory and NAME as plain text, so no
 name reaches `expand-file-name'.  A name such as \"~\" then stays a
 file name in that directory, and never names the home directory."
+  (declare (pure t) (side-effect-free t))
   (concat (file-name-as-directory
            (file-name-directory (directory-file-name path)))
           name))
@@ -899,6 +903,7 @@ Group 1 holds the leading whitespace or the start of the string,
 group 2 holds the mark and group 3 holds the trailing whitespace
 or the end of the string.  A `?' inside backquote signs matches
 with group 2 alone, so a shell can read it untouched."
+  (declare (pure t) (side-effect-free t))
   (concat "\\(?1:\\`\\|[ \t]\\)\\(?2:[*?]\\)\\(?3:[ \t]\\|\\'\\)"
           "\\|\\(?1:\\)\\(?2:`\\?`\\)\\(?3:\\)"))
 
@@ -970,6 +975,7 @@ The name is relative to the shown directory, so an entry of an
 inserted subdirectory reads as `sub/file'.  A name that starts with
 a dash takes a leading `./', so the command does not read it as a
 switch."
+  (declare (side-effect-free t))
   (let ((name (file-relative-name path tired--directory)))
     (if (string-prefix-p "-" name) (concat "./" name) name)))
 
@@ -1032,6 +1038,7 @@ SEQUENTIAL makes the runs wait for each other."
 
 (defun tired--shell-target-label (targets)
   "Return a description of TARGETS for a shell command prompt."
+  (declare (pure t) (side-effect-free t))
   (if (null (cdr targets))
       (file-name-nondirectory
        (directory-file-name (tired-entry-path (car targets))))

@@ -532,6 +532,7 @@ state of the job kind."
   "Return the key that `tired--queue-index' maps to JOB.
 The kind joins the key, so a size walk and an element count of one
 directory stay two jobs."
+  (declare (pure t) (side-effect-free t))
   (let ((key (tired--job-key job)))
     (when key
       (cons (tired--job-kind job) key))))
@@ -696,6 +697,7 @@ A circular link counts as broken.  The user option
 
 (defun tired--hidden-name-p (name)
   "Return non-nil when a regexp in `tired-hidden-regexps' matches NAME."
+  (declare (side-effect-free t))
   (let ((case-fold-search t))
     (seq-some (lambda (regexp) (string-match-p regexp name))
               tired-hidden-regexps)))
@@ -735,6 +737,7 @@ reads the last component matches here as it does on a real row."
   "Return the extension of ENTRY, folded to lower case.
 A name without an extension returns an empty string, so it sorts
 before every real extension."
+  (declare (side-effect-free t))
   (downcase (or (file-name-extension (tired-entry-name entry)) "")))
 
 (defun tired--shown-size (entry)
@@ -798,6 +801,7 @@ Within a group, rows follow `tired--sort-key' and `tired--sort-flip',
 with the name as the tie-breaker.  A row whose value is nil has no
 value yet, such as an element count that waits in the idle queue, so
 it lists after every row that has one, in both directions."
+  (declare (side-effect-free t))
   (let ((a-dir (and tired-group-directories
                     (tired-entry-dirp (tired-sort-row-entry a))))
         (b-dir (and tired-group-directories
@@ -822,12 +826,14 @@ it lists after every row that has one, in both directions."
 
 (defun tired--table (directory)
   "Return the entry table for DIRECTORY, or nil."
+  (declare (side-effect-free t))
   (let ((directory (directory-file-name (expand-file-name directory))))
     (and (hash-table-p tired--tables)
          (gethash directory tired--tables))))
 
 (defun tired--inserted-p (directory)
   "Return non-nil when DIRECTORY is inserted in the listing."
+  (declare (side-effect-free t))
   (and (hash-table-p tired--inserted)
        (gethash (directory-file-name (expand-file-name directory))
                 tired--inserted)))
@@ -836,6 +842,7 @@ it lists after every row that has one, in both directions."
   "Return non-nil when ENTRY can hold children.
 A symbolic link counts when it resolves to a directory.  The row
 keeps its symlink name and face either way."
+  (declare (side-effect-free t))
   (and (tired-entry-p entry)
        (or (tired-entry-dirp entry)
            (and (eq (tired-entry-type entry) 'symlink)
@@ -1007,6 +1014,7 @@ handler found nothing."
 
 (defun tired--expanded-p (path)
   "Return non-nil when the sections of PATH appear in the listing."
+  (declare (side-effect-free t))
   (and (hash-table-p tired--expanded)
        (gethash (expand-file-name path) tired--expanded)))
 
@@ -1021,6 +1029,7 @@ handler found nothing."
   "Return the identity of SECTION inside the listing.
 The key holds the file name and the line, so two sections on the
 same line fold together and no other row collides with them."
+  (declare (pure t) (side-effect-free t))
   (cons (tired-section-path section) (tired-section-line section)))
 
 (defun tired--section-folded-p (section)
@@ -1037,12 +1046,14 @@ same line fold together and no other row collides with them."
 
 (defun tired--section-visible-p (section)
   "Return non-nil when SECTION passes the name filter."
+  (declare (side-effect-free t))
   (or (null tired--filter)
       (string-match-p (regexp-quote tired--filter)
                       (tired-section-label section))))
 
 (defun tired--section-face (section)
   "Return the face for SECTION from its kind."
+  (declare (pure t) (side-effect-free t))
   (pcase (tired-section-kind section)
     ((or 'heading 'title 'table) 'tired-section-heading-face)
     (_ 'tired-section-face)))
@@ -1053,6 +1064,7 @@ A source span may carry a `keymap', a `mouse-face', a `display' or an
 `invisible' property, as an org link does.  A listing row shows its
 whole label and owns its own mouse handling, so those properties stay
 out."
+  (declare (pure t) (side-effect-free t))
   (let ((copy (substring-no-properties string))
         (position 0)
         (end (length string)))
@@ -1098,6 +1110,7 @@ children."
   "Return the absolute file name that ROW describes.
 A section returns the file that holds it, so the path commands reach
 the file from a section row."
+  (declare (pure t) (side-effect-free t))
   (if (tired-section-p row)
       (tired-section-path row)
     (tired-entry-path row)))
@@ -1212,6 +1225,7 @@ and a lock file name.  The cache follows the variable."
   "Return the submatch index that RULE names, or nil.
 Only an integer third element names a submatch.  Any other value
 belongs to a face list."
+  (declare (pure t) (side-effect-free t))
   (let ((third (and (proper-list-p rule) (nth 2 rule))))
     (and (integerp third) third)))
 
@@ -1253,6 +1267,7 @@ tree structure."
 Each span is (START END FACE).  A span combines its face with a face
 the text already holds, so a span inherits an attribute of the base
 face.  NAME itself stays unchanged."
+  (declare (pure t) (side-effect-free t))
   (let ((string (copy-sequence name)))
     (dolist (span spans)
       (let* ((start (nth 0 span))
@@ -1279,6 +1294,7 @@ non-empty, because its walk costs one round trip per file."
   "Return the face for the slash of a directory whose name takes FACE.
 An empty directory dims as one run, so its slash keeps the ignored
 face.  Every other name takes `tired-directory-suffix-face'."
+  (declare (pure t) (side-effect-free t))
   (if (eq face 'tired-ignored-face)
       face
     'tired-directory-suffix-face))
@@ -1310,6 +1326,7 @@ symbolic link, special file.  The order otherwise follows
 `face' works when `font-lock-mode' is off.  `font-lock-face' survives
 `font-lock-unfontify-region', which removes `face'.  A name cell
 carries both, as `package-menu--print-info-simple' does."
+  (declare (pure t) (side-effect-free t))
   (list 'face face 'font-lock-face face))
 
 (defun tired--paint-missing-face (string face)
@@ -1320,6 +1337,7 @@ part that already carries a `face' property keeps it, so a handler may
 mix a plain prefix with propertized source text.  Each face also lands
 in `font-lock-face', which survives `font-lock-unfontify-region'.  A
 FACE of nil leaves the uncovered parts alone."
+  (declare (pure t) (side-effect-free t))
   (let ((string (tired--face-only-string string))
         (position 0)
         (end (length string)))
@@ -1340,6 +1358,7 @@ FACE of nil leaves the uncovered parts alone."
 (defun tired--propertize-name (name face &optional spans)
   "Return NAME with FACE applied, or NAME alone when FACE is nil.
 Paint SPANS over the result when SPANS holds entries."
+  (declare (pure t) (side-effect-free t))
   (let ((string (if face
                     (apply #'propertize name (tired--face-properties face))
                   name)))
@@ -1349,6 +1368,7 @@ Paint SPANS over the result when SPANS holds entries."
 
 (defun tired--symlink-suffix (entry)
   "Return the arrow and the target text for the symbolic link ENTRY."
+  (declare (pure t) (side-effect-free t))
   (concat " -> "
           (apply #'propertize
                  (or (tired-entry-link entry) "?")
@@ -1397,6 +1417,7 @@ slash.  A symbolic link keeps its target arrow."
 The keys alone never show the mouse, so the text names the two
 commands.  The middle button reads the row, and the second click of
 a double click toggles it."
+  (declare (side-effect-free t))
   (cond
    ((tired-section-p row)
     "mouse-2: visit in another window, double-click: fold")
@@ -1468,10 +1489,12 @@ Normalise the name without a symbolic link resolution: the walk
 starts on one directory and never descends through a link, so the
 absolute name stays unique.  `file-truename' would cost one file
 round trip per path component."
+  (declare (side-effect-free t))
   (directory-file-name (expand-file-name directory)))
 
 (defun tired--size-cache-valid-p (value)
   "Return non-nil when VALUE holds a total young enough to reuse."
+  (declare (side-effect-free t))
   (and (consp value)
        (<= (- (float-time) (cdr value)) tired-size-cache-ttl)))
 
@@ -1597,6 +1620,7 @@ costs one pass and no second walk inside the cache window."
 
 (defun tired--size-walk-job-p (job)
   "Return non-nil when JOB walks a directory size."
+  (declare (pure t) (side-effect-free t))
   (eq (tired--job-kind job) 'size))
 
 (defun tired--size-enqueue (key directory)
@@ -1624,6 +1648,7 @@ A young total, a remote directory and a queued walk cost no walk."
   "Return non-nil when a directory above KEY waits for a walk.
 DIRECTORIES holds the keys that the redraw collected.  Stop at the
 shown directory, so no row above the listing counts as an ancestor."
+  (declare (side-effect-free t))
   (let ((ceiling (tired--size-key tired--directory))
         (parent (directory-file-name (file-name-directory key)))
         found)
@@ -1877,6 +1902,7 @@ The mode line and the header line read `%' as the start of a
 substitution, so a literal sign needs two.  A filter string and a
 directory name can hold any character, and `%b' in a filter would
 print the buffer name."
+  (declare (pure t) (side-effect-free t))
   (replace-regexp-in-string "%" "%%" text t t))
 
 (defun tired--header-title ()
@@ -2965,6 +2991,7 @@ An active region joins the selection first."
 
 (defun tired--sort-state-parts (state)
   "Return the `(KEY . FLIP)' pair that sort STATE stands for."
+  (declare (pure t) (side-effect-free t))
   (pcase state
     ('name-asc (cons 'name nil))
     ('name-desc (cons 'name t))

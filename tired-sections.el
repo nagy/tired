@@ -508,6 +508,7 @@ A table with any other name stays out, so `[patch.crates-io]' and
 
 (defun tired--toml-unquote (text)
   "Return TEXT without the quotes of a TOML string."
+  (declare (pure t) (side-effect-free t))
   (if (and (> (length text) 1)
            (memq (aref text 0) '(?\" ?'))
            (eq (aref text 0) (aref text (1- (length text)))))
@@ -630,6 +631,7 @@ key length, and the cdr is the widest version length."
 
 (defun tired--cargo-pad (text width)
   "Return TEXT padded with spaces to WIDTH characters."
+  (declare (pure t) (side-effect-free t))
   (concat text (make-string (max 0 (- width (length text))) ?\s)))
 
 (defun tired--cargo-padded-key (key)
@@ -720,6 +722,7 @@ line up.  Return nil when the TOML grammar is missing."
   "Return the label for the `PRAGMA table_info' ROW of one column.
 ROW holds the column id, name, declared type, NOT NULL flag, default
 value and primary key flag."
+  (declare (pure t) (side-effect-free t))
   (let ((name (nth 1 row))
         (type (nth 2 row))
         (notnull (nth 3 row))
@@ -788,6 +791,7 @@ readable database."
 (defun tired--tar-field (header start end)
   "Return the text between START and END of the tar HEADER.
 Stop at the first NUL byte, as the format intends."
+  (declare (pure t) (side-effect-free t))
   (let* ((text (substring header start end))
          (nul (cl-position 0 text)))
     (substring text 0 (or nul (length text)))))
@@ -796,7 +800,10 @@ Stop at the first NUL byte, as the format intends."
   "Return the number that the tar header field TEXT holds.
 Read an octal field, and a GNU base-256 field that sets the high bit
 of its first byte.  Return 0 for an empty field."
-  (let ((text (string-trim text "[\0 ]" "[\0 ]")))
+  (declare (pure t) (side-effect-free t))
+  ;; `string-trim' reads through `string-match', so the caller keeps
+  ;; its own match data.
+  (let ((text (save-match-data (string-trim text "[\0 ]" "[\0 ]"))))
     (cond
      ((string-empty-p text) 0)
      ((>= (aref text 0) 128)
@@ -812,6 +819,7 @@ of its first byte.  Return 0 for an empty field."
   "Return the extended header records of TEXT as an alist.
 Each record holds a decimal length, a space, the KEY=VALUE text and a
 newline."
+  (declare (pure t) (side-effect-free t))
   (let ((index 0)
         (end (length text))
         records)
@@ -835,18 +843,21 @@ newline."
   "Return the member name that the tar HEADER holds.
 Join the ustar prefix field and the name field when the prefix holds
 text."
+  (declare (pure t) (side-effect-free t))
   (let ((name (tired--tar-field header 0 100))
         (prefix (tired--tar-field header 345 500)))
     (if (string-empty-p prefix) name (concat prefix "/" name))))
 
 (defun tired--tar-plain-text (text)
   "Return TEXT without the NUL bytes that pad a tar record."
+  (declare (pure t) (side-effect-free t))
   (replace-regexp-in-string "\0+" "" text))
 
 (defun tired--tar-member-name (name)
   "Return the archive member NAME as a plain relative path, or nil.
 Drop a leading dot and a trailing slash, and reject the archive root
 and a name that leaves the archive."
+  (declare (pure t) (side-effect-free t))
   (let ((name (replace-regexp-in-string
                "\\`\\./" "" (tired--tar-plain-text name))))
     (setq name (replace-regexp-in-string "/+\\'" "" name))
@@ -861,6 +872,7 @@ and a name that leaves the archive."
 
 (defun tired--tar-level (name)
   "Return the depth of the archive member NAME."
+  (declare (pure t) (side-effect-free t))
   (let ((depth 0)
         (index 0))
     (while (setq index (cl-position ?/ name :start index))

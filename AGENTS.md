@@ -277,6 +277,16 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   handlers and the file commands would stay unbound.
 - Every function has a docstring, `checkdoc` passes, and byte
   compilation with warnings as errors passes.
+- A helper whose value comes from its arguments alone carries
+  `(declare (pure t) (side-effect-free t))`.  A helper that reads
+  state, or that calls a file system function, but writes nothing
+  carries `(declare (side-effect-free t))`.
+  `tired--shell-regexp`, `tired--parquet-le32` and
+  `tired--face-properties` hold the first form, so the compiler folds
+  a call with constant arguments.  Do not declare a function that
+  sets match data through `string-match`, fills a cache, prints, or
+  moves point: the byte compiler drops an unused call of a
+  side-effect-free function.
 - `tired-mode-menu` mirrors the key map on the menu bar.  Add a command
   when its key alone does not explain it.  An `:active` form reads the
   listing when the menu opens; use `(bound-and-true-p VARIABLE)` for a

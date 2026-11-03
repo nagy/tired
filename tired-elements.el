@@ -122,6 +122,7 @@ Batch Emacs shows no window, so the test suite binds this to t.")
   "Return the `tired--elements-cache' key for PATH.
 Join the absolute name as plain text, so a name of `~' stays a name
 and needs no home directory lookup."
+  (declare (side-effect-free t))
   (directory-file-name (expand-file-name path)))
 
 (defun tired--elements-stamp (entry)
@@ -206,6 +207,7 @@ section row has no count."
 
 (defun tired--elements-queue-job-p (job)
   "Return non-nil when JOB counts an element of a file."
+  (declare (pure t) (side-effect-free t))
   (eq (tired--job-kind job) 'elements))
 
 (defun tired--elements-advance (job)
@@ -550,6 +552,7 @@ chunk boundary cuts in two still counts."
 The first heading sets the base, as it does in the section tree, so
 a file whose first heading is `##' counts its `##' headings.  A later
 shallower heading also prints at depth zero, so it joins the count."
+  (declare (pure t) (side-effect-free t))
   (when-let* ((first (tired--markdown-state-first state)))
     (let ((total 0)
           (level 1))
@@ -826,6 +829,7 @@ holds the footer bytes that the scan reads so far."
 
 (defun tired--parquet-le32 (string)
   "Return the little-endian 32-bit integer in the first four bytes of STRING."
+  (declare (pure t) (side-effect-free t))
   (+ (aref string 0)
      (ash (aref string 1) 8)
      (ash (aref string 2) 16)

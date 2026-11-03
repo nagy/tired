@@ -45,12 +45,14 @@
 
 (defun tired--export-relative-path (entry)
   "Return the path of ENTRY relative to the shown directory."
+  (declare (side-effect-free t))
   (file-relative-name (tired-entry-path entry) tired--directory))
 
 (defun tired--export-byte-count (entry)
   "Return the size field of ENTRY in bytes.
 A directory reports 0, because a recursive total costs one walk per
 directory.  A symbolic link reports its own byte count."
+  (declare (pure t) (side-effect-free t))
   (if (tired-entry-dirp entry) 0 (or (tired-entry-size entry) 0)))
 
 (defun tired--export-rfc3339 (time &optional nanoseconds)
@@ -58,6 +60,7 @@ directory.  A symbolic link reports its own byte count."
 A non-nil NANOSECONDS adds the nanosecond fraction and a UTC
 suffix, the way `rclone lsjson' prints a modification time.  A nil
 TIME reports the epoch."
+  (declare (side-effect-free t))
   (if nanoseconds
       (format-time-string "%Y-%m-%dT%H:%M:%S.%NZ" (or time 0) t)
     (format-time-string "%Y-%m-%dT%H:%M:%S%:z" (or time 0))))
@@ -96,6 +99,7 @@ finds the whole path on one line."
   "Return VALUE as one CSV field.
 Quote the field when it holds a comma, a double quote or a line
 break, and double every inner quote, as RFC 4180 asks."
+  (declare (pure t) (side-effect-free t))
   (if (string-match-p "[,\"\n\r]" value)
       (concat "\"" (string-replace "\"" "\"\"" value) "\"")
     value))
