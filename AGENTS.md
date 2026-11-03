@@ -570,14 +570,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   spaces after `beginning-of-line`.  Call `forward-line` there, not
   `next-line`: the byte compiler rejects an interactive-only function.
   A name that starts with a space loses that space to the skip.
-- A view command keeps the row at point, so it redraws through
-  `tired--redraw-at-name`, which then calls `tired--beginning-of-name`.
-  A plain `tired--redraw` leaves point at the line start, and a deeply
-  indented row would move the cursor left.  `tired--apply-to-rows`,
-  `tired--toggle-fold` and the PATH branches of
+- A view command keeps the row at point, and `tired--redraw-buffer`
+  keeps the name column of point: it records `tired--at-name-p' before
+  the print and moves back through `tired--beginning-of-name' after it
+  restores the window views, because the restore sets the point of the
+  selected window and that window shares its point with the buffer.
+  Every caller keeps the column that way: the sort, the dotfile and
+  hidden toggles, the filter and the two idle repaints, which run a
+  timer with no user command around them.  `tired--redraw-at-name`
+  stays for a caller that starts from a line start, as
+  `tired--apply-to-rows`, `tired--toggle-fold` and the PATH branches of
   `tired-insert-subdir`, `tired-expand-file` and `tired-collapse-file`
-  use the helper.  A redraw that a timer runs keeps the plain call: no
-  user reads the column then.
+  do.  Point in the middle of a name still returns to the line start.
 - A row name is the `filename` thing, through
   `tired--filename-at-point` and `tired--name-bounds` in the two
   provider alists that `tired-mode` fills.  The bounds cover the

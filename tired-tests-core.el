@@ -1766,6 +1766,26 @@ because `tired-next-line' leaves it on the name."
     (should (equal "nest" (tired-entry-name (tired--row-at-point))))
     (should (= 4 (current-column)))))
 
+(ert-deftest tired-redraw-keeps-the-name-column ()
+  "A redraw that a timer runs keeps point on the name of its row.
+The idle size pass repaints the listing after a view command, and
+`tired--goto-row' leaves point at the line start, so a deep row once
+put the cursor inside the indent a moment after the toggle."
+  (tired-tests--with-fixture
+    (let ((tired-collapse-single-child nil))
+      (tired root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-tests--goto "deep")
+      (tired--beginning-of-name)
+      (should (= 2 (current-column)))
+      (tired-tests--flush-sizes)
+      (should (equal "deep" (tired-entry-name (tired--row-at-point))))
+      (should (= 2 (current-column)))
+      (tired-sort)
+      (should (equal "deep" (tired-entry-name (tired--row-at-point))))
+      (should (= 2 (current-column))))))
+
 (ert-deftest tired-remove-subdir-drops-descendants ()
   "Removing a section drops nested inserted sections as well."
   (tired-tests--with-fixture

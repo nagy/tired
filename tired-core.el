@@ -2430,7 +2430,9 @@ nothing."
 WINDOW is the window that shows the buffer, or nil for the pin in
 `tired--width-window'.  Its width limits the name column.  The
 redraw keeps the point and the scroll position of every window that
-shows the listing.
+shows the listing, and it keeps the name column of point: a caller
+that leaves point at the first character of a name finds it there
+again, so no redraw moves the cursor into the indent of a row.
 The redraw reads the directory size memo table alone, so it blocks
 on no subtree.  `tired--size-queue' then queues the visible
 directory rows and the idle queue fills the size cells."
@@ -2438,6 +2440,7 @@ directory rows and the idle queue fills the size cells."
   (let* ((window (tired--pin-width-window window))
          (point-entry (tired--point-row window))
          (point-line (line-number-at-pos))
+         (at-name (tired--at-name-p))
          (mark-entry (tired--row-at (mark t)))
          (views (tired--window-views)))
     (setq tired--hidden-total (tired--count-hidden))
@@ -2469,6 +2472,10 @@ directory rows and the idle queue fills the size cells."
       (when point-entry
         (tired--goto-line point-line)))
     (tired--restore-window-views views)
+    ;; The view restore sets the window point to the line start of its
+    ;; row, and the selected window shares its point with the buffer.
+    (when at-name
+      (tired--beginning-of-name))
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--sync-watches)
@@ -2595,11 +2602,18 @@ character of the name."
   (skip-chars-forward " ")
   (point))
 
+(defun tired--at-name-p ()
+  "Return non-nil when point sits on the first character of a name."
+  (save-excursion
+    (eq (point) (tired--beginning-of-name))))
+
 (defun tired--redraw-at-name ()
   "Redraw the listing and put point at the start of the name it shows.
 A view command keeps the row at point, so the cursor stays on the
 name that `tired-next-line' put it on, instead of moving to the
-line start of a deeply indented row."
+line start of a deeply indented row.  `tired--redraw-buffer' already
+keeps a name column that point holds, so this call serves a caller
+that moves point into the name itself."
   (tired--redraw)
   (tired--beginning-of-name))
 
