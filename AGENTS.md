@@ -103,6 +103,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `tired-sort-by-extension' set, the name value holds the case-folded
    extension, the way `ls -X' does, and the name breaks a tie.
    `tired--sorted-directory-entries` maps the same rows back to entries.
+   The sorter of `tabulated-list` reads the flat entry list at print
+   time, and a column predicate or `tabulated-list-groups` cannot
+   keep the tree, so the sort runs here.  `docs/adr/0002-sort-in-elisp.md`
+   holds the reasons.
    `tired-sort-states` names the states that `tired-sort` cycles: one
    symbol per column and direction, such as `name-asc`.
    `tired--sort-step` wraps the relative walk and `tired--sort-select`

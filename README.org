@@ -238,8 +238,10 @@ Every column header takes a click.  =mouse-1= on =Name=, =Size=,
 the column that already sorts flips the direction.  The
 arrow in the label shows the current column and direction.
 
-The arrow is the one that =tabulated-list-mode= draws.  The listing
-reads =tabulated-list-gui-sort-indicator-asc= and
+The arrow takes the characters that =tabulated-list-mode= uses, but the
+listing paints them itself, because no Tired column goes through the
+sorter of =tabulated-list=.  The listing reads
+=tabulated-list-gui-sort-indicator-asc= and
 =tabulated-list-gui-sort-indicator-desc=, and a text terminal shows
 =tabulated-list-tty-sort-indicator-asc= and
 =tabulated-list-tty-sort-indicator-desc= instead:
@@ -1000,10 +1002,12 @@ absent, and the Nix check supplies =zstd=.
 - A file section is a =tired-section= struct.  A listing row is either
   an entry or a section, and the tree walk emits both.
 - Rows are vectors, as Emacs 31 `tabulated-list-print-entry' requires.
-- Sorting happens in Elisp, not in =tabulated-list=.  A
-  `tabulated-list-sort-key' would sort the flat entry list, and that
-  sort breaks the per-level directory group and the inserted
-  subtree.  `tired--sorted-directory-rows' decorates one list per
+- Sorting happens in Elisp, not in =tabulated-list=.  The sorter of
+  =tabulated-list= reads the flat entry list at print time, so it
+  breaks the per-level directory group, the inserted subtree and the
+  sections of a file.  The =SORT= slot of a column takes a predicate,
+  and that predicate sees two rows and no depth, so it cannot keep the
+  tree either.  `tired--sorted-directory-rows' decorates one list per
   level with the sort value and the name, so one redraw parses each
   extension once.  `tired--lessp' compares the decorations.
   Directories stay first in both sort directions while
