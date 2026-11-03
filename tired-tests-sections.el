@@ -668,7 +668,7 @@
     (tired-tests--goto "notes.org")
     (tired-toggle-subdir)
     (tired-tests--goto-section "Detail")
-    (tired-sort 'size)
+    (tired--sort-by-column 'size)
     (should (equal (tired-section-label (tired--row-at-point)) "Detail"))))
 
 (ert-deftest tired-filter-keeps-the-sections-of-a-visible-file ()

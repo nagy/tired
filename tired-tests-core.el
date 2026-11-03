@@ -236,61 +236,76 @@ default `tired-file-handlers' names a void section handler.
       (should-not (member "alpha.txt" (tired-tests--names)))
       (should (string-match-p "2 hidden" (tired--mode-line))))))
 
-(ert-deftest tired-sort-by-size-toggles-direction ()
+(ert-deftest tired-sort-by-column-toggles-direction ()
   "Sorting by size orders files by size and flips on repetition."
   (tired-tests--with-fixture
     (tired root)
-    (tired-sort 'size)
+    (tired--sort-by-column 'size)
     (should (equal (tired-tests--names)
                    '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
-    (tired-sort 'size)
+    (tired--sort-by-column 'size)
     (should (equal (tired-tests--names)
                    '("sub" "beta.txt" "link" "alpha.txt" ".hidden")))))
 
-(ert-deftest tired-sort-next-walks-the-sort-states ()
-  "The sort state commands walk `tired-sort-states' and wrap around."
+(ert-deftest tired-sort-walks-the-sort-states ()
+  "`tired-sort' walks `tired-sort-states' and wraps around."
   (tired-tests--with-fixture
     (tired root)
     (should (eq (tired--sort-state) 'name-asc))
-    (tired-sort-next)
+    (tired-sort)
     (should (eq (tired--sort-state) 'name-desc))
     (should (equal (tired-tests--names)
                    '("sub" "alpha.txt" "beta.txt" ".hidden" "link")))
-    (tired-sort-next)
+    (tired-sort)
     (should (eq (tired--sort-state) 'size-asc))
     (should (equal (tired-tests--names)
                    '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
-    (tired-sort-previous)
+    (tired-sort -1)
     (should (eq (tired--sort-state) 'name-desc))
-    (tired-sort-previous)
+    (tired-sort -1)
     (should (eq (tired--sort-state) 'name-asc))
-    (tired-sort-previous)
+    (tired-sort -1)
     (should (eq (tired--sort-state) 'elements-desc))))
 
-(ert-deftest tired-sort-next-crosses-a-state-outside-the-list ()
+(ert-deftest tired-sort-selects-a-state-by-position ()
+  "A positive prefix selects a position in `tired-sort-states'."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-sort 3)
+    (should (eq (tired--sort-state) 'size-asc))
+    (tired-sort 4)
+    (should (eq (tired--sort-state) 'size-desc))
+    (tired-sort 1)
+    (should (eq (tired--sort-state) 'name-asc))
+    (should-error (tired-sort 0))
+    (should-error (tired-sort 99))))
+
+(ert-deftest tired-sort-crosses-a-state-outside-the-list ()
   "A column that the state list leaves out gives way to the list."
   (tired-tests--with-fixture
     (tired root)
-    (tired-sort 'mode)
+    (tired--sort-by-column 'mode)
     (should-not (tired--sort-state))
-    (tired-sort-next)
+    (tired-sort)
     (should (eq (tired--sort-state) 'name-asc))
-    (tired-sort 'mode)
-    (tired-sort-previous)
+    (tired--sort-by-column 'mode)
+    (tired-sort -1)
     (should (eq (tired--sort-state) 'elements-desc))))
 
-(ert-deftest tired-sort-keys-cycle-the-states ()
-  "The mode map puts the sort cycling on the two bracket keys."
-  (should (eq (lookup-key tired-mode-map ">") #'tired-sort-next))
-  (should (eq (lookup-key tired-mode-map "<") #'tired-sort-previous)))
+(ert-deftest tired-sort-key-cycles-the-states ()
+  "The mode map puts the sort cycling on `>' alone."
+  (should (eq (lookup-key tired-mode-map ">") #'tired-sort))
+  ;; `<' falls back to the motion of `special-mode-map'.
+  (should (eq (lookup-key tired-mode-map "<")
+              (lookup-key special-mode-map "<"))))
 
 (ert-deftest tired-sort-by-name-keeps-directories-first ()
   "The name sort keeps directories first in both directions."
   (tired-tests--with-fixture
     (tired root)
-    (tired-sort 'name)
+    (tired--sort-by-column 'name)
     (should (equal (car (tired-tests--names)) "sub"))
-    (tired-sort 'name)
+    (tired--sort-by-column 'name)
     (should (equal (car (tired-tests--names)) "sub"))))
 
 (ert-deftest tired-name-sort-groups-files-by-extension ()
@@ -339,7 +354,7 @@ The top directory takes the opposite time, so the leaf decides."
           (set-file-times top
                           (seconds-to-time (+ base (nth 1 spec)))))))
     (tired root)
-    (tired-sort 'modified)
+    (tired--sort-by-column 'modified)
     (should (equal (seq-filter (lambda (name)
                                  (string-prefix-p "chain" name))
                                (tired-tests--names))
@@ -362,7 +377,7 @@ inode size ties and falls back to the name, which puts `big' first."
           (tired-collapse-single-child nil))
       (tired root)
       (tired-tests--flush-sizes)
-      (tired-sort 'size)
+      (tired--sort-by-column 'size)
       (let ((names (tired-tests--names)))
         (should (equal (tired--size-cell (tired-tests--entry "small"))
                        "10"))
@@ -380,7 +395,7 @@ The option nil lets a file sit between two directories, the way
         (set-file-times (expand-file-name (car spec) root)
                         (seconds-to-time (+ base (cadr spec))))))
     (tired root)
-    (tired-sort 'modified)
+    (tired--sort-by-column 'modified)
     (should (equal (tired-tests--names)
                    '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))
     (let ((tired-group-directories nil))
@@ -420,8 +435,8 @@ The option nil lets a file sit between two directories, the way
                header))
       (should-not (string-match-p (regexp-quote desc) header))
       (should-not (string-match-p (regexp-quote asc) header))
-      (tired-sort 'name)
-      (tired-sort 'name)
+      (tired--sort-by-column 'name)
+      (tired--sort-by-column 'name)
       (should (string-match-p
                (regexp-quote (format "Name %c"
                                      tabulated-list-gui-sort-indicator-desc))
@@ -436,7 +451,7 @@ for its own header line."
           (tabulated-list-gui-sort-indicator-desc ?D))
       (tired root)
       (should (string-match-p "Name A" (tired-tests--header-string)))
-      (tired-sort 'size 'reverse)
+      (tired--sort-by-column 'size 'reverse)
       (should (string-match-p "Size D" (tired-tests--header-string))))))
 
 (ert-deftest tired-name-column-grows-to-longest-name ()
@@ -1003,7 +1018,7 @@ costs one redraw and not one per character."
   "Refresh keeps the sort order and the entry at point."
   (tired-tests--with-fixture
     (tired root)
-    (tired-sort 'size 'reverse)
+    (tired--sort-by-column 'size 'reverse)
     (tired-tests--goto "link")
     (tired-refresh)
     (should (equal (tired-entry-name (tired--row-at-point)) "link"))
@@ -2000,7 +2015,7 @@ directory does."
     (tired-refresh)
     (should (equal (tired-entry-name (tired--row-at (mark t)))
                    "beta.txt"))
-    (tired-sort 'size)
+    (tired--sort-by-column 'size)
     (should (equal (tired-entry-name (tired--row-at (mark t)))
                    "beta.txt"))))
 

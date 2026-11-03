@@ -25,9 +25,9 @@ _Avoid_: Sort column, order
 
 **Sort state**:
 One column and one direction together, named by a symbol such as
-`name-desc`.  `tired-sort-states` lists the states that
-`tired-sort-next` and `tired-sort-previous` cycle, and `tired-sort`
-sets a column directly.
+`name-desc`.  `tired-sort-states` lists the states that `tired-sort`
+cycles, and a numeric prefix selects one by its position in that
+list.  `tired--sort-by-column` sets a column directly.
 _Avoid_: Sort mode, order, preset
 
 **Selection**:
