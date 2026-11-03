@@ -62,7 +62,7 @@
 ;; read-only listing has nothing to paste.  Evil binds `down-mouse-1' to
 ;; `evil-mouse-drag-region', which keeps the drag that makes a region,
 ;; and that command turns a double click into a text selection, so a
-;; double click does not toggle a row here.  TAB and `e' toggle it.
+;; double click does not toggle a row here.  TAB toggles it.
 
 ;;; Code:
 
@@ -84,8 +84,6 @@
     ;; Tree and sections.
     ("i" . tired-insert-subdir)
     ("M-i" . tired-remove-subdir)
-    ("e" . tired-expand-file)
-    ("E" . tired-collapse-file)
     ("C" . tired-toggle-collapse)
     ;; View.
     ("gr" . tired-refresh)

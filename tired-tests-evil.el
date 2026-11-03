@@ -53,6 +53,12 @@
                       #'tired-do-shell-command))
           (should (eq (key-binding (key-parse "TAB"))
                       #'tired-toggle-subdir))
+          ;; TAB toggles a file, so the two section commands keep no
+          ;; evil key and the word motions stay.
+          (should-not (eq (key-binding (key-parse "e"))
+                          #'tired-expand-file))
+          (should-not (eq (key-binding (key-parse "E"))
+                          #'tired-collapse-file))
           ;; The middle button opens the row, because a read-only
           ;; listing has nothing to paste.
           (should (eq (key-binding (key-parse "<mouse-2>"))

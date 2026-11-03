@@ -152,7 +152,7 @@ The active region is the second way to make a selection.  Move with
 point becomes a target, and both of those rows join, so one =n= adds
 one row to the run.  A run costs one motion instead of one =SPC= per
 row.  A command turns the region into a selection before it acts, so
-=D=, =c=, =m=, =y=, =w=, =!=, =i=, =M-i=, =TAB=, =e= and =E= read
+=D=, =c=, =m=, =y=, =w=, =!=, =i=, =M-i= and =TAB= read
 the same rows that =SPC= on each row would select.  The mode line
 reports the region count and size, as it does for a selection.  =u=
 clears both sources.  A non-empty selection wins over the region.  A
@@ -317,7 +317,7 @@ Evil keeps its own mouse handling.  =down-mouse-1= runs
 =evil-mouse-drag-region=, so a drag makes a visual selection and a
 double click selects text at the pointer.  Normal state keeps the
 middle button on the Tired command, because a read-only listing has
-nothing to paste.  Use =TAB= or =e= to toggle a row.
+nothing to paste.  Use =TAB= to toggle a row.
 
 * File operations
 
@@ -792,7 +792,7 @@ that already appears in the listing shows no children.
 
 * File sections
 
-Press =TAB= or =e= on a file row to show the sections that a handler
+Press =TAB= on a file row to show the sections that a handler
 extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
 on =TAB=.

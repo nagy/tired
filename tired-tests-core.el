@@ -2602,6 +2602,14 @@ costs a network round trip, so the row stays plain."
     (should (eq (key-binding (key-parse "n")) #'tired-next-line))
     (should (eq (key-binding (key-parse "p")) #'tired-previous-line))))
 
+(ert-deftest tired-file-sections-keep-no-key ()
+  "TAB toggles the sections, so expand and collapse keep no key."
+  (tired-tests--with-fixture
+    (tired root)
+    (should-not (eq (key-binding (key-parse "e")) #'tired-expand-file))
+    (should-not (eq (key-binding (key-parse "E")) #'tired-collapse-file))
+    (should (eq (key-binding (key-parse "TAB")) #'tired-toggle-subdir))))
+
 (ert-deftest tired-thing-at-point-reads-the-row-name ()
   "A filename thing reads the path of the row under point."
   (tired-tests--with-fixture

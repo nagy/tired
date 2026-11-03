@@ -3401,8 +3401,6 @@ into `context-menu-functions' locally."
   "i" #'tired-insert-subdir
   "M-i" #'tired-remove-subdir
   "TAB" #'tired-toggle-subdir
-  "e" #'tired-expand-file
-  "E" #'tired-collapse-file
   "j" #'tired-find-file
   "J" #'tired-find-file-other-window
   "s" #'tired-sort

@@ -317,6 +317,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   The autoload form in `tired.el` keeps that path, because
   `tired-file-ops` carries no cookie.  A test in
   `tired-tests-file-ops` fails when a binding returns.
+- No key and no evil binding runs `tired-expand-file` or
+  `tired-collapse-file`.  `TAB` reaches both through
+  `tired-toggle-subdir`, and the menu bar keeps the two entries, so
+  `M-x` and the menu hold the only paths.  A test fails when a listing
+  or an evil binding returns.
 - `tired-edit-names`, `tired-commit-edits` and `tired-abort-edits`
   carry no key in `tired-mode-map`, no menu entry and no evil binding:
   `M-x` alone reaches them.  The edit mode binds `C-c C-c` and
