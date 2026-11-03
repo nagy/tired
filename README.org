@@ -196,13 +196,13 @@ file.  A region reports the same size.
 selects a state by its position in the list, so =M-3 s= selects the
 third state.  A negative prefix moves back that many states, so
 =M-- s= selects the previous state.  The default list holds the name,
-size, modification time and elements states in both directions, and
+size, elements and modification time states in both directions, and
 it leaves the mode column out:
 
 #+begin_src elisp
   (setq tired-sort-states
         '(name-asc name-desc size-asc size-desc
-          modified-asc modified-desc elements-asc elements-desc))
+          elements-asc elements-desc modified-asc modified-desc))
 #+end_src
 
 Add =mode-asc= and =mode-desc= to cycle that column too, or drop a

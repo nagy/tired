@@ -265,7 +265,7 @@ default `tired-file-handlers' names a void section handler.
     (tired-sort -1)
     (should (eq (tired--sort-state) 'name-asc))
     (tired-sort -1)
-    (should (eq (tired--sort-state) 'elements-desc))))
+    (should (eq (tired--sort-state) 'modified-desc))))
 
 (ert-deftest tired-sort-selects-a-state-by-position ()
   "A positive prefix selects a position in `tired-sort-states'."
@@ -275,6 +275,10 @@ default `tired-file-handlers' names a void section handler.
     (should (eq (tired--sort-state) 'size-asc))
     (tired-sort 4)
     (should (eq (tired--sort-state) 'size-desc))
+    (tired-sort 5)
+    (should (eq (tired--sort-state) 'elements-asc))
+    (tired-sort 7)
+    (should (eq (tired--sort-state) 'modified-asc))
     (tired-sort 1)
     (should (eq (tired--sort-state) 'name-asc))
     (should-error (tired-sort 0))
@@ -290,7 +294,7 @@ default `tired-file-handlers' names a void section handler.
     (should (eq (tired--sort-state) 'name-asc))
     (tired--sort-by-column 'mode)
     (tired-sort -1)
-    (should (eq (tired--sort-state) 'elements-desc))))
+    (should (eq (tired--sort-state) 'modified-desc))))
 
 (ert-deftest tired-sort-key-cycles-the-states ()
   "The mode map puts the sort cycling on `>' alone."

@@ -96,7 +96,7 @@ that entry."
 
 (defcustom tired-sort-states
   '(name-asc name-desc size-asc size-desc
-    modified-asc modified-desc elements-asc elements-desc)
+    elements-asc elements-desc modified-asc modified-desc)
   "Sort states that `tired-sort' cycles.
 Each state names a column and a direction.  The text before the
 last hyphen is the column that `tired--sort-by-column' reads, and
@@ -109,10 +109,10 @@ a mode sorts by a number that says little.  Add `mode-asc' and
                          (const :tag "Name, descending" name-desc)
                          (const :tag "Size, ascending" size-asc)
                          (const :tag "Size, descending" size-desc)
-                         (const :tag "Modified, ascending" modified-asc)
-                         (const :tag "Modified, descending" modified-desc)
                          (const :tag "Elements, ascending" elements-asc)
                          (const :tag "Elements, descending" elements-desc)
+                         (const :tag "Modified, ascending" modified-asc)
+                         (const :tag "Modified, descending" modified-desc)
                          (const :tag "Mode, ascending" mode-asc)
                          (const :tag "Mode, descending" mode-desc))))
 

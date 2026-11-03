@@ -113,7 +113,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    applies one position, so a numeric prefix selects a state by its
    place in the list.  A column that the option leaves out gives way
    to the first state forward and to the last state back.  The
-   default list leaves the mode column out.
+   default list follows the column order, name then size then
+   elements then modified, and leaves the mode column out.
 3. `tired--display-rows` walks depth-first and returns `(ROW . DEPTH)`
    conses.  A `file-truename` set stops symlink cycles.
    `tired--directory-entry-p` decides whether a row takes children and
