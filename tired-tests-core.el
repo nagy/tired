@@ -1727,6 +1727,30 @@ The slash follows the name, so the row dims as one run."
     (should (equal (tired-tests--names)
                    '("sub" ".hidden" "link" "alpha.txt" "beta.txt")))))
 
+(ert-deftest tired-toggle-subdir-keeps-point-at-the-name ()
+  "TAB keeps point at the start of the name of its row.
+A deeply indented row must not move the cursor to the line start,
+because `tired-next-line' leaves it on the name."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "sub/deep/nest" root) t)
+    (tired-tests--write "sub/deep/other.txt" "other")
+    (tired-tests--write "sub/deep/nest/a.txt" "a")
+    (tired-tests--write "sub/deep/nest/b.txt" "b")
+    (tired root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "deep")
+    (tired-insert-subdir)
+    (tired-tests--goto "nest")
+    (tired-next-line 0)
+    (should (= 4 (current-column)))
+    (tired-toggle-subdir)
+    (should (equal "nest" (tired-entry-name (tired--row-at-point))))
+    (should (= 4 (current-column)))
+    (tired-toggle-subdir)
+    (should (equal "nest" (tired-entry-name (tired--row-at-point))))
+    (should (= 4 (current-column)))))
+
 (ert-deftest tired-remove-subdir-drops-descendants ()
   "Removing a section drops nested inserted sections as well."
   (tired-tests--with-fixture

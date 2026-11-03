@@ -570,6 +570,20 @@
     (should (equal (tired-tests--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))))
 
+(ert-deftest tired-fold-keeps-point-at-the-label ()
+  "A fold keeps point at the start of the section label it acted on."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
+    (tired root)
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "Detail")
+    (tired-next-line 0)
+    (should (= 4 (current-column)))
+    (tired-toggle-subdir)
+    (should (equal "Detail" (tired-section-label (tired--row-at-point))))
+    (should (= 4 (current-column)))))
+
 (ert-deftest tired-collapse-file-hides-the-sections ()
   "E collapses the sections that TAB expanded."
   (tired-tests--with-fixture

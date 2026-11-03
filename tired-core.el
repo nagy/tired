@@ -2593,6 +2593,14 @@ character of the name."
   (skip-chars-forward " ")
   (point))
 
+(defun tired--redraw-at-name ()
+  "Redraw the listing and put point at the start of the name it shows.
+A view command keeps the row at point, so the cursor stays on the
+name that `tired-next-line' put it on, instead of moving to the
+line start of a deeply indented row."
+  (tired--redraw)
+  (tired--beginning-of-name))
+
 (defun tired-next-line (&optional arg)
   "Move point ARG lines down and put it at the start of the name.
 ARG defaults to one line.  The `^' interactive code keeps
@@ -2653,7 +2661,7 @@ FUNCTION receives one `tired-entry'.  A failure on one entry does
 not stop the rest.  When every entry fails, signal the first error,
 so a one-row command keeps its message.  An active region becomes
 the selection, so a view command acts on a run and keeps it for the
-next command."
+next command.  Point stays at the start of the name that it acted on."
   (let ((entries (tired--targets)))
     (unless entries
       (user-error "No entry at point"))
@@ -2667,7 +2675,7 @@ next command."
            (setq failures (1+ failures))
            (unless first-error (setq first-error err)))))
       (deactivate-mark)
-      (tired--redraw)
+      (tired--redraw-at-name)
       (cond
        ((zerop done)
         (signal (car first-error) (cdr first-error)))
@@ -2716,7 +2724,7 @@ an already inserted directory changes nothing."
         (setq directory (directory-file-name (expand-file-name directory)))
         (puthash directory t tired--inserted)
         (puthash directory (tired--read-entries directory) tired--tables)
-        (tired--redraw))
+        (tired--redraw-at-name))
     (tired--apply-to-rows #'tired--insert-directory)))
 
 (defun tired-remove-subdir ()
@@ -2737,7 +2745,7 @@ when no handler claims a file, or when the handler found no section."
   (if path
       (progn
         (tired--expand-path path)
-        (tired--redraw)
+        (tired--redraw-at-name)
         (message "Expanded %s" (file-name-nondirectory path)))
     (tired--apply-to-rows
      (lambda (entry)
@@ -2753,7 +2761,7 @@ when a file is not expanded."
   (if path
       (progn
         (tired--collapse-path path)
-        (tired--redraw))
+        (tired--redraw-at-name))
     (tired--apply-to-rows
      (lambda (entry) (tired--collapse-path (tired-entry-path entry))))))
 
@@ -2762,7 +2770,7 @@ when a file is not expanded."
   (if (tired--section-folded-p section)
       (tired--set-folded section nil)
     (tired--set-folded section t))
-  (tired--redraw))
+  (tired--redraw-at-name))
 
 (defun tired--toggle-tree (entry)
   "Toggle the subtree of ENTRY, one row.
