@@ -1104,13 +1104,15 @@ key map alone."
                   (get-text-property (1- (length cell)) 'font-lock-face cell))))))
 
 (ert-deftest tired-faces-inherit-dired-faces ()
-  "Each name face takes its look from the matching Dired face."
+  "Each face takes its look from the matching Dired face."
   (dolist (pair '((tired-directory-face . dired-directory)
                   (tired-symlink-face . dired-symlink)
                   (tired-symlink-target-face . dired-symlink-filename)
                   (tired-broken-symlink-face . dired-broken-symlink)
                   (tired-special-face . dired-special)
-                  (tired-ignored-face . dired-ignored)))
+                  (tired-ignored-face . dired-ignored)
+                  (tired-selected-face . dired-marked)
+                  (tired-perm-write-face . dired-perm-write)))
     (should (memq (cdr pair)
                   (ensure-list (face-attribute (car pair) :inherit))))))
 
@@ -1126,6 +1128,48 @@ key map alone."
     (should (eq 'tired-special-face
                 (tired--name-face
                  (tired--entry-create :name "fifo" :type 'special))))))
+
+(ert-deftest tired-mode-cell-paints-group-and-world-write ()
+  "A group- or world-writable mode paints its `w' alone."
+  (let ((group (tired--mode-cell
+                (tired--entry-create :name "a" :type 'file
+                                     :mode "-rw-rw-r--")))
+        (world (tired--mode-cell
+                (tired--entry-create :name "b" :type 'file
+                                     :mode "-rw-r--rw-"))))
+    (should (eq 'tired-perm-write-face
+                (get-text-property 5 'face group)))
+    (should (eq 'tired-perm-write-face
+                (get-text-property 5 'font-lock-face group)))
+    (should-not (get-text-property 2 'face group))
+    (should-not (get-text-property 8 'face group))
+    (should (eq 'tired-perm-write-face
+                (get-text-property 8 'face world)))
+    (should (eq 'tired-perm-write-face
+                (get-text-property 8 'font-lock-face world)))
+    (should-not (get-text-property 5 'face world))))
+
+(ert-deftest tired-mode-cell-keeps-an-unwritable-mode-plain ()
+  "Only a `-' or a `d' row paints a write bit, as the Dired rule does."
+  (should-not (get-text-property
+               5 'face
+               (tired--mode-cell
+                (tired--entry-create :name "a" :type 'file
+                                     :mode "-rw-r--r--"))))
+  (should-not (get-text-property
+               5 'face
+               (tired--mode-cell
+                (tired--entry-create :name "link" :type 'symlink
+                                     :mode "lrwxrwxrwx"))))
+  (should (eq 'tired-perm-write-face
+              (get-text-property
+               5 'face
+               (tired--mode-cell
+                (tired--entry-create :name "sub" :type 'directory
+                                     :dirp t
+                                     :mode "drwxrwxr-x")))))
+  (should (equal "" (tired--mode-cell
+                      (tired--entry-create :name "n" :type 'file)))))
 
 (ert-deftest tired-size-cell-stays-empty-by-default ()
   "A directory shows no size unless `tired-directory-size' is on."

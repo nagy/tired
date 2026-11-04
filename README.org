@@ -799,6 +799,13 @@ The size column takes the =tired-file-size= face.  That face inherits
 =default=, so a theme sets the size color on this face alone and Tired
 names no outside package.  An empty size cell keeps no face.
 
+The mode column takes =tired-perm-write-face=, which inherits
+=dired-perm-write=, on the =w= of a file or directory that its group
+or the world can write.  Only that character takes the face, as in a
+Dired buffer, so the rest of the mode string stays plain.  A symbolic
+link keeps its mode plain, because the Dired rule reads a =-= or a
+=d= in the first place.
+
 A directory row ends with a slash.  That slash takes the
 =tired-directory-suffix-face= face, which inherits =parenthesis=, so a
 theme colors the slash apart from the name.

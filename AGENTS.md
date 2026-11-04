@@ -344,6 +344,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - Color follows Dired.  A name face inherits its `dired-` partner, and
   `tired-selected-face` inherits `dired-marked`, so a Dired theme
   reaches a Tired row and the transient selection without further work.
+  `tired--mode-cell` paints the group and the world `w` with
+  `tired-perm-write-face`, which inherits `dired-perm-write`, and it
+  reads the write bit at column 5 and at column 8 of the mode string
+  alone, as `dired-font-lock-keywords` does.  The first character must
+  read `-` or `d`, so a symlink keeps its mode plain, and the cell
+  carries `face` and `font-lock-face` like a name cell.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the
   strings, so color belongs in the entry data.
 - File commands never ask a confirmation and never call a shell, except

@@ -353,6 +353,12 @@ The slash stays a separate run of text, so a theme colors it alone.")
 An empty directory takes the face too, so a row that holds no byte
 dims as one run.")
 
+(defface tired-perm-write-face
+  '((t :inherit dired-perm-write))
+  "Face for the write permission of a group- or world-writable file.
+The face paints the `w' character alone, as
+`dired-font-lock-keywords' paints it.")
+
 (defface tired-selected-face
   '((t :inherit dired-marked :extend t))
   "Face for entries in the transient selection.
@@ -1940,6 +1946,29 @@ nothing until the idle queue fills it."
   (let ((count (tired--elements-show row)))
     (if (integerp count) (number-to-string count) "")))
 
+(defun tired--mode-cell (entry)
+  "Return the Mode column string for ENTRY.
+A mode whose group or world part holds a `w' paints that character
+with `tired-perm-write-face', the way Dired paints it.  Like the
+Dired rule, the cell needs a `-' or a `d' in its first place."
+  (declare (pure t) (side-effect-free t))
+  (let ((modes (tired-entry-mode entry)))
+    (cond
+     ((not (and modes (<= 10 (length modes))
+                (memq (aref modes 0) '(?- ?d))))
+      (or modes ""))
+     (t
+      (let ((cell (copy-sequence modes))
+            (index 5))
+        (while (<= index 8)
+          (when (eq (aref cell index) ?w)
+            (add-text-properties index (1+ index)
+                                 (tired--face-properties
+                                  'tired-perm-write-face)
+                                 cell))
+          (setq index (+ index 3)))
+        cell)))))
+
 (defun tired--row (row depth)
   "Return the tabulated list row for ROW at DEPTH.
 ROW is a `tired-entry' or a `tired-section'.  A section fills the
@@ -1961,7 +1990,7 @@ Emacs 31 requires a vector of column descriptors here; a list makes
                                             (tired-entry-mtime row))
                         'face 'tired-date
                         'font-lock-face 'tired-date)
-            (tired-entry-mode row))))
+            (tired--mode-cell row))))
 
 (defun tired--tabulated-entries ()
   "Return `tabulated-list-entries' for the current listing.
