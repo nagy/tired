@@ -361,6 +361,16 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   alone, as `dired-font-lock-keywords` does.  The first character must
   read `-` or `d`, so a symlink keeps its mode plain, and the cell
   carries `face` and `font-lock-face` like a name cell.
+- A handler label that holds one token per part paints each part with
+  its own face.  The SQLite handler paints the column name, the
+  declared type and each constraint keyword through
+  `tired-sqlite-column-face`, `tired-sqlite-type-face` and
+  `tired-sqlite-constraint-face`, which inherit the matching
+  `font-lock-` face.  `tired--sqlite-painted` keeps the space
+  separators plain, and `tired--section-cell` mirrors each face into
+  `font-lock-face`.  A handler face writes `:group 'tired`, because
+  `tired-sections` holds no `defgroup` and `defface` fails without
+  one.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the
   strings, so color belongs in the entry data.
 - File commands never ask a confirmation and never call a shell, except

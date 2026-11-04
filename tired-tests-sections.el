@@ -471,6 +471,33 @@
       (tired-tests--goto-section "name TEXT")
       (should (equal "" (tired--elements-cell (tired--row-at-point)))))))
 
+(ert-deftest tired-sqlite-column-labels-take-a-face-per-token ()
+  "A SQLite column label paints its name, its type and its constraints.
+A column without a type prints its name alone, and the section cell
+mirrors each face into `font-lock-face'."
+  (let* ((label (tired--sqlite-column-label
+                 '("0" "id" "INTEGER" 1 nil 1)))
+         (bare (tired--sqlite-column-label '("0" "total" "" 0 nil 0))))
+    (should (equal label "id INTEGER NOT NULL PRIMARY KEY"))
+    (should (eq (get-text-property 0 'face label)
+                'tired-sqlite-column-face))
+    (should (eq (get-text-property 2 'face label) nil))
+    (should (eq (get-text-property 3 'face label)
+                'tired-sqlite-type-face))
+    (should (eq (get-text-property 11 'face label)
+                'tired-sqlite-constraint-face))
+    (should (eq (get-text-property 20 'face label)
+                'tired-sqlite-constraint-face))
+    (should (equal bare "total"))
+    (should (eq (get-text-property 0 'face bare)
+                'tired-sqlite-column-face))
+    (let ((cell (tired--section-cell
+                 (tired--section-create :label label :path "/x" :line 1))))
+      (should (eq (get-text-property 0 'font-lock-face cell)
+                  'tired-sqlite-column-face))
+      (should (eq (get-text-property 3 'font-lock-face cell)
+                  'tired-sqlite-type-face)))))
+
 (ert-deftest tired-sqlite-table-action-opens-sqlite-mode ()
   "RET on a table section opens the database at that table."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))

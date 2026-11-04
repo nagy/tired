@@ -819,6 +819,13 @@ A directory row ends with a slash.  That slash takes the
 =tired-directory-suffix-face= face, which inherits =parenthesis=, so a
 theme colors the slash apart from the name.
 
+The column rows of a SQLite database paint their parts.  The column
+name takes =tired-sqlite-column-face=, the declared type takes
+=tired-sqlite-type-face=, and the words =NOT NULL= and =PRIMARY KEY=
+take =tired-sqlite-constraint-face=.  Each face inherits the matching
+=font-lock-= face, so a theme colors a column the way it colors a
+declaration.  A column without a type prints its name alone.
+
 * Single-child collapse
 
 A chain of single-entry directories collapses into one row for its
@@ -902,7 +909,7 @@ Eight handlers ship with the package:
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants, statics and macros, with the methods of an impl block nested under it.  A name carries the face of its source |
 | Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  A name carries the face of its source |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
-| SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column |
+| SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column, and a column row paints its name, its type and its constraints |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
 | Tar (=.tar=, =.tar.gz=, =.tar.zst=) | Every member, indented by the depth of its path.  A directory keeps a trailing slash and a link names its target.  =RET= extracts the member to a temporary file and visits it |
 

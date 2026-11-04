@@ -718,20 +718,59 @@ line up.  Return nil when the TOML grammar is missing."
   (let ((tired--cargo-columns nil))
     (tired--treesit-sections tired--cargo-section-spec)))
 
+(defface tired-sqlite-column-face
+  '((t :inherit font-lock-variable-name-face))
+  "Face for the name of a SQLite column.
+The face inherits `font-lock-variable-name-face', so a theme colors
+the name the way it colors a variable in a source file."
+  :group 'tired)
+
+(defface tired-sqlite-type-face
+  '((t :inherit font-lock-type-face))
+  "Face for the declared type of a SQLite column.
+The face inherits `font-lock-type-face', so a theme colors the type
+the way it colors a type in a source file."
+  :group 'tired)
+
+(defface tired-sqlite-constraint-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for a constraint keyword of a SQLite column.
+The face paints `NOT NULL' and `PRIMARY KEY', and it inherits
+`font-lock-keyword-face'."
+  :group 'tired)
+
+(defun tired--sqlite-painted (text face)
+  "Return TEXT painted with FACE, or an empty string for nil TEXT.
+The separators of a label stay plain, so only the token takes the
+color.  The section cell mirrors FACE into `font-lock-face'."
+  (declare (pure t) (side-effect-free t))
+  (if (or (null text) (string-empty-p text))
+      ""
+    (propertize text 'face face)))
+
 (defun tired--sqlite-column-label (row)
   "Return the label for the `PRAGMA table_info' ROW of one column.
 ROW holds the column id, name, declared type, NOT NULL flag, default
-value and primary key flag."
+value and primary key flag.  Paint the name, the type and each
+constraint keyword with its own face, so a column row reads like a
+declaration."
   (declare (pure t) (side-effect-free t))
-  (let ((name (nth 1 row))
+  (let ((tokens nil)
+        (name (nth 1 row))
         (type (nth 2 row))
         (notnull (nth 3 row))
         (primary (nth 5 row)))
-    (concat (if (and type (not (string-empty-p type)))
-                (format "%s %s" name type)
-              name)
-            (if (and notnull (not (zerop notnull))) " NOT NULL" "")
-            (if (and primary (not (zerop primary))) " PRIMARY KEY" ""))))
+    (push (tired--sqlite-painted name 'tired-sqlite-column-face) tokens)
+    (when (and type (not (string-empty-p type)))
+      (push (tired--sqlite-painted type 'tired-sqlite-type-face) tokens))
+    (when (and notnull (not (zerop notnull)))
+      (push (tired--sqlite-painted "NOT NULL" 'tired-sqlite-constraint-face)
+            tokens))
+    (when (and primary (not (zerop primary)))
+      (push (tired--sqlite-painted "PRIMARY KEY"
+                                   'tired-sqlite-constraint-face)
+            tokens))
+    (string-join (nreverse tokens) " ")))
 
 (defun tired--sqlite-table-count (db table)
   "Return the number of rows that TABLE of DB holds.
