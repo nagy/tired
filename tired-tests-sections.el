@@ -444,6 +444,33 @@
         (should (eq (tired-section-kind table) 'table))
         (should (consp (tired-section-action table)))))))
 
+(ert-deftest tired-sqlite-table-section-counts-its-rows ()
+  "A table section carries the number of rows that it holds."
+  (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
+  (tired-tests--with-fixture
+    (let ((path (expand-file-name "data.sqlite" root)))
+      (let ((db (sqlite-open path nil)))
+        (sqlite-execute db "CREATE TABLE logs (msg TEXT)")
+        (sqlite-execute db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+        (sqlite-execute db "INSERT INTO users VALUES (1, 'ann'), (2, 'bob')")
+        (sqlite-close db))
+      (tired root)
+      (tired-tests--goto "data.sqlite")
+      (tired-toggle-subdir)
+      (should (equal (mapcar (lambda (section)
+                               (cons (tired-section-label section)
+                                     (tired-section-count section)))
+                             (seq-filter (lambda (section)
+                                           (eq (tired-section-kind section) 'table))
+                                         (tired-file-sections path)))
+                     '(("logs" . 0) ("users" . 2))))
+      (tired-tests--goto-section "users")
+      (should (equal "2" (tired--elements-cell (tired--row-at-point))))
+      (tired-tests--goto-section "logs")
+      (should (equal "0" (tired--elements-cell (tired--row-at-point))))
+      (tired-tests--goto-section "name TEXT")
+      (should (equal "" (tired--elements-cell (tired--row-at-point)))))))
+
 (ert-deftest tired-sqlite-table-action-opens-sqlite-mode ()
   "RET on a table section opens the database at that table."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))

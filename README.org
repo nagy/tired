@@ -558,7 +558,7 @@ items that a row holds:
 | CSV file                      | The rows that do not start with `#`, the header included |
 | Parquet file                  | The rows of its footer, never a data page   |
 | Any other file with a handler | The sections that print at depth zero       |
-| Section row                   | Nothing, because a section is not a file    |
+| Section row                   | The count that its handler read, or nothing |
 
 A directory counts its immediate children and never a subtree.  A
 Markdown file counts the headings that its section tree prints at depth
@@ -577,6 +577,15 @@ handler: Org top-level headings, Emacs Lisp top-level forms, Rust
 items, Cargo tables, and SQLite tables and views.  A file without a
 handler keeps an empty cell, and so does a remote path, because every
 read there costs a network round trip.
+
+A section row prints the number that its handler read for it, because a
+section is not a file and a count of files never reaches it.  The
+SQLite handler fills that number: a table row shows how many rows the
+table holds, and a view works the same way.  A column row and the
+section of every other handler keep the cell empty.  The section counts
+once, at parse time, so the number follows the section cache and a
+redraw reads no database.  One count query per table runs then, so a
+very large table costs a scan when the file parses.
 
 A count needs a file read, so the column fills after the listing
 prints.  Tired does the work in the idle state, one small step at a
@@ -893,13 +902,15 @@ Eight handlers ship with the package:
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants, statics and macros, with the methods of an impl block nested under it.  A name carries the face of its source |
 | Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  A name carries the face of its source |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
-| SQLite        | Every table and view, then its columns one level deeper |
+| SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
 | Tar (=.tar=, =.tar.gz=, =.tar.zst=) | Every member, indented by the depth of its path.  A directory keeps a trailing slash and a link names its target.  =RET= extracts the member to a temporary file and visits it |
 
 =RET= on a section row visits the file at the section line.  A section
-row fills the name column only.  A SQLite section opens the table in
-=sqlite-mode= instead, because a database has no lines.
+row leaves the size, the date and the mode empty.  Only the SQLite
+handler fills its Elements cell, with the row count of the table.  A
+SQLite section opens the table in =sqlite-mode= instead, because a
+database has no lines.
 
 =RET= on an org heading also narrows the visited buffer to that
 subtree, so only the heading and its children show.  Use =C-x n w=
@@ -944,10 +955,12 @@ plists:
   (add-to-list 'tired-file-handlers '("\\.txt\\'" . my-outline-sections))
 #+end_src
 
-The optional keys =:column= and =:action= also work.  An =:action= is
-a function, or a cons of a function and extra arguments, and it
-replaces the default visit.  The org handler uses that hook, so its
-headings narrow the visited buffer.
+The optional keys =:column=, =:action= and =:count= also work.  An
+=:action= is a function, or a cons of a function and extra arguments,
+and it replaces the default visit.  The org handler uses that hook, so
+its headings narrow the visited buffer.  A =:count= number fills the
+Elements cell of the section row, and the SQLite handler puts the row
+count of each table there.
 
 A =:label= may carry text properties.  A handler that fontifies its
 buffer returns a propertized label, and Tired keeps the faces of it and

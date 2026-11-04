@@ -733,6 +733,14 @@ value and primary key flag."
             (if (and notnull (not (zerop notnull))) " NOT NULL" "")
             (if (and primary (not (zerop primary))) " PRIMARY KEY" ""))))
 
+(defun tired--sqlite-table-count (db table)
+  "Return the number of rows that TABLE of DB holds.
+A view answers the same query, because SQLite counts its rows on a
+read.  Return nil when the query fails."
+  (condition-case nil
+      (car (car (sqlite-select db (format "SELECT count(*) FROM %S" table))))
+    (error nil)))
+
 (defun tired--sqlite-open-table (section table &optional _other-window)
   "Show TABLE of the database that SECTION belongs to.
 Open the database in `sqlite-mode' and move point to the row of
@@ -750,8 +758,10 @@ The handler uses the built-in `sqlite' support, so it needs no
 external tool.  Each table is a section and its columns follow one
 level deeper.  A database has no lines, so a section carries a
 synthetic ordinal and its action opens the table in `sqlite-mode'.
-Return nil when Emacs lacks SQLite support or when PATH holds no
-readable database."
+A table section also carries the number of rows that the table
+holds, so the Elements column answers for it.  Return nil when
+Emacs lacks SQLite support or when PATH holds no readable
+database."
   (when (and (fboundp 'sqlite-available-p) (sqlite-available-p))
     (condition-case nil
         (let ((db (sqlite-open path t))
@@ -769,6 +779,7 @@ readable database."
                               :line (setq line (1+ line))
                               :level 0
                               :kind 'table
+                              :count (tired--sqlite-table-count db table)
                               :action (cons #'tired--sqlite-open-table
                                             (list table)))
                         sections)

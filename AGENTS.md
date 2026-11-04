@@ -238,7 +238,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     library fills at load time: `tired--elements-value-function`,
     `tired--elements-queue-function` and
     `tired--elements-prune-function`.  A nil value prints an empty
-    cell, so core redraws alone.  `tired--redraw-buffer` queues the
+    cell, so core redraws alone.  A section row takes no cache read:
+    `tired--elements-show` reads the `count` slot of the section, and a
+    handler fills it through the optional `:count` plist key.  The
+    SQLite handler puts the row count of a table there, so a table row
+    prints a number and a column row stays empty.  `tired--redraw-buffer` queues the
     visible rows after the print, and `tired--reload-tables` prunes the
     cache.  The number comes from `tired-elements-functions`, an
     abnormal hook that `run-hook-with-args-until-success` walks.  A
@@ -281,6 +285,13 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 
 ## Conventions
 
+- A section row keeps the size, the date and the mode empty, and
+  prints the Elements count that its handler read.  A redraw reads the
+  section cache, so the count costs one query per table per parse, and
+  the section count of a file still answers
+  `tired-elements-sections` at depth zero.  Do not route a section
+  count through `tired-elements-functions`: a dissector reads a file
+  again, and a section row already holds its number.
 - Package prefix `tired-`, private helpers `tired--`.
 - The Elements number has one owner: `tired--elements-value-function`.
   Do not read `tired-elements-functions` from `tired-core`, and do not

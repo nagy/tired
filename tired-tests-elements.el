@@ -58,11 +58,18 @@
     (should (eq tired--sort-key 'elements))
     (should (eq (tired--sort-state) 'elements-asc))))
 
-(ert-deftest tired-elements-section-row-keeps-the-cell-empty ()
-  "A section row shows no count, because a section is not a file."
+(ert-deftest tired-elements-section-row-prints-the-count-of-its-handler ()
+  "A section row prints the count that its handler read.
+A section without a count keeps the cell empty, because a section is
+not a file."
   (tired-tests--with-fixture
-    (let ((section (tired--section-create :label "x" :path "/x" :line 1)))
-      (should (equal "" (tired--elements-cell section))))))
+    (should (equal ""
+                   (tired--elements-cell
+                    (tired--section-create :label "x" :path "/x" :line 1))))
+    (should (equal "7"
+                   (tired--elements-cell
+                    (tired--section-create :label "x" :path "/x" :line 1
+                                           :count 7))))))
 
 ;;; Directories
 

@@ -179,7 +179,8 @@ matches `tired-persistent-directories' keeps its count there."
 (defun tired--elements-value (row)
   "Return the element count that ROW shows, or nil.
 A count that no cache entry holds is nil, and the idle queue fills it
-after the print."
+after the print.  A section row never reaches this function, because
+`tired--elements-show' reads the count of its struct."
   (when (tired-entry-p row)
     (when-let* ((stamp (tired--elements-stamp row))
                 (hit (tired--elements-entry

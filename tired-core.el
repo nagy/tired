@@ -299,8 +299,10 @@ The regexp matches the absolute file name, and the first match wins.
 The function receives the file name and runs in a temporary buffer
 that holds the file contents.  It selects its own major mode, then
 returns a list of plists with the keys `:label', `:line', `:level'
-and `:kind', plus the optional keys `:column' and `:action'.  An
-empty list means the file has no sections."
+and `:kind', plus the optional keys `:column', `:action' and
+`:count'.  An `:count' number fills the Elements cell of the
+section row, and any other value leaves it empty.  An empty list
+means the file has no sections."
   :type '(alist :key-type regexp :value-type function))
 
 (defcustom tired-section-file-size-limit nil
@@ -413,14 +415,16 @@ absolute file name that holds the section.  LINE is 1-based.  COLUMN
 is 0-based, or nil.  LEVEL is the nesting level that the handler
 declared.  KIND is a symbol such as `heading' or `function'.  ACTION
 is nil for a plain visit, or a function, or a cons of a function and
-its arguments."
+its arguments.  COUNT is an optional number that the Elements column
+prints, or nil for an empty cell."
   label
   path
   line
   column
   level
   kind
-  action)
+  action
+  count)
 
 (defvar-local tired--directory nil
   "Absolute name of the directory shown in the current buffer.")
@@ -1065,7 +1069,7 @@ and the discarded buffer never prompts on kill."
 (defun tired--section-plist (item path)
   "Return ITEM as a `tired-section' struct for PATH.
 ITEM is a plist with `:label' and `:line', plus the optional keys
-`:column', `:level', `:kind' and `:action'."
+`:column', `:level', `:kind', `:action' and `:count'."
   (tired--section-create
    :label (or (plist-get item :label) "")
    :path path
@@ -1073,7 +1077,8 @@ ITEM is a plist with `:label' and `:line', plus the optional keys
    :column (plist-get item :column)
    :level (or (plist-get item :level) 0)
    :kind (or (plist-get item :kind) 'section)
-   :action (plist-get item :action)))
+   :action (plist-get item :action)
+   :count (plist-get item :count)))
 
 (defun tired-file-sections (path &optional force)
   "Return the sections of PATH as a list of `tired-section' structs.
@@ -1932,12 +1937,15 @@ nothing."
 
 (defun tired--elements-show (row)
   "Return the element count that ROW shows, or nil.
-`tired-elements' supplies the count through
-`tired--elements-value-function'.  A row without a value sorts and
-prints as unknown."
-  (if tired--elements-value-function
-      (funcall tired--elements-value-function row)
-    nil))
+A section row carries the count that its handler read, so its cell
+needs no cache read.  Every other row reads the count of
+`tired-elements' through `tired--elements-value-function'.  A row
+without a value sorts and prints as unknown."
+  (if (tired-section-p row)
+      (tired-section-count row)
+    (if tired--elements-value-function
+        (funcall tired--elements-value-function row)
+      nil)))
 
 (defun tired--elements-cell (row)
   "Return the Elements cell for ROW.
@@ -1971,15 +1979,17 @@ Dired rule, the cell needs a `-' or a `d' in its first place."
 
 (defun tired--row (row depth)
   "Return the tabulated list row for ROW at DEPTH.
-ROW is a `tired-entry' or a `tired-section'.  A section fills the
-name column only, because one table format serves every row.
+ROW is a `tired-entry' or a `tired-section'.  A section leaves the
+size, the date and the mode empty, and fills the Elements cell with
+the count that its handler read, because one table format serves
+every row.
 Emacs 31 requires a vector of column descriptors here; a list makes
 `tabulated-list-print-entry' signal a type error."
   (if (tired-section-p row)
       (vector (concat (make-string (* 2 depth) ?\s)
                       (tired--section-cell row))
               ""
-              ""
+              (tired--elements-cell row)
               ""
               "")
     (vector (concat (make-string (* 2 depth) ?\s)
