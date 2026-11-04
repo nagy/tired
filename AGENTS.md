@@ -546,6 +546,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   remote check, because one per-child `file-remote-p` would cost one
   handler lookup per directory.  Add no new remote check to a size
   path: read `tired--size-skip-p`, or the two options disagree.
+  `docs/adr/0019-exclude-a-directory-from-the-size-walk.md` holds the
+  reasons.
 - A refresh forces a walk of every directory that it shows.
   `tired--reload-tables` sets `tired--size-forced` to the refresh
   time, and `tired--size-queue` reads the flag once and passes it to
