@@ -17,4 +17,5 @@ Consequences: one global `equal` table in `tired--size-cache` that
 every buffer shares, values as `(TOTAL . STAMP)` pairs, the defcustom
 `tired-size-cache-ttl` at 60 seconds, a prune of expired totals on
 refresh instead of a refill, and no buffer-local size table.  A stale
-total stays on screen for at most one window.
+total stays on screen for at most one window between two refreshes, and
+a refresh re-walks a directory that it shows, as ADR 0018 records.

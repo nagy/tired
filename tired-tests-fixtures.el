@@ -113,6 +113,13 @@ a symlink, and removes every Tired buffer it opened."
   "Finish every queued idle job and repaint the listing."
   (tired-tests--flush-sizes))
 
+(defun tired-tests--queued-jobs (kind)
+  "Return the queued idle jobs of KIND.
+A listing queues a size walk of every shown directory beside the
+element counts, so a test that cares about one kind names it."
+  (seq-filter (lambda (job) (eq kind (tired--job-kind job)))
+              tired--queue-jobs))
+
 (defvar tired-tests--window-shown nil
   "When non-nil, the size gate reads the listing as shown.
 Batch Emacs opens a window for `tired', so a test that needs a
@@ -141,6 +148,21 @@ click on the listing that the window shows."
 (defun tired-tests--names ()
   "Return the names of the visible entries in display order."
   (mapcar #'tired-entry-name (tired--visible-entries)))
+
+(defun tired-tests--printed-name-face (name)
+  "Return the `face' that the printed row of NAME shows, or nil.
+Read the buffer, so the test sees the face that the printer wrote
+and not the face that the cell builder would write."
+  (save-excursion
+    (goto-char (point-min))
+    (let (found)
+      (while (and (not (eobp)) (null found))
+        (when (equal name
+                     (ignore-errors
+                       (tired-entry-name (tabulated-list-get-id))))
+          (setq found (get-text-property (line-beginning-position) 'face)))
+        (forward-line 1))
+      found)))
 
 (defun tired-tests--header-string ()
   "Return the header line of the current listing as one string.

@@ -195,7 +195,8 @@ The size column then sums the bytes of every regular file under the
 directory.  Symbolic links stay unfollowed.  A deep tree costs one
 directory read per directory, and the idle queue spreads those
 reads over several passes.  `tired-size-cache-ttl' then serves every
-later refresh from a global memo table.  A remote directory never
+later redraw from a global memo table, and a refresh re-walks the
+directories that it shows.  A remote directory never
 shows a total, because the walk would cost one network round trip
 per file."
   :type 'boolean)
@@ -204,11 +205,15 @@ per file."
   "Seconds a computed directory size stays valid.
 A total sums a whole subtree, so an edit deep in the tree can change
 a size that a listing already shows.  A cached total serves every
-refresh inside this window, and a stale total stays on screen until
-the window ends.  Set the value to 0 to sum the subtree on every
-refresh.  A garbage collection hook cannot replace this window:
-Emacs collects garbage several times during one walk of a large
-tree, so such a hook would empty the table faster than it fills."
+redraw inside this window, and a stale total stays on screen until
+the window ends.  A refresh queues a walk of every directory that it
+shows, so a change that a refresh reads from the disk reaches the
+column and the empty-directory mark one idle pass later.  Set the
+value to 0 to drop the total at every refresh, so the cell empties
+until the walk fills it again.  A garbage collection hook cannot
+replace this window: Emacs collects garbage several times during one
+walk of a large tree, so such a hook would empty the table faster
+than it fills."
   :type 'natnum)
 
 (defcustom tired-directory-size-budget 0.2
@@ -1473,6 +1478,13 @@ Batch Emacs shows no window, so the test suite binds this to t.")
 `tired--size-queue' sets it while no window shows the listing, and
 a display, an idle timer or the next redraw reads it.")
 
+(defvar-local tired--size-forced nil
+  "Time of the refresh that wants every shown total recomputed.
+`tired--reload-tables' sets it, and `tired--size-queue' reads it
+once and then clears it, so one refresh forces one walk per shown
+directory.  A nil value means that the cached totals serve the
+redraw.")
+
 (defvar-local tired--size-timer nil
   "Timer that redraws the listing to queue its directory size walks.")
 
@@ -1628,12 +1640,27 @@ costs one pass and no second walk inside the cache window."
   (declare (pure t) (side-effect-free t))
   (eq (tired--job-kind job) 'size))
 
-(defun tired--size-enqueue (key directory)
+(defun tired--size-enqueue (key directory &optional force)
   "Queue an idle walk of DIRECTORY under the cache key KEY.
-A young total, a remote directory and a queued walk cost no walk."
+A young total, a remote directory and a queued walk cost no walk.
+FORCE recomputes a young total, because a refresh asked for the
+size that the disk holds now.  FORCE also drops a queued walk that
+started before FORCE, because that walk can still store a scan that
+predates the change.  A walk that started after FORCE stays, so one
+refresh never restarts itself."
   (when (and (not (file-remote-p directory))
-             (not (tired--size-cache-valid-p (gethash key tired--size-cache)))
-             (null (tired--queue-job 'size key)))
+             (or force
+                 (not (tired--size-cache-valid-p
+                       (gethash key tired--size-cache))))
+             (progn
+               (when force
+                 (when-let* ((job (tired--queue-job 'size key)))
+                   (when (< (or (tired--size-walk-stamp
+                                 (tired--job-data job))
+                                0)
+                            force)
+                     (tired--queue-drop job))))
+               (null (tired--queue-job 'size key))))
     (tired--queue-enqueue
      (tired--job-create
       :kind 'size
@@ -1673,7 +1700,9 @@ the next display starts the walk.  Only the topmost row of a chain
 queues, because a walk covers the subtree of its row."
   (if (not (tired--size-window-p))
       (setq tired--size-deferred t)
-    (let ((directories (make-hash-table :test #'equal)))
+    (let ((directories (make-hash-table :test #'equal))
+          (force tired--size-forced))
+      (setq tired--size-forced nil)
       (dolist (cell (tired--visible-rows))
         (let ((row (car cell)))
           (when (and (tired-entry-p row)
@@ -1683,7 +1712,7 @@ queues, because a walk covers the subtree of its row."
                      directories))))
       (maphash (lambda (key _row)
                  (unless (tired--size-ancestor-p key directories)
-                   (tired--size-enqueue key key)))
+                   (tired--size-enqueue key key force)))
                directories))))
 
 (defun tired--directory-total (directory)
@@ -1691,7 +1720,9 @@ queues, because a walk covers the subtree of its row."
 The redraw reads this table alone, so no redraw walks a tree.  A
 refresh drops the totals that `tired-size-cache-ttl' expired, and
 `tired--size-queue' queues a new walk for a directory without a
-young total."
+young total.  A refresh also queues a walk of every directory that
+it shows, so a live total never hides a change that the refresh
+just read from the disk."
   (let ((hit (gethash (tired--size-key directory) tired--size-cache)))
     (when (consp hit)
       (car hit))))
@@ -2578,6 +2609,11 @@ twice."
   (setq tired--collapse-cache (make-hash-table :test #'equal))
   (tired--queue-drop-where #'tired--size-walk-job-p)
   (tired--size-cache-prune)
+  ;; The refresh reads the disk, so a young total can hide a file that
+  ;; arrived after its walk.  Keep the total on screen and queue a new
+  ;; walk, so no size cell empties and no ignored face outlives the
+  ;; refresh that should clear it.
+  (setq tired--size-forced (float-time))
   (when tired--elements-prune-function
     (funcall tired--elements-prune-function))
   (puthash (directory-file-name tired--directory)

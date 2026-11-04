@@ -81,4 +81,6 @@ queued directory in one pass.
 A directory size cell, and the empty-directory mark, stay plain until
 the walk lands and the reprint shows it.  A total shows until a
 refresh prunes it by `tired-size-cache-ttl`, so a zero TTL empties the
-column at every refresh and the walk fills it again.
+column at every refresh and the walk fills it again.  A refresh also
+queues a walk of every directory that it shows, so a young total never
+keeps a number that the refresh just read past.

@@ -532,6 +532,19 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   skips a remote directory and a directory with a young total.  It
   queues nothing while no window shows the listing, and sets
   `tired--size-deferred`, so the next display walks the sizes.
+- A refresh forces a walk of every directory that it shows.
+  `tired--reload-tables` sets `tired--size-forced` to the refresh
+  time, and `tired--size-queue` reads the flag once and passes it to
+  `tired--size-enqueue`, so a young total cannot keep a size cell or
+  an ignored face that the refresh just contradicted.  The old total
+  stays on screen while the walk runs, so no cell empties.  A nil
+  flag keeps the cache of a plain redraw.  `docs/adr/0018-refresh-recomputes-a-shown-size.md`
+  holds the reasons.  A refresh of a hidden listing keeps the flag
+  until a window shows the listing.
+- `tired--size-enqueue` drops a queued walk that started before the
+  forced time, because that walk can still store a scan that predates
+  the change, and keeps a walk that started after it, so one refresh
+  never restarts itself.
 - `tired-directory-size-budget` limits one idle pass, not one redraw.
   A zero budget leaves the job in the queue, and a nil budget walks
   every queued directory in one pass.
@@ -689,7 +702,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   because one name expansion per component halves a cold walk.  Do not
   add a `post-gc-hook` clear or weak keys: one walk triggers several
   collections and the table would empty itself.  The time window in
-  `tired-size-cache-ttl` is the one freshness rule.
+  `tired-size-cache-ttl` bounds a redraw alone, because a refresh
+  forces a new walk of every shown directory.
 - `tired-noselect` owns `default-directory` and
   `list-buffers-directory`.  `tired-mode` runs before the directory
   is known, so it must not set either variable.  The function also

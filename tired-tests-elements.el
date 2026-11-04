@@ -378,7 +378,7 @@ The header row counts, and a blank line stays out."
     (tired root)
     (tired-tests--flush-elements)
     (tired-refresh)
-    (should-not tired--queue-jobs)))
+    (should-not (tired-tests--queued-jobs 'elements))))
 
 (ert-deftest tired-elements-cache-follows-the-file ()
   "A changed file reaches the column as a new count."
@@ -389,7 +389,7 @@ The header row counts, and a blank line stays out."
     (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
     (tired-tests--write "a.json" "[1,2]")
     (tired-refresh)
-    (should (= 1 (length tired--queue-jobs)))
+    (should (= 1 (length (tired-tests--queued-jobs 'elements))))
     (tired-tests--flush-elements)
     (should (= 2 (tired--elements-value (tired-tests--entry "a.json"))))))
 
@@ -487,12 +487,12 @@ The header row counts, and a blank line stays out."
   (tired-tests--with-fixture
     (tired-tests--write "a.json" "[1,2,3]")
     (tired root)
-    (let ((count (length tired--queue-jobs)))
+    (let ((count (length (tired-tests--queued-jobs 'elements))))
       (tired-refresh)
-      (should (= count (length tired--queue-jobs))))
+      (should (= count (length (tired-tests--queued-jobs 'elements)))))
     (tired-tests--flush-elements)
     (tired-refresh)
-    (should-not tired--queue-jobs)))
+    (should-not (tired-tests--queued-jobs 'elements))))
 
 (ert-deftest tired-elements-dissector-error-finishes-the-job ()
   "A dissector that signals leaves no count and stops no queue."

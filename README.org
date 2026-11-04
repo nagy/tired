@@ -497,12 +497,16 @@ and as an inserted section costs one read.  A total stays valid for
   (setq tired-size-cache-ttl 60)
 #+end_src
 
-Sort, filter, insert, fold, resize and =g= reuse a total inside that
-window, so a refresh after the first read costs nothing.  A refresh
+Sort, filter, insert, fold, resize and a redraw reuse a total inside
+that window, so a view change costs no directory read.  A refresh
 drops the expired totals, so the table holds no more than one window
-can reach.  An edit deep in the tree reaches the column at most one
-window later, and so does an edit in a directory that carries no
-watch.  Set the value to 0 to sum the subtree on every refresh.
+can reach.  A refresh also reads the disk, so =g= and the auto-revert
+queue one walk per shown directory and keep the old total on screen
+until the walk lands.  An edit deep in the tree therefore reaches the
+column and the empty-directory mark one idle pass after a refresh,
+and at most one window later in a directory that carries no watch.
+Set the value to 0 to drop the total at every refresh, so the size
+cell empties until the walk fills it again.
 
 A listing that no window shows queues no walk, because the size column
 and the empty-directory mark read the memo table alone.  The first

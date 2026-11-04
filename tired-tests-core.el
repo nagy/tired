@@ -1226,25 +1226,31 @@ key map alone."
         (tired-tests--flush-sizes)
         (should (= 0 calls))))))
 
-(ert-deftest tired-refresh-keeps-a-young-size-total ()
-  "A refresh inside `tired-size-cache-ttl' reuses the cached total."
+(ert-deftest tired-refresh-rewalks-a-young-size-total ()
+  "A refresh recomputes a young total, and a plain redraw reuses it.
+The refresh reads the disk, so a total that `tired-size-cache-ttl'
+still covers can hide a file that arrived after its walk."
   (tired-tests--with-fixture
-    (let ((tired-directory-size t))
+    (let ((tired-directory-size t)
+          (reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
       (tired-tests--flush-sizes)
-      (should (equal (file-size-human-readable 9)
-                     (tired--size-cell (tired-tests--entry "sub"))))
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
-      (tired-refresh)
-      (tired-tests--flush-sizes)
-      (should (equal (file-size-human-readable 9)
-                     (tired--size-cell (tired-tests--entry "sub"))))
-      (tired--size-cache-clear)
-      (tired-refresh)
-      (tired-tests--flush-sizes)
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq reads (1+ reads))
+                   (apply original args))))
+        (tired--redraw)
+        (tired-tests--flush-sizes)
+        (should (= 0 reads))
+        (tired-refresh)
+        (tired-tests--flush-sizes)
+        (should (> reads 0)))
       (should (equal (file-size-human-readable 104)
                      (tired--size-cell (tired-tests--entry "sub")))))))
+
 
 (ert-deftest tired-size-cache-ttl-zero-sums-every-refresh ()
   "A zero `tired-size-cache-ttl' makes each refresh walk the subtree."
@@ -1499,6 +1505,51 @@ The slash follows the name, so the row dims as one run."
       (tired-tests--flush-sizes)
       (should (eq 'tired-ignored-face
                   (tired-tests--cell-face (tired-tests--entry "hollow")))))))
+
+(ert-deftest tired-refresh-recomputes-a-live-total ()
+  "A refresh re-walks a shown directory, so a new file clears the dim.
+A total young enough for `tired-size-cache-ttl' would otherwise
+keep `tired-ignored-face' and a zero size cell until that window
+ends, even though the refresh just read the new file from disk."
+  (tired-tests--with-fixture
+    (let ((tired-collapse-single-child nil))
+      (make-directory (expand-file-name "hollow" root))
+      (tired root)
+      (tired-tests--flush-sizes)
+      (should (zerop (tired--directory-total
+                      (expand-file-name "hollow" root))))
+      (should (eq 'tired-ignored-face
+                  (tired-tests--printed-name-face "hollow")))
+      (with-temp-file (expand-file-name "hollow/new.txt") (insert "bytes"))
+      (tired-refresh)
+      (tired-tests--flush-sizes)
+      (should (= 5 (tired--directory-total
+                    (expand-file-name "hollow" root))))
+      (should (eq 'tired-directory-face
+                  (tired-tests--printed-name-face "hollow"))))))
+
+(ert-deftest tired-refresh-keeps-a-forced-walk-until-a-window-shows ()
+  "A refresh of a hidden listing waits to queue its walk.
+No window shows the listing, so the refresh queues nothing and the
+forced walk waits for the display that follows."
+  (tired-tests--with-fixture
+    (tired-tests--with-deferred-sizes
+      (let ((tired-collapse-single-child nil))
+        (make-directory (expand-file-name "hollow" root))
+        (let ((tired-tests--window-shown t))
+          (tired root)
+          (tired-tests--flush-sizes))
+        (should (zerop (tired--directory-total
+                        (expand-file-name "hollow" root))))
+        (with-temp-file (expand-file-name "hollow/new.txt") (insert "bytes"))
+        (tired-refresh)
+        (should tired--size-forced)
+        (setq tired-tests--window-shown t)
+        (tired--redraw-buffer)
+        (should-not tired--size-forced)
+        (tired-tests--flush-sizes)
+        (should (= 5 (tired--directory-total
+                      (expand-file-name "hollow" root))))))))
 
 (ert-deftest tired-name-face-keeps-a-remote-directory-plain ()
   "A remote directory keeps the directory face and costs no walk."
