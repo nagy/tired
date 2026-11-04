@@ -341,6 +341,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.  A section
   label follows the same rule through `tired--section-cell`.
+- Color follows Dired.  A name face inherits its `dired-` partner, and
+  `tired-selected-face` inherits `dired-marked`, so a Dired theme
+  reaches a Tired row and the transient selection without further work.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the
   strings, so color belongs in the entry data.
 - File commands never ask a confirmation and never call a shell, except

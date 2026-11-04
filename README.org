@@ -145,7 +145,9 @@ hides stays selected, so =u= remains the way to clear the whole
 selection.  =%= adds every visible file that shares the extension of
 the row at point, and point stays on that row.  A second extension
 joins the first, so =%= on a =.el= file and then on a =.org= file
-selects both groups.  A directory stays out.
+selects both groups.  A directory stays out.  A selected row takes
+`tired-selected-face', which inherits `dired-marked', so a Dired theme
+colors a selection the way it colors a mark.
 
 The active region is the second way to make a selection.  Move with
 =S-<down>= and =S-<up>=, drag with the mouse, or set a mark with

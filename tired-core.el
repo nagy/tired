@@ -354,8 +354,10 @@ An empty directory takes the face too, so a row that holds no byte
 dims as one run.")
 
 (defface tired-selected-face
-  '((t :inherit highlight :extend t))
-  "Face for entries in the transient selection.")
+  '((t :inherit dired-marked :extend t))
+  "Face for entries in the transient selection.
+The face inherits `dired-marked', so a theme colors a selected row the
+way it colors a marked row in Dired.")
 
 (defface tired-section-face
   '((t :inherit default))
