@@ -485,7 +485,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   state.
 - `tired--entries-size` counts a directory by its subtree, and it
   reads no `tired-directory-size`, because that option governs the
-  size column alone.  A remote directory adds nothing.  The walk goes
+  size column alone.  A remote directory adds nothing, and so does a
+  directory that `tired-directory-size-exclude` names.  The walk goes
   through `tired--directory-total', so `tired--size-cache' serves the
   sum and a directory whose walk has not landed adds zero until the
   idle pass fills it.  The mode line still
@@ -518,7 +519,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   reads the size cache and the idle queue walks a subtree even with
   `tired-directory-size` nil.  A directory without a total keeps the
   directory face until the walk lands.  A remote directory keeps the
-  directory face and costs no walk.
+  directory face and costs no walk, and so does a directory that
+  `tired-directory-size-exclude` names.
 - A size walk runs in the idle queue, one directory read per step.
   `tired--size-walk-step` scans the head frame, visits each child
   frame in turn, and stores a total when a frame closes, so a nested
@@ -529,9 +531,21 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   tree costs one pass and not one pass per redraw.
 - `tired--size-queue` queues the topmost visible directory row of a
   chain alone, because a walk covers the subtree of its row, and it
-  skips a remote directory and a directory with a young total.  It
-  queues nothing while no window shows the listing, and sets
-  `tired--size-deferred`, so the next display walks the sizes.
+  skips a remote directory, a directory that
+  `tired-directory-size-exclude` names and a directory with a young
+  total.  It queues nothing while no window shows the listing, and
+  sets `tired--size-deferred`, so the next display walks the sizes.
+- `tired--size-skip-p` answers every size question about one
+  directory: the size cell, the empty-directory mark, the mode line
+  byte sum, the queue and the walk itself read it.  It holds
+  `file-remote-p` and `tired-directory-size-exclude` together, so a
+  mounted network directory that `file-remote-p` does not reach costs
+  no walk.  `tired--size-excluded-p` matches the absolute name both
+  with and without a trailing slash, so one rule covers a whole
+  subtree.  `tired--size-walk-scan` tests the child alone, not the
+  remote check, because one per-child `file-remote-p` would cost one
+  handler lookup per directory.  Add no new remote check to a size
+  path: read `tired--size-skip-p`, or the two options disagree.
 - A refresh forces a walk of every directory that it shows.
   `tired--reload-tables` sets `tired--size-forced` to the refresh
   time, and `tired--size-queue` reads the flag once and passes it to
@@ -733,7 +747,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   count.  `tired--undo-restore` counts the restores and stays silent on
   a failure.
 - Single-child collapse and the size walk skip a remote directory,
-  because every read there costs a network round trip.- A collapsed row takes the leaf of the chain, so `tired-entry-path`
+  because every read there costs a network round trip.  The size walk
+  also skips a directory that `tired-directory-size-exclude` names.
+  Collapse does not, because a chain walk reads one directory per
+  level and never recurses.- A collapsed row takes the leaf of the chain, so `tired-entry-path`
   names the leaf and the name holds the relative path.  The leaf can
   be a directory: `tired--display-rows` walks the children of `display`
   rather than of `entry`, or the insert of such a row shows nothing.

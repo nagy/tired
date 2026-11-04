@@ -198,8 +198,22 @@ reads over several passes.  `tired-size-cache-ttl' then serves every
 later redraw from a global memo table, and a refresh re-walks the
 directories that it shows.  A remote directory never
 shows a total, because the walk would cost one network round trip
-per file."
+per file.  A directory that `tired-directory-size-exclude' names
+costs no walk either."
   :type 'boolean)
+
+(defcustom tired-directory-size-exclude nil
+  "List of regexps that name directories without a recursive size.
+A directory that matches one regexp costs no walk, the way a remote
+directory costs none: its size cell stays empty, its subtree adds
+nothing to the total of a parent directory, and it counts as no byte
+in the mode line.  Each regexp matches the absolute directory name,
+both with and without a trailing slash, so a rule that ends in a
+slash covers the whole subtree below a mount point and a rule that
+ends in a string-end anchor covers one directory alone.  Set this
+option for a mounted network directory that `file-remote-p' does not
+reach."
+  :type '(repeat regexp))
 
 (defcustom tired-size-cache-ttl 60
   "Seconds a computed directory size stays valid.
@@ -754,13 +768,39 @@ before every real extension."
   "Return the byte count that the size column shows for ENTRY, or nil.
 A file shows its own size.  A directory shows the total of its
 subtree when `tired-directory-size' holds and the memo table holds a
-total.  A remote directory and a walk that the idle queue has not
-finished show nothing, so the value stays nil."
+total.  A remote directory, a directory that
+`tired-directory-size-exclude' names and a walk that the idle queue
+has not finished show nothing, so the value stays nil."
   (cond
    ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
    ((not tired-directory-size) nil)
-   ((file-remote-p (tired-entry-path entry)) nil)
+   ((tired--size-skip-p (tired-entry-path entry)) nil)
    (t (tired--directory-total (tired-entry-path entry)))))
+
+(defun tired--size-excluded-p (directory)
+  "Return non-nil when DIRECTORY matches `tired-directory-size-exclude'.
+Match the absolute name both with and without a trailing slash, so a
+rule that ends in a slash covers every directory below a mount point
+and a rule that ends in a string-end anchor covers one directory
+alone."
+  (declare (side-effect-free t))
+  (when (stringp directory)
+    (let* ((name (directory-file-name (expand-file-name directory)))
+           (slashed (file-name-as-directory name)))
+      (seq-some (lambda (regexp)
+                  (or (string-match-p regexp name)
+                      (string-match-p regexp slashed)))
+                tired-directory-size-exclude))))
+
+(defun tired--size-skip-p (directory)
+  "Return non-nil when DIRECTORY takes no recursive size walk.
+A remote directory always skips, because a walk there costs one
+network round trip per file.  `tired-directory-size-exclude' skips a
+local directory that the user names, such as a mount point."
+  (declare (side-effect-free t))
+  (and (stringp directory)
+       (or (file-remote-p directory)
+           (tired--size-excluded-p directory))))
 
 (defun tired--sort-value (entry)
   "Return the value that `tired--sort-key' compares for ENTRY.
@@ -1294,9 +1334,11 @@ face.  NAME itself stays unchanged."
 Read the memo table alone, so a redraw never walks a subtree.  A
 directory with no cached total counts as non-empty, and the idle
 walk dims it one pass later.  A remote directory counts as
-non-empty, because its walk costs one round trip per file."
+non-empty, because its walk costs one round trip per file.  A
+directory that `tired-directory-size-exclude' names counts as
+non-empty too, because no walk reads it."
   (and (stringp directory)
-       (not (file-remote-p directory))
+       (not (tired--size-skip-p directory))
        (let ((total (tired--directory-total directory)))
          (and total (zerop total)))))
 
@@ -1560,7 +1602,11 @@ unreadable directory counts as empty."
         (let ((type (file-attribute-type (cdr pair))))
           (cond
            ((eq t type)
-            (push (expand-file-name (car pair) directory) children))
+            ;; A child that `tired-directory-size-exclude' names adds
+            ;; no byte to this total and takes no frame of its own.
+            (let ((child (expand-file-name (car pair) directory)))
+              (unless (tired--size-excluded-p child)
+                (push child children))))
            ((stringp type) nil)
            (t (setq total (+ total (or (file-attribute-size (cdr pair)) 0))))))))
     (setcar stack (plist-put (plist-put (plist-put frame :total total)
@@ -1642,13 +1688,14 @@ costs one pass and no second walk inside the cache window."
 
 (defun tired--size-enqueue (key directory &optional force)
   "Queue an idle walk of DIRECTORY under the cache key KEY.
-A young total, a remote directory and a queued walk cost no walk.
+A young total, a remote directory, an excluded directory and a
+queued walk cost no walk.
 FORCE recomputes a young total, because a refresh asked for the
 size that the disk holds now.  FORCE also drops a queued walk that
 started before FORCE, because that walk can still store a scan that
 predates the change.  A walk that started after FORCE stays, so one
 refresh never restarts itself."
-  (when (and (not (file-remote-p directory))
+  (when (and (not (tired--size-skip-p directory))
              (or force
                  (not (tired--size-cache-valid-p
                        (gethash key tired--size-cache))))
@@ -1707,7 +1754,7 @@ queues, because a walk covers the subtree of its row."
         (let ((row (car cell)))
           (when (and (tired-entry-p row)
                      (tired-entry-dirp row)
-                     (not (file-remote-p (tired-entry-path row))))
+                     (not (tired--size-skip-p (tired-entry-path row))))
             (puthash (tired--size-key (tired-entry-path row)) row
                      directories))))
       (maphash (lambda (key _row)
@@ -1796,8 +1843,10 @@ so the reprint goes through a timer."
 (defun tired--size-cell (entry)
   "Return the size column string for ENTRY.
 A remote directory keeps the column empty, because a walk over the
-network costs one round trip per file.  `tired--shown-size' decides
-the number, so the size sort and the cell agree."
+network costs one round trip per file, and a directory that
+`tired-directory-size-exclude' names keeps it empty too.
+`tired--shown-size' decides the number, so the size sort and the cell
+agree."
   (let ((size (tired--shown-size entry)))
     (if size (file-size-human-readable size) "")))
 
@@ -2128,10 +2177,12 @@ A directory adds its whole subtree, the way a selection should name
 the bytes that it holds.  The sum reads no `tired-directory-size',
 because that option governs the size column alone.  A directory on a
 remote host adds nothing, because a walk over the network costs one
-round trip per file."
+round trip per file, and a directory that
+`tired-directory-size-exclude' names adds nothing, because no walk
+reads it."
   (cond
    ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
-   ((file-remote-p (tired-entry-path entry)) 0)
+   ((tired--size-skip-p (tired-entry-path entry)) 0)
    (t (or (tired--directory-total (tired-entry-path entry)) 0))))
 
 (defun tired--entries-size (entries)

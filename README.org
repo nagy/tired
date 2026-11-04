@@ -191,7 +191,8 @@ joins the selection first.  =N= again widens it.  The mode line shows
 the selection count and the total size of the selected rows.  A
 directory adds its whole subtree, and a remote directory adds
 nothing, because a walk over the network costs one round trip per
-file.  A region reports the same size.
+file.  A directory that matches =tired-directory-size-exclude= adds
+nothing either.  A region reports the same size.
 
 * Sorting
 
@@ -488,6 +489,24 @@ large tree outside the listing does not inflate a size.  A remote
 directory keeps the column empty, because the walk would cost one
 network round trip per file.  Hidden files count.
 
+A mounted network directory that =file-remote-p= does not reach can
+freeze Emacs, because a walk over a mount reads a whole network tree.
+List a regexp for such a directory in =tired-directory-size-exclude=:
+
+#+begin_src elisp
+  (setq tired-directory-size-exclude '("/mnt/store/"))
+#+end_src
+
+Each regexp matches the absolute directory name, both with and
+without a trailing slash.  A rule that ends in a slash covers the
+whole subtree below a mount point, and a rule that ends in =\\'=
+covers one directory alone.  An excluded directory takes no walk.  Its
+size cell stays empty, its subtree adds nothing to the total of a
+parent directory, and it counts as no byte in the mode line.  It also
+keeps the plain directory face, because the empty-directory mark
+needs a total.  The Elements column, the single-child collapse, the
+watches and the section handlers stay unchanged.
+
 One global memo table holds every directory the walk visits, so all
 Tired buffers share a total, and a directory that shows as a parent
 and as an inserted section costs one read.  A total stays valid for
@@ -674,6 +693,7 @@ as empty when its subtree holds no byte, so a directory that holds
 only empty files dims too.  The slash of the row follows the name.
 The mark needs no =tired-directory-size=, because the name reads the
 size cache, and a remote directory keeps the directory face.  A
+directory that =tired-directory-size-exclude= names keeps it too.  A
 directory that waits for its walk, and a listing that no window
 shows, keep the plain directory face until the walk lands.
 

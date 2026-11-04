@@ -1158,6 +1158,52 @@ key map alone."
         (should (tired--queue-job
                  'size (tired--size-key (expand-file-name "sub" root))))))))
 
+(ert-deftest tired--size-excluded-p-matches-the-absolute-name ()
+  "An exclude rule matches the absolute name with and without a slash.
+A rule that ends in a slash covers a whole subtree, and a rule that
+ends in a string-end anchor covers one directory alone."
+  (let ((tired-directory-size-exclude '("/mnt/store/" "/tmp/one\\'")))
+    (should (tired--size-excluded-p "/mnt/store"))
+    (should (tired--size-excluded-p "/mnt/store/"))
+    (should (tired--size-excluded-p "/mnt/store/deep/leaf"))
+    (should (tired--size-excluded-p "/tmp/one"))
+    (should-not (tired--size-excluded-p "/tmp/one/deep"))
+    (should-not (tired--size-excluded-p "/mnt/other"))
+    (should-not (tired--size-excluded-p nil))))
+
+(ert-deftest tired-size-cell-skips-an-excluded-directory ()
+  "An excluded directory shows no total, takes no walk and adds no byte.
+The walk of a parent directory leaves the whole subtree out of its
+sum, so a mounted directory costs nothing even from above."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-exclude
+           (list (concat (regexp-quote root) "sub/"))))
+      (tired root)
+      (tired-tests--flush-sizes)
+      (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))
+      (should-not (tired--directory-total (expand-file-name "sub" root)))
+      (should-not (tired--queue-job
+                   'size (tired--size-key (expand-file-name "sub" root))))
+      (tired--size-enqueue (tired--size-key root) root)
+      (tired-tests--flush-sizes)
+      ;; alpha.txt, beta.txt and .hidden alone, because the walk of the
+      ;; root pushes no frame for the excluded subtree.
+      (should (equal 44 (tired--directory-total root))))))
+
+(ert-deftest tired-excluded-directory-counts-as-non-empty ()
+  "An excluded directory keeps the directory face and adds no byte.
+No walk reads it, so the empty-directory mark cannot know its size."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-exclude
+           (list (concat (regexp-quote root) "sub/"))))
+      (tired root)
+      (should-not (tired--directory-empty-p (expand-file-name "sub" root)))
+      (should (eq 'tired-directory-face
+                  (tired-tests--cell-face (tired-tests--entry "sub"))))
+      (should (zerop (tired--entry-size (tired-tests--entry "sub")))))))
+
 (ert-deftest tired-size-cell-sums-a-directory-recursively ()
   "With `tired-directory-size' on, a directory sums its files."
   (tired-tests--with-fixture
