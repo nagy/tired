@@ -656,6 +656,53 @@ The column also sorts.  =elements-asc= and =elements-desc= belong to
 whose count is still pending sorts last in both directions, and the
 listing keeps point on its row when the number arrives.
 
+* Permanent caches
+
+A directory whose content never changes costs a walk and a read that
+it never needs again.  A Nix store path, an IPFS mount point and a
+container image directory all carry their hash in the name, so their
+bytes stay.  List a regexp for such a directory in
+=tired-persistent-directories=:
+
+#+begin_src elisp
+  (setq tired-persistent-directories '("/nix/store/" "/ipfs/"))
+#+end_src
+
+Each regexp matches the absolute directory name, both with and
+without a trailing slash, the way =tired-directory-size-exclude=
+does.  A rule that ends in a slash covers every directory below a
+mount point, and a rule that ends in =\\'= covers one directory alone.
+
+A directory that matches keeps its size total and the element counts
+of its files for the whole Emacs session.  No =tired-size-cache-ttl=
+window, no =tired-elements-cache-ttl= window and no =g= drops them, and
+no idle pass walks the subtree again.  A directory without a cached
+total takes one walk, so the first listing of a root pays one walk of
+every directory that the listing shows.  After that a refresh, a
+redraw and a view change cost no read under the rule.
+
+The rule states that the content never changes.  A total therefore
+outlives an edit inside the subtree, and a directory that does change
+keeps the old number until the user clears the cache.  The two
+permanent tables hold one size entry per directory and one count entry
+per file that a read reached, for the session.  Leave the value at
+=nil= to keep the memory bound of the two cache windows.
+
+A rule also takes the auto-revert watch of its subtree, because no
+change arrives there.  A new child of a watched root, such as a fresh
+store path, reaches the listing through =g= alone.
+
+M-x tired-refresh re-reads a listing, and M-x tired-clear-caches
+empties every cache, the windowed ones and the permanent ones.  The
+command has no key and no menu entry:
+
+#+begin_src elisp
+  (tired-clear-caches)
+#+end_src
+
+A change of =tired-persistent-directories= empties the permanent tables
+at the next refresh, so a rule that left the list stops after one =g=.
+
 * Hidden entries
 
 Set =tired-hidden-regexps= to a list of regexps that remove entries

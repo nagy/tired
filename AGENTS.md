@@ -20,13 +20,14 @@ README before you document a command.
 
 - `tired.el` — entry point: commentary, the five requires, the public
   commands (`tired`, `tired-other-window`, `tired-noselect`,
-  `tired-find-file-mode`, `tired-jump`), the evil hook
+  `tired-find-file-mode`, `tired-jump`, `tired-clear-caches`), the
+  evil hook
 - `tired-core.el` — entries, section framework, display, selection,
-  redraw, watches, `tired-mode`
+  redraw, watches, the size caches, `tired-mode`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Go, Markdown,
   Cargo, SQLite and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the
-  global count cache and the idle queue
+  global count caches and the idle queue
 - `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
   touch, shell, and the in-place name edit
 - `tired-export.el` — the CSV, text and `rclone lsjson` exports and
@@ -263,6 +264,20 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     drops the jobs of a killed buffer from `kill-buffer-hook`, and
     `tired--reload-tables` drops every size walk through
     `tired--queue-drop-where` and `tired--size-walk-job-p`.
+18. Two memo tables answer a directory size.  `tired--size-store`
+    routes a total through `tired--persistent-p`: a path that
+    `tired-persistent-directories` matches lands in
+    `tired--size-cache-permanent`, every other path in
+    `tired--size-cache`.  `tired--directory-total` reads both tables
+    and matches no rule, and `tired--size-enqueue` skips a key that
+    the permanent table holds before the FORCE argument and before the
+    age test, so a refresh walks no persistent directory.
+    `tired-elements-cache-permanent` holds the counts of the same
+    paths, and `tired--elements-entry` reads it first.  Each prune
+    compares the rule value that it filled under, so a changed rule
+    flushes its own permanent table once, and `tired-clear-caches`
+    empties all four.  `tired--sync-watches` drops every path that a
+    rule matches, because no change arrives under it.
 
 ## Conventions
 
@@ -272,8 +287,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   call a dissector from a redraw.  A redraw reads the cache alone.
 - Public commands carry `;;;###autoload` only as entry points (`tired`,
   `tired-other-window`, `tired-noselect`, `tired-find-file-mode`,
-  `tired-jump`).  Keep every cookie in `tired.el`: the autoload of a
-  cookie in `tired-core` would load that library alone, and the section
+  `tired-jump`) and as the cache command `tired-clear-caches`.  Keep
+  every cookie in `tired.el`: the autoload of a cookie in
+  `tired-core` would load that library alone, and the section
   handlers and the file commands would stay unbound.
 - Every function has a docstring, `checkdoc` passes, and byte
   compilation with warnings as errors passes.
@@ -340,6 +356,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired-toggle-subdir`, and the menu bar keeps the two entries, so
   `M-x` and the menu hold the only paths.  A test fails when a listing
   or an evil binding returns.
+- `tired-clear-caches` carries no key, no menu entry and no evil
+  binding: `M-x` alone reaches it, like `tired-undo`.  It empties all
+  four caches, so a wrong `tired-persistent-directories` rule costs one
+  command.  A test in `tired-tests-core` fails when a binding returns.
 - `tired-edit-names`, `tired-commit-edits` and `tired-abort-edits`
   carry no key in `tired-mode-map`, no menu entry and no evil binding:
   `M-x` alone reaches them.  The edit mode binds `C-c C-c` and
@@ -548,6 +568,21 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   path: read `tired--size-skip-p`, or the two options disagree.
   `docs/adr/0019-exclude-a-directory-from-the-size-walk.md` holds the
   reasons.
+- A size reads two tables, so never read `tired--size-cache` alone in
+  a path that answers the column, the empty-directory mark or the
+  mode line sum: a persistent directory keeps its total in
+  `tired--size-cache-permanent` and would print an empty cell.
+  `tired--directory-total` reads both and matches no rule, because the
+  match runs once per walk at the write site of `tired--size-store`,
+  and one match in a redraw would cost one `expand-file-name` per row.
+  `docs/adr/0020-keep-a-cache-for-a-persistent-directory.md` holds the
+  reasons.
+- A path that `tired-persistent-directories` matches takes no watch,
+  so no event reports a new child there.  A fresh store path reaches
+  the listing of a watched root through `tired-refresh` alone.  The
+  rule states that no change arrives under the path, and a rule that
+  contradicts the disk keeps a stale total until `tired-clear-caches`
+  or a change of the rule value, which each prune reads once.
 - A refresh forces a walk of every directory that it shows.
   `tired--reload-tables` sets `tired--size-forced` to the refresh
   time, and `tired--size-queue` reads the flag once and passes it to

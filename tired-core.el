@@ -215,6 +215,26 @@ option for a mounted network directory that `file-remote-p' does not
 reach."
   :type '(repeat regexp))
 
+(defcustom tired-persistent-directories nil
+  "List of regexps that name directories with a permanent cache.
+A directory that matches keeps its cached size and its cached element
+counts for the whole Emacs session.  No redraw, no refresh and no
+`tired-size-cache-ttl' window drops them, and no idle pass walks the
+subtree again.  Each regexp matches the absolute directory name, both
+with and without a trailing slash, the way
+`tired-directory-size-exclude' does, so a rule that ends in a slash
+covers every directory below a mount point and a rule that ends in a
+string-end anchor covers one directory alone.  Set this option for a
+directory whose content never changes, such as a Nix store or an IPFS
+mount.  A directory without a cached total takes one walk, so the
+first listing of such a root pays one walk of every directory that it
+shows.  A rule takes the auto-revert watch of its subtree as well,
+because no change arrives there: a new child reaches the listing
+through `tired-refresh' alone.  The permanent tables hold one entry
+per directory and per file that a read reached, for the session.
+Leave the value nil to keep the memory bound of the cache windows."
+  :type '(repeat regexp))
+
 (defcustom tired-size-cache-ttl 60
   "Seconds a computed directory size stays valid.
 A total sums a whole subtree, so an edit deep in the tree can change
@@ -777,20 +797,32 @@ has not finished show nothing, so the value stays nil."
    ((tired--size-skip-p (tired-entry-path entry)) nil)
    (t (tired--directory-total (tired-entry-path entry)))))
 
-(defun tired--size-excluded-p (directory)
-  "Return non-nil when DIRECTORY matches `tired-directory-size-exclude'.
+(defun tired--directory-matches-p (directory regexps)
+  "Return non-nil when DIRECTORY matches one regexp of REGEXPS.
 Match the absolute name both with and without a trailing slash, so a
 rule that ends in a slash covers every directory below a mount point
 and a rule that ends in a string-end anchor covers one directory
 alone."
-  (declare (side-effect-free t))
-  (when (stringp directory)
+  (declare (pure t) (side-effect-free t))
+  (when (and (stringp directory) regexps)
     (let* ((name (directory-file-name (expand-file-name directory)))
            (slashed (file-name-as-directory name)))
       (seq-some (lambda (regexp)
                   (or (string-match-p regexp name)
                       (string-match-p regexp slashed)))
-                tired-directory-size-exclude))))
+                regexps))))
+
+(defun tired--persistent-p (directory)
+  "Return non-nil when DIRECTORY keeps its cache for the session.
+`tired-persistent-directories' holds the rules."
+  (declare (side-effect-free t))
+  (tired--directory-matches-p directory tired-persistent-directories))
+
+(defun tired--size-excluded-p (directory)
+  "Return non-nil when DIRECTORY matches `tired-directory-size-exclude'.
+The rules match the way `tired--directory-matches-p' matches them."
+  (declare (side-effect-free t))
+  (tired--directory-matches-p directory tired-directory-size-exclude))
 
 (defun tired--size-skip-p (directory)
   "Return non-nil when DIRECTORY takes no recursive size walk.
@@ -1511,6 +1543,18 @@ one.  A value holds `(TOTAL . STAMP)', where STAMP is the
 `tired-size-cache-ttl' bounds the age of a total and
 `tired--size-cache-prune' drops the totals that expire.")
 
+(defvar tired--size-cache-permanent (make-hash-table :test #'equal)
+  "Memo table for the totals of `tired-persistent-directories'.
+A walk of a directory that matches one of those rules stores its
+total here instead of in `tired--size-cache', under the same
+`(TOTAL . STAMP)' value.  No age drops a value: it lasts until
+`tired-clear-caches', a change of the rules or Emacs exits.")
+
+(defvar tired--size-cache-rules nil
+  "Value of `tired-persistent-directories' that the table holds.
+`tired--size-cache-prune' compares it, so a change of the rules
+empties `tired--size-cache-permanent' once.")
+
 (defvar tired--size-always nil
   "When non-nil, queue a directory size walk with no window.
 Batch Emacs shows no window, so the test suite binds this to t.")
@@ -1558,13 +1602,21 @@ round trip per path component."
        (<= (- (float-time) (cdr value)) tired-size-cache-ttl)))
 
 (defun tired--size-cache-clear ()
-  "Drop every cached directory size."
-  (clrhash tired--size-cache))
+  "Drop every cached directory size.
+Empty `tired--size-cache-permanent' as well, so a directory under a
+rule walks its subtree again."
+  (clrhash tired--size-cache)
+  (clrhash tired--size-cache-permanent))
 
 (defun tired--size-cache-prune ()
   "Drop every cached total that `tired-size-cache-ttl' expired.
 Call it on refresh, so the table holds no more than the directories
-that one cache window can reach."
+that one cache window can reach.  A change of
+`tired-persistent-directories' empties `tired--size-cache-permanent'
+as well, so a rule that left the list stops after one refresh."
+  (unless (equal tired--size-cache-rules tired-persistent-directories)
+    (setq tired--size-cache-rules (copy-sequence tired-persistent-directories))
+    (clrhash tired--size-cache-permanent))
   (let (stale)
     (maphash (lambda (key value)
                (unless (tired--size-cache-valid-p value)
@@ -1581,9 +1633,13 @@ buffer in a window."
       (and (get-buffer-window-list (current-buffer) nil t) t)))
 
 (defun tired--size-store (key total walk)
-  "Store TOTAL for KEY under the start stamp of WALK."
+  "Store TOTAL for KEY under the start stamp of WALK.
+A KEY that matches `tired-persistent-directories' lands in
+`tired--size-cache-permanent', so no window drops it."
   (puthash key (cons total (or (tired--size-walk-stamp walk) (float-time)))
-           tired--size-cache))
+           (if (tired--persistent-p key)
+               tired--size-cache-permanent
+             tired--size-cache)))
 
 (defun tired--size-walk-scan (walk)
   "Read the children of the head frame of WALK.
@@ -1688,14 +1744,17 @@ costs one pass and no second walk inside the cache window."
 
 (defun tired--size-enqueue (key directory &optional force)
   "Queue an idle walk of DIRECTORY under the cache key KEY.
-A young total, a remote directory, an excluded directory and a
-queued walk cost no walk.
+A kept total, a young total, a remote directory, an excluded
+directory and a queued walk cost no walk.  A kept total is one that
+`tired--size-cache-permanent' holds, so a refresh walks no directory
+under `tired-persistent-directories'.
 FORCE recomputes a young total, because a refresh asked for the
 size that the disk holds now.  FORCE also drops a queued walk that
 started before FORCE, because that walk can still store a scan that
 predates the change.  A walk that started after FORCE stays, so one
 refresh never restarts itself."
-  (when (and (not (tired--size-skip-p directory))
+  (when (and (not (gethash key tired--size-cache-permanent))
+             (not (tired--size-skip-p directory))
              (or force
                  (not (tired--size-cache-valid-p
                        (gethash key tired--size-cache))))
@@ -1764,15 +1823,18 @@ queues, because a walk covers the subtree of its row."
 
 (defun tired--directory-total (directory)
   "Return the byte total that the memo table holds for DIRECTORY, or nil.
-The redraw reads this table alone, so no redraw walks a tree.  A
-refresh drops the totals that `tired-size-cache-ttl' expired, and
-`tired--size-queue' queues a new walk for a directory without a
-young total.  A refresh also queues a walk of every directory that
-it shows, so a live total never hides a change that the refresh
-just read from the disk."
-  (let ((hit (gethash (tired--size-key directory) tired--size-cache)))
-    (when (consp hit)
-      (car hit))))
+The redraw reads the two memo tables alone, so no redraw walks a
+tree, and a total that `tired--size-cache-permanent' keeps needs no
+rule match.  A refresh drops the totals that
+`tired-size-cache-ttl' expired, and `tired--size-queue' queues a new
+walk for a directory without a young total.  A refresh also queues a
+walk of every directory that it shows, so a live total never hides a
+change that the refresh just read from the disk."
+  (let ((key (tired--size-key directory)))
+    (let ((hit (or (gethash key tired--size-cache-permanent)
+                   (gethash key tired--size-cache))))
+      (when (consp hit)
+        (car hit)))))
 
 (defvar-local tired--width-window nil
   "Window that decides the name column width, or nil before a redraw.
@@ -2418,10 +2480,13 @@ round trip and some TRAMP methods refuse one."
                                    default-directory))))))
 
 (defun tired--sync-watches ()
-  "Add missing watches and remove watches for vanished paths."
+  "Add missing watches and remove watches for vanished paths.
+A path that matches `tired-persistent-directories' takes no watch,
+because no change arrives under it, so a new child reaches the
+listing through `tired-refresh' alone."
   (if (not (tired--auto-revert-enabled-p))
       (tired--stop-watching)
-    (let ((wanted (tired--watch-paths)))
+    (let ((wanted (seq-remove #'tired--persistent-p (tired--watch-paths))))
       (dolist (directory wanted)
         (unless (assoc directory tired--watches)
           (let* ((buffer (current-buffer))

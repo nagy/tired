@@ -85,7 +85,9 @@ _Avoid_: Monitor, poll
 The global table `tired--size-cache` that holds one recursive directory
 total with the stamp of the walk that computed it.  All Tired buffers
 share it.  `tired-size-cache-ttl` bounds the age of a total, and a
-refresh drops the expired ones.
+refresh drops the expired ones.  `tired--size-cache-permanent` holds
+the totals of the persistent directories instead, and no age drops
+them.
 _Avoid_: Du cache, memo, total table
 
 **Size walk**:
@@ -133,7 +135,17 @@ _Avoid_: Task, work item, worker, background job
 The global table `tired--elements-cache` that holds one element count per
 path with the modification time, the size and the hook value that the
 count came from.  Every Tired buffer shares it.
+`tired--elements-cache-permanent` holds the counts of the persistent
+directories instead, and no age drops them.
 _Avoid_: Memo, count table, tally cache
+
+**Persistent directory**:
+A directory that matches `tired-persistent-directories`, so its cached
+size and the element counts of its files last for the Emacs session.
+`tired--size-cache-permanent` and `tired--elements-cache-permanent`
+hold those entries, no window and no refresh drops them, and no size
+walk reads the subtree again.
+_Avoid_: Frozen directory, immutable directory, permanent cache
 
 **Section fallback**:
 The last dissector, which counts the sections that print at depth zero.

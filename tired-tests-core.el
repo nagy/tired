@@ -1349,6 +1349,111 @@ still covers can hide a file that arrived after its walk."
         (tired-tests--flush-sizes)
         (should (= 2 sub-reads))))))
 
+;;; Persistent directories
+
+(ert-deftest tired--persistent-p-matches-a-subtree-rule ()
+  "A rule that ends in a slash covers every directory below a mount."
+  (let ((tired-persistent-directories '("/nix/store/")))
+    (should (tired--persistent-p "/nix/store"))
+    (should (tired--persistent-p "/nix/store/abc/bin"))
+    (should-not (tired--persistent-p "/home/user/store"))
+    (should-not (tired--persistent-p nil)))
+  (let ((tired-persistent-directories '("/nix/store/abc\\'")))
+    (should (tired--persistent-p "/nix/store/abc"))
+    (should-not (tired--persistent-p "/nix/store/abc/bin")))
+  (let ((tired-persistent-directories nil))
+    (should-not (tired--persistent-p "/nix/store"))))
+
+(ert-deftest tired--size-store-keeps-a-persistent-total ()
+  "A walk under a rule stores into the permanent table."
+  (tired-tests--with-fixture
+    (let ((tired-persistent-directories
+           (list (concat "\\`" (regexp-quote root)))))
+      (tired--size-store (tired--size-key root) 7 (tired--size-walk-create))
+      (should (gethash (tired--size-key root) tired--size-cache-permanent))
+      (should-not (gethash (tired--size-key root) tired--size-cache))
+      (should (equal 7 (tired--directory-total root))))))
+
+(ert-deftest tired--size-cache-prune-keeps-a-persistent-total ()
+  "The permanent table ignores the cache window."
+  (tired-tests--with-fixture
+    (let ((tired-size-cache-ttl 60)
+          (tired-persistent-directories '("/kept/"))
+          (tired--size-cache-rules '("/kept/")))
+      (puthash "/kept/a" (cons 5 (- (float-time) 61))
+               tired--size-cache-permanent)
+      (puthash "/cold" (cons 5 (- (float-time) 61)) tired--size-cache)
+      (tired--size-cache-prune)
+      (should (gethash "/kept/a" tired--size-cache-permanent))
+      (should-not (gethash "/cold" tired--size-cache)))))
+
+(ert-deftest tired--size-cache-prune-flushes-on-a-rule-change ()
+  "A changed rule empties the permanent table once."
+  (tired-tests--with-fixture
+    (let ((tired-persistent-directories '("/nix/store/")))
+      (puthash "/nix/store/a" (cons 5 (float-time))
+               tired--size-cache-permanent)
+      (setq tired--size-cache-rules '("/old/"))
+      (tired--size-cache-prune)
+      (should (= 0 (hash-table-count tired--size-cache-permanent)))
+      (should (equal tired-persistent-directories
+                     tired--size-cache-rules)))))
+
+(ert-deftest tired-refresh-walks-no-persistent-directory ()
+  "A refresh reads no subtree under a rule and keeps its total.
+The rule says that the content never changes, so a total that it
+holds outlives a refresh and a change inside the subtree."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t)
+          (tired-persistent-directories
+           (list (concat "\\`" (regexp-quote root)))))
+      (tired root)
+      (tired-tests--flush-sizes)
+      (should (gethash (tired--size-key (expand-file-name "sub" root))
+                       tired--size-cache-permanent))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root))))
+      (with-temp-file (expand-file-name "sub/inner.txt")
+        (insert (make-string 100 ?y)))
+      (tired-refresh)
+      (should-not (tired-tests--queued-jobs 'size))
+      (tired-tests--flush-sizes)
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root)))))))
+
+(ert-deftest tired-sync-watches-skips-a-persistent-directory ()
+  "A path under a rule takes no watch, because no change arrives."
+  (tired-tests--with-fixture
+    (let ((tired-auto-revert t)
+          (tired-persistent-directories
+           (list (concat "\\`" (regexp-quote root))))
+          (added nil)
+          (counter 0))
+      (cl-letf (((symbol-function 'file-notify-add-watch)
+                 (lambda (directory &rest _)
+                   (push directory added)
+                   (list 'fake (cl-incf counter))))
+                ((symbol-function 'file-notify-rm-watch) #'ignore))
+        (tired root)
+        (should-not added)
+        (should-not tired--watches)))))
+
+(ert-deftest tired-clear-caches-drops-every-table ()
+  "The command empties the windowed and the permanent caches."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--flush-sizes)
+    (puthash "/kept" (cons 1 (float-time)) tired--size-cache-permanent)
+    (puthash "/held" (list nil nil (float-time) 3)
+             tired--elements-cache-permanent)
+    (tired-clear-caches)
+    (should (= 0 (hash-table-count tired--size-cache)))
+    (should (= 0 (hash-table-count tired--size-cache-permanent)))
+    (should (= 0 (hash-table-count tired--elements-cache)))
+    (should (= 0 (hash-table-count tired--elements-cache-permanent)))
+    (should (commandp #'tired-clear-caches))
+    (should-not (where-is-internal #'tired-clear-caches tired-mode-map))))
+
 (ert-deftest tired-size-walk-waits-for-a-window ()
   "A listing that no window shows queues no directory size walk.
 Batch Emacs runs no display, so the gate stub keeps the listing

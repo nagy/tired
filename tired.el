@@ -258,6 +258,21 @@ another window."
     (if other-window (tired-other-window directory) (tired directory))
     (tired--goto-path anchor)))
 
+;;; Cache
+
+;;;###autoload
+(defun tired-clear-caches ()
+  "Drop every cached directory size and element count.
+Both the windowed caches and the permanent caches of
+`tired-persistent-directories' empty, so a path that a wrong rule
+kept reads again.  Every Tired buffer redraws and queues the counts
+that it shows.  The command has no key and no menu entry, so `M-x'
+alone reaches it."
+  (interactive)
+  (tired--size-cache-clear)
+  (tired--queue-drop-where #'tired--size-walk-job-p)
+  (tired-elements-clear-cache))
+
 ;;; Evil integration
 
 ;; The definitions below follow `provide', so `(require 'tired)' inside

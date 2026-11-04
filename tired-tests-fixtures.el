@@ -64,7 +64,10 @@ a symlink, and removes every Tired buffer it opened."
           ;; Emacs shows no window, so a walk needs the override and
           ;; no budget.
           (tired--size-cache (make-hash-table :test #'equal))
+          (tired--size-cache-permanent (make-hash-table :test #'equal))
+          (tired--size-cache-rules nil)
           (tired--size-always t)
+          (tired-persistent-directories nil)
           (tired-directory-size-budget nil)
           ;; The element cache and the idle queue are global too.
           ;; Stub the two schedulers, because batch Emacs runs no idle
@@ -73,6 +76,8 @@ a symlink, and removes every Tired buffer it opened."
           (tired--queue-index (make-hash-table :test #'equal))
           (tired--queue-dirty nil)
           (tired--elements-cache (make-hash-table :test #'equal))
+          (tired--elements-cache-permanent (make-hash-table :test #'equal))
+          (tired--elements-cache-rules nil)
           (tired--elements-always t)
           (tired-elements-budget nil))
      (cl-letf (((symbol-function 'tired--queue-schedule) #'ignore)

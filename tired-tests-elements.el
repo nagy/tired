@@ -421,6 +421,26 @@ The header row counts, and a blank line stays out."
     (tired-tests--flush-elements)
     (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))))
 
+(ert-deftest tired-elements-cache-keeps-a-persistent-count ()
+  "A count under a rule lands in the permanent table and stays."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.json" "[1,2,3]")
+    (let ((tired-persistent-directories
+           (list (concat "\\`" (regexp-quote root)))))
+      (tired root)
+      (tired-tests--flush-elements)
+      (let ((key (tired--elements-key (expand-file-name "a.json" root))))
+        (should (gethash key tired--elements-cache-permanent))
+        (should-not (gethash key tired--elements-cache))
+        ;; Age the entry beyond the window, so the window alone would
+        ;; drop it.
+        (setcar (nthcdr 2 (gethash key tired--elements-cache-permanent))
+                (- (float-time) 3600))
+        (tired--elements-prune)
+        (should (gethash key tired--elements-cache-permanent))
+        (should (= 3 (tired--elements-value
+                      (tired-tests--entry "a.json"))))))))
+
 (ert-deftest tired-elements-clear-cache-has-no-listing-binding ()
   "No key and no menu entry runs `tired-elements-clear-cache'."
   (tired-tests--with-fixture

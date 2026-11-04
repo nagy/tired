@@ -111,6 +111,18 @@ value that produced it, the `float-time' of the last read, and the
 count itself.  Every Tired buffer shares the table, so one file
 costs one read.")
 
+(defvar tired--elements-cache-permanent (make-hash-table :test #'equal)
+  "Table of element counts for `tired-persistent-directories'.
+A count of a path that matches one of those rules lands here instead
+of in `tired--elements-cache', under the same value.  No age drops a
+value: it lasts until `tired-clear-caches', a change of the rules or
+Emacs exits.")
+
+(defvar tired--elements-cache-rules nil
+  "Value of `tired-persistent-directories' that the table holds.
+`tired--elements-prune' compares it, so a change of the rules
+empties `tired--elements-cache-permanent' once.")
+
 (defconst tired--elements-missing (make-symbol "tired--elements-missing")
   "Value that marks a path with no entry in `tired--elements-cache'.")
 
@@ -142,17 +154,27 @@ shows."
         (list (tired-entry-mtime entry)
               (tired-entry-size entry))))))
 
-(defun tired--elements-entry (key stamp)
-  "Return the cache entry for KEY under STAMP, or nil.
+(defun tired--elements-hit (table key stamp)
+  "Return the entry of TABLE for KEY under STAMP, or nil.
 A matching entry takes the current `float-time', because a redraw
-that shows the row counts as a read.  An entry that describes another
-modification time, another size or another hook value does not match."
-  (let ((hit (gethash key tired--elements-cache tired--elements-missing)))
+that shows the row counts as a read.  An entry that describes
+another modification time, another size or another hook value does
+not match."
+  (let ((hit (gethash key table tired--elements-missing)))
     (when (and (not (eq hit tired--elements-missing))
                (equal (nth 0 hit) stamp)
                (equal (nth 1 hit) tired-elements-functions))
       (setcar (nthcdr 2 hit) (float-time))
       hit)))
+
+(defun tired--elements-entry (key stamp)
+  "Return the cache entry for KEY under STAMP, or nil.
+A matching entry takes the current `float-time', because a redraw
+that shows the row counts as a read.
+`tired--elements-cache-permanent' answers first, because a path that
+matches `tired-persistent-directories' keeps its count there."
+  (or (tired--elements-hit tired--elements-cache-permanent key stamp)
+      (tired--elements-hit tired--elements-cache key stamp)))
 
 (defun tired--elements-value (row)
   "Return the element count that ROW shows, or nil.
@@ -262,7 +284,9 @@ with no count."
 (defun tired--elements-finish (job)
   "Store the count of JOB and mark its buffers for a repaint.
 Store a nil count as well, so a file that no dissector understands
-costs no second read."
+costs no second read.  A path that matches
+`tired-persistent-directories' lands in
+`tired--elements-cache-permanent', so no window drops it."
   (let* ((data (tired--job-data job))
          (path (tired--elements-job-path data)))
     (puthash path
@@ -270,12 +294,20 @@ costs no second read."
                    (tired--elements-job-hooks data)
                    (float-time)
                    (tired--elements-job-count data))
-             tired--elements-cache)
+             (if (tired--persistent-p path)
+                 tired--elements-cache-permanent
+               tired--elements-cache))
     (tired--queue-mark-dirty (tired--job-owners job))))
 
 (defun tired--elements-prune ()
   "Drop the cached counts that no buffer read for the cache window.
-Call it on refresh, so the table holds no path that the user left."
+Call it on refresh, so the table holds no path that the user left.
+A change of `tired-persistent-directories' empties
+`tired--elements-cache-permanent' once."
+  (unless (equal tired--elements-cache-rules tired-persistent-directories)
+    (setq tired--elements-cache-rules
+          (copy-sequence tired-persistent-directories))
+    (clrhash tired--elements-cache-permanent))
   (when tired-elements-cache-ttl
     (let (stale)
       (maphash (lambda (key entry)
@@ -290,9 +322,11 @@ Call it on refresh, so the table holds no path that the user left."
   "Drop every cached element count and count the shown rows again.
 The command has no key and no menu entry, so `M-x' alone reaches it.
 It serves a file that changed without a move of its modification
-time or its size."
+time or its size.  It empties `tired--elements-cache-permanent' as
+well, so a path under `tired-persistent-directories' reads again."
   (interactive)
   (clrhash tired--elements-cache)
+  (clrhash tired--elements-cache-permanent)
   (tired--queue-drop-where #'tired--elements-queue-job-p)
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
