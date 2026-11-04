@@ -352,6 +352,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   starts in the shown directory.  Read a buffer-local variable before
   `with-current-buffer`, or the target buffer supplies its own value.
 - AGPL3+ header in every Elisp file.
+- `tired-copy-name` alternates between the name and the abbreviated
+  path through the buffer-local `tired--copy-name-absolute`.  The
+  next call copies the other form, so one key reaches both, and both
+  forms stay on the kill ring.
 
 ## Gotchas
 

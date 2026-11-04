@@ -771,6 +771,39 @@ costs one redraw and not one per character."
     (beginning-of-line)
     (should-error (tired-select-extension) :type 'user-error)))
 
+(ert-deftest tired-copy-name-alternates-between-name-and-path ()
+  "One call copies the names, the next copies the full paths.
+The home directory of a path takes its abbreviation."
+  (tired-tests--with-fixture
+    (let ((directory-abbrev-alist
+           (list (cons (concat "\\`" (regexp-quote root)) "~/"))))
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-copy-name)
+      (should (equal (current-kill 0) "alpha.txt"))
+      (tired-copy-name)
+      (should (equal (current-kill 0) "~/alpha.txt"))
+      (tired-copy-name)
+      (should (equal (current-kill 0) "alpha.txt")))))
+
+(ert-deftest tired-copy-name-keeps-targets-on-one-line-each ()
+  "A selection copies every target in the current form."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (tired-copy-name)
+    (should (equal (current-kill 0) "alpha.txt\nbeta.txt"))
+    (tired-copy-name)
+    (should (equal (current-kill 0)
+                   (concat (abbreviate-file-name
+                            (expand-file-name "alpha.txt" root))
+                           "\n"
+                           (abbreviate-file-name
+                            (expand-file-name "beta.txt" root)))))))
+
 (ert-deftest tired-copy-path-joins-targets ()
   "Copying paths puts one path per line on the kill ring."
   (tired-tests--with-fixture

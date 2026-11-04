@@ -404,6 +404,11 @@ The redraw counts them, so the mode line reads one number.")
 (defvar-local tired--show-hidden nil
   "When non-nil, show the entries that `tired-hidden-regexps' hides.")
 
+(defvar-local tired--copy-name-absolute nil
+  "When non-nil, `tired-copy-name' copies a full path.
+The command flips the value after each call, so one key alternates
+between the name and the path.")
+
 (defvar-local tired--selection nil
   "List of absolute file names in the transient selection.")
 
@@ -3173,17 +3178,30 @@ removes it."
   (message "Single-child collapse %s"
            (if tired-collapse-single-child "on" "off")))
 
+(defun tired--copy-name-value (entry)
+  "Return the name of ENTRY that `tired-copy-name' copies.
+A full path takes the abbreviation of `abbreviate-file-name', so a
+path under the home directory starts with a tilde."
+  (if tired--copy-name-absolute
+      (abbreviate-file-name (tired-entry-path entry))
+    (tired-entry-name entry)))
+
 (defun tired-copy-name ()
-  "Copy the names of the targets to the kill ring."
+  "Copy the names of the targets to the kill ring.
+One call copies the name of each target, and the next call copies
+the full path with the home directory abbreviated.  A third call
+copies the name again."
   (interactive)
   (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
-    (kill-new (mapconcat #'tired-entry-name targets "\n"))
+    (kill-new (mapconcat #'tired--copy-name-value targets "\n"))
     (deactivate-mark)
-    (message "Copied %d name%s"
+    (message "Copied %d %s%s"
              (length targets)
-             (if (= (length targets) 1) "" "s"))))
+             (if tired--copy-name-absolute "path" "name")
+             (if (= (length targets) 1) "" "s"))
+    (setq tired--copy-name-absolute (not tired--copy-name-absolute))))
 
 (defun tired--copy-targets (function description)
   "Copy FUNCTION of each target path to the kill ring.
