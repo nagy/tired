@@ -886,7 +886,7 @@ created file, or puts the earlier modification time back."
   "History list for `tired-do-shell-command'.")
 
 (defcustom tired-confirm-shell-command t
-  "Whether `tired-do-shell-command' asks about a mark that stays.
+  "When non-nil, `tired-do-shell-command' asks about a mark that stays.
 A `*' or `?' that whitespace does not isolate reaches the shell
 untouched, and the user sometimes means a substitution.  The
 command asks one yes-or-no question in that case.  Set this option

@@ -338,7 +338,7 @@ effect on the next redraw."
   :type '(choice (const :tag "No limit" nil) integer))
 
 (defcustom tired-org-narrow-on-open t
-  "When non-nil, narrow an org buffer to the subtree that was opened.
+  "When non-nil, narrow an org buffer to the subtree that RET visits.
 RET on an org heading visits the file and then narrows to that
 heading, so the visited buffer shows one subtree.  The narrow runs
 only in Org mode and only when point sits on a heading.  A section
@@ -610,7 +610,8 @@ state of the job kind."
   data)
 
 (defvar tired--queue-jobs nil
-  "Jobs that wait for a step.  The head runs first.")
+  "Jobs that wait for a step.
+The head job runs first.")
 
 (defvar tired--queue-index (make-hash-table :test #'equal)
   "Hash table that maps a job key to the job that holds it.")
@@ -1016,7 +1017,7 @@ it lists after every row that has one, in both directions."
          (gethash directory tired--tables))))
 
 (defun tired--inserted-p (directory)
-  "Return non-nil when DIRECTORY is inserted in the listing."
+  "Return non-nil when the listing shows the children of DIRECTORY."
   (declare (side-effect-free t))
   (and (hash-table-p tired--inserted)
        (gethash (directory-file-name (expand-file-name directory))
@@ -3311,7 +3312,7 @@ when a file is not expanded."
      (lambda (entry) (tired--collapse-path (tired-entry-path entry))))))
 
 (defun tired--toggle-fold (section)
-  "Fold SECTION, or unfold it when it is folded."
+  "Toggle the fold state of SECTION."
   (if (tired--section-folded-p section)
       (tired--set-folded section nil)
     (tired--set-folded section t))
