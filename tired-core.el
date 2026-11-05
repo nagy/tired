@@ -188,6 +188,21 @@ the filter too."
   :type '(repeat symbol)
   :group 'tired)
 
+(defcustom tired-after-redraw-hook nil
+  "Hook that runs at the end of every redraw of a listing.
+The hook runs with the listing buffer current, after the redraw
+restores point, paints the selection and updates the mode line, so
+a body reads the printed rows and the final point.  A redraw that a
+name edit suspends runs no hook, and a refresh of an unchanged
+listing runs no hook either, because neither pass prints a row.
+A library that paints overlays on the printed rows belongs here,
+because `tabulated-list-print' erases the buffer and the erase
+collapses every overlay that another library put on the text.
+A body never runs a view command and never changes the buffer: the
+redraw calls this hook, so a redraw here loops forever."
+  :type 'hook
+  :group 'tired)
+
 (defcustom tired-collapse-single-child t
   "When non-nil, collapse a single-entry directory chain into one row.
 The chain runs while a directory holds exactly one entry.  It stops
@@ -521,6 +536,14 @@ region and rebuilds the cache when the two differ.")
 the name column width and the printed rows read one list instead of
 two.  The value is nil outside a redraw, so any other caller walks
 the tree itself and never sees a stale row set.")
+
+(defvar-local tired--subtree-starts []
+  "Vector of buffer positions that start a subtree.
+Element `i' holds the start of the line that prints the `i'th
+subtree of the listing, in print order.  `tired--redraw-buffer'
+fills the vector after each print from `tired--rows', so
+`tired-subtree-bounds' costs one search of it.  A name edit empties
+the vector, because a longer name moves every later line start.")
 
 (defvar-local tired--watches nil
   "Hash table of watched directory names to file descriptors.
@@ -1482,6 +1505,67 @@ walks once.  Outside a redraw the function walks the tree itself."
   "Return the entries that are currently shown, in display order.
 Section rows are not entries, so they stay out of the result."
   (seq-filter #'tired-entry-p (mapcar #'car (tired--visible-rows))))
+
+(defun tired--subtree-start-positions (rows)
+  "Return the positions that start a subtree of the printed listing.
+ROWS holds the (ROW . DEPTH) conses that the current print walked,
+and the printed lines follow that order, so one pass pairs every
+depth-zero row with the start of its line."
+  (save-excursion
+    (goto-char (point-min))
+    (let (starts)
+      (dolist (row rows)
+        (when (zerop (cdr row))
+          (push (point) starts))
+        (forward-line 1))
+      (vconcat (nreverse starts)))))
+
+(defun tired--subtree-index (position)
+  "Return the index of the subtree that holds POSITION, or nil.
+`tired--subtree-starts' holds one start per subtree in print order,
+so the answer is the last start at or below POSITION."
+  (declare (side-effect-free t))
+  (let ((starts tired--subtree-starts))
+    (when (> (length starts) 0)
+      (let ((low 0)
+            (high (1- (length starts)))
+            (found nil))
+        (while (<= low high)
+          (let ((middle (/ (+ low high) 2)))
+            (if (<= (aref starts middle) position)
+                (setq found middle
+                      low (1+ middle))
+              (setq high (1- middle)))))
+        found))))
+
+(defun tired-subtree-bounds ()
+  "Return the bounds of the subtree that holds point, or nil.
+A subtree covers one depth-zero row of the listing and every row
+that it prints below itself, so a row deep in an inserted directory
+answers the same bounds as its depth-zero entry.  Point below the
+last row answers the subtree of that row.  A listing without a row
+answers nil, and so does a listing in a name edit, because an edit
+moves the line starts that this function reads."
+  (when-let* ((index (tired--subtree-index (point))))
+    (cons (aref tired--subtree-starts index)
+          (if (< (1+ index) (length tired--subtree-starts))
+              (aref tired--subtree-starts (1+ index))
+            (point-max)))))
+
+(defun tired--forward-subtree (backward)
+  "Move point to the edge of a subtree, the way `forward-thing' asks.
+A forward move reaches the start of the next depth-zero row, and a
+BACKWARD move reaches the start of the subtree above, so
+`forward-thing' steps one subtree at a time the way it steps one
+line at a time for the `line' thing.  A subtree at the edge of the
+listing leaves point alone."
+  (when-let* ((index (tired--subtree-index (point))))
+    (let ((next (if backward (1- index) (1+ index))))
+      (cond
+       ((and (>= next 0) (< next (length tired--subtree-starts)))
+        (goto-char (aref tired--subtree-starts next)))
+       (backward
+        (goto-char (point-min)))))))
 
 (defvar tired--ignored-source nil
   "Value of `completion-ignored-extensions' behind the cached regexp.")
@@ -2956,6 +3040,8 @@ directory rows and the idle queue fills the size cells."
                           "  "
                           tired--header-base))))
           (tabulated-list-print t)
+          (setq tired--subtree-starts
+                (tired--subtree-start-positions tired--rows))
           (tired--paint-row-help)
           (when tired--elements-queue-function
             (funcall tired--elements-queue-function))
@@ -2975,7 +3061,8 @@ directory rows and the idle queue fills the size cells."
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--sync-watches)
-    (tired--update-mode-line)))
+    (tired--update-mode-line)
+    (run-hooks 'tired-after-redraw-hook)))
 
 (defun tired--width-changed-p (window)
   "Return non-nil when WINDOW shows a listing that needs another width.
@@ -4171,8 +4258,14 @@ The directory contents come from `directory-files' and
               (cons '(filename . tired--filename-at-point)
                     thing-at-point-provider-alist))
   (setq-local bounds-of-thing-at-point-provider-alist
-              (cons '(filename . tired--name-bounds)
-                    bounds-of-thing-at-point-provider-alist))
+              (append '((filename . tired--name-bounds)
+                        (tired-subtree . tired-subtree-bounds))
+                      bounds-of-thing-at-point-provider-alist))
+  ;; A depth-zero row with the rows that it prints forms one subtree,
+  ;; so a reader of `thingatpt' steps one subtree at a time.
+  (setq-local forward-thing-provider-alist
+              (cons '(tired-subtree . tired--forward-subtree)
+                    forward-thing-provider-alist))
   (setq-local tired--mode-line-base (default-value 'mode-line-format))
   (setq-local tired--mode-line-cache "")
   (setq-local mode-line-format tired--mode-line-base)

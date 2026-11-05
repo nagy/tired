@@ -573,6 +573,9 @@ the user deleted accepts a new one at the same place."
   (setq buffer-read-only nil)
   (setq tired--name-edit-regions nil)
   (setq tired--name-edit-sticky nil)
+  ;; A longer name moves every later line start, so the subtree
+  ;; positions of the last print no longer name a line.
+  (setq tired--subtree-starts [])
   (let (regions)
     (save-excursion
       (goto-char (point-min))
@@ -661,6 +664,11 @@ alone."
   (unless tired--name-edit
     (user-error "Names are not editable"))
   (tired-name-edit-mode -1)
+  ;; The name edit emptied the subtree positions, and a listing that
+  ;; the disk did not change keeps its printed rows, so force the
+  ;; reprint that fills them again.  The reprint also drops the names
+  ;; that the user typed.
+  (setq tired--listing-stamps nil)
   (tired-refresh)
   (message "Names unchanged"))
 
@@ -740,6 +748,9 @@ that failed.  One undo action holds the whole commit, so
     (if (null changes)
         (progn
           (tired-name-edit-mode -1)
+          ;; The name edit emptied the subtree positions, so force the
+          ;; reprint that fills them again.
+          (setq tired--listing-stamps nil)
           (tired-refresh)
           (message "No name changed"))
       (let ((done 0)

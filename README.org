@@ -1110,6 +1110,50 @@ object per line:
 ]
 #+end_src
 
+* Subtree bounds and focus
+
+The listing prints one depth-zero entry with every row that it shows
+below itself.  =tired-subtree= names that region as a thing, so a
+reader of =thingatpt= reaches it:
+=bounds-of-thing-at-point= answers the start of the depth-zero row and
+the start of the line after its last printed row, =thing-at-point=
+answers the text, and =forward-thing= moves one subtree at a time.
+=tired-subtree-bounds= answers the same region as a function, in the
+buffer of the listing.
+
+=tired-after-redraw-hook= runs at the end of every redraw, after the
+redraw restores point and paints the selection.  A library that puts
+overlays on the printed rows belongs in that hook, because
+=tabulated-list-print= erases the buffer and the erase collapses every
+overlay that another library set on the text.
+
+=forward-thing 'tired-subtree= moves like =forward-thing 'line=:
+forward reaches the start of the next depth-zero row, and backward
+reaches the start of the subtree above.
+
+The focus package takes both pieces:
+
+#+begin_src elisp
+  (add-hook 'tired-mode-hook #'focus-mode)
+  (add-hook 'tired-after-redraw-hook
+            (lambda () (when (bound-and-true-p focus-mode)
+                         (focus-move-focus (current-buffer)))))
+  (add-to-list 'focus-mode-to-thing '(tired-mode . tired-subtree))
+#+end_src
+
+The dim then covers the subtree of point, however deep the row under
+the cursor sits.  Two habits of =focus-mode= need care in a listing.
+=focus-change-thing= offers a fixed list of things, so it cannot name
+=tired-subtree=: set =focus-current-thing= in the buffer instead.
+=focus-read-only-mode= binds =n=, =SPC=, =p=, =i= and =q=, and its key
+map wins over =tired-mode-map=, so that mode shadows
+=tired-next-line=, =tired-select-toggle-next=,
+=tired-previous-line=, =tired-insert-subdir= and =quit-window=.
+
+A name edit answers no bounds, because a typed name moves the line
+starts that the region reads.  The commit and the abort reprint the
+listing, so the region returns.
+
 * Build and test
 
 #+begin_src sh

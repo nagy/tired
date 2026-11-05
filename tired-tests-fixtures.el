@@ -205,6 +205,12 @@ property."
     (unless found
       (error "Entry not listed: %s" name))))
 
+(defun tired-tests--line-start (name)
+  "Return the start of the line whose entry is NAME."
+  (save-excursion
+    (tired-tests--goto name)
+    (point)))
+
 (defun tired-tests--edit-name (name new)
   "Replace the editable name NAME with NEW in the current listing.
 The listing must hold the name edit mode, so the change reaches the

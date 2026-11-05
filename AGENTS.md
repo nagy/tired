@@ -329,6 +329,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     from there, so a store path costs no second `directory-files`
     call.  A prune drops a count together with the total beside it,
     and a total that the permanent table holds keeps its count.
+19. `tired--redraw-buffer` records the start of every depth-zero row
+    in `tired--subtree-starts`, a vector of buffer positions, in the
+    pass that prints the rows, so `tired-subtree-bounds` costs one
+    search of that vector and no line read.  `tired-mode` registers the
+    symbol `tired-subtree` in
+    `bounds-of-thing-at-point-provider-alist` and in
+    `forward-thing-provider-alist`, so a reader of `thingatpt` and the
+    focus package reach one subtree with no Tired-specific API.
+    `tired-after-redraw-hook` runs last in `tired--redraw-buffer`,
+    after the point restore, because `tabulated-list-print` erases the
+    buffer and the erase collapses every overlay that another library
+    set on the text.
 
 ## Conventions
 
@@ -472,6 +484,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   the listing directory as `default-directory`, so a later `C-x C-w`
   starts in the shown directory.  Read a buffer-local variable before
   `with-current-buffer`, or the target buffer supplies its own value.
+- A library that paints overlays on the printed rows uses
+  `tired-after-redraw-hook` and no call from `tired-core`: the core
+  names no focus symbol, and a user without that package pays one
+  empty hook per redraw.  A body of the hook never runs a view
+  command, because the redraw calls the hook and a redraw here loops
+  forever.
 - AGPL3+ header in every Elisp file.
 - `tired-copy-name` alternates between the name and the abbreviated
   path through the buffer-local `tired--copy-name-absolute`.  The
@@ -479,6 +497,24 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   forms stay on the kill ring.
 
 ## Gotchas
+
+- `tabulated-list-print` erases the buffer, and the erase collapses
+  every overlay that another library set on the text: the overlay
+  survives as an empty one at the start of the buffer.  A dim that a
+  print never repairs stays gone until the next command, and no
+  command runs before the idle size reprint or an auto-revert.
+  `tired-after-redraw-hook` is the place that sets it again.
+- `tired--subtree-starts` holds buffer positions, so a typed name moves
+  every later start.  `tired--start-name-edit` empties the vector, and
+  a name edit answers no bounds until the next print.  The abort and a
+  commit that changes no name force that print through
+  `tired--listing-stamps`, because a refresh of an unchanged listing
+  prints nothing.  Do not drop that force: the typed names would stay
+  on screen and the bounds would stay nil.
+- `forward-thing` passes BACKWARD and takes the smallest non-zero move
+  of the providers for one symbol, so `tired--forward-subtree` reads
+  that argument and moves to the next depth-zero row, or to the start
+  of the subtree above.  It never reads N.
 
 - A signal from `before-change-functions` clears that buffer-local
   hook, so the hook cannot guard the name edit: the first refused key

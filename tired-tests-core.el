@@ -3128,6 +3128,115 @@ again under the stub."
       (should (equal (buffer-substring (car bounds) (cdr bounds))
                      "defun code-foo")))))
 
+(ert-deftest tired-subtree-bounds-covers-a-nested-row ()
+  "A deep row answers the bounds of its depth-zero entry."
+  (tired-tests--with-fixture
+    (let ((tired-collapse-single-child nil))
+      (tired root)
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-tests--goto "deep")
+      (tired-insert-subdir)
+      (tired-tests--goto "leaf.txt")
+      (should (= 4 (current-indentation)))
+      (should (equal (tired-subtree-bounds)
+                     (cons (tired-tests--line-start "sub")
+                           (tired-tests--line-start ".hidden"))))
+      (should (equal (bounds-of-thing-at-point 'tired-subtree)
+                     (tired-subtree-bounds)))
+      (should (equal (thing-at-point 'tired-subtree t)
+                     (buffer-substring-no-properties
+                      (tired-tests--line-start "sub")
+                      (tired-tests--line-start ".hidden")))))))
+
+(ert-deftest tired-subtree-bounds-covers-a-section-row ()
+  "A section row answers the bounds of the file that holds it."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "solo") t)
+    (tired-tests--write "solo/notes.org" "* one\n** two\n")
+    (tired (expand-file-name "solo" root))
+    (tired-tests--goto "notes.org")
+    (tired-toggle-subdir)
+    (tired-tests--goto-section "two")
+    (should (equal (tired-subtree-bounds)
+                   (cons (point-min) (point-max))))))
+
+(ert-deftest tired-subtree-bounds-of-the-line-below-the-last-row ()
+  "Point below the last row answers the subtree of that row."
+  (tired-tests--with-fixture
+    (tired root)
+    (goto-char (point-max))
+    (should (equal (tired-subtree-bounds)
+                   (cons (tired-tests--line-start "beta.txt")
+                         (point-max))))))
+
+(ert-deftest tired-subtree-bounds-of-a-listing-without-a-row ()
+  "An empty listing answers no bounds."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "empty") t)
+    (tired (expand-file-name "empty" root))
+    (should (equal [] tired--subtree-starts))
+    (should-not (tired-subtree-bounds))))
+
+(ert-deftest tired-name-edit-drops-the-subtree-positions ()
+  "A name edit empties the vector that the line starts filled."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (> (length tired--subtree-starts) 0))
+    (tired-edit-names)
+    (should (equal [] tired--subtree-starts))
+    (should-not (tired-subtree-bounds))
+    (tired-abort-edits)
+    (should (> (length tired--subtree-starts) 0))))
+
+(ert-deftest tired-forward-thing-steps-by-subtree ()
+  "`forward-thing' walks from one subtree to the next."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (forward-thing 'tired-subtree 1)
+    (should (equal ".hidden" (tired-entry-name (tired--row-at-point))))
+    (forward-thing 'tired-subtree 1)
+    (should (equal "link" (tired-entry-name (tired--row-at-point))))
+    (forward-thing 'tired-subtree -1)
+    (should (equal ".hidden" (tired-entry-name (tired--row-at-point))))
+    (forward-thing 'tired-subtree -1)
+    (should (equal "sub" (tired-entry-name (tired--row-at-point))))))
+
+(ert-deftest tired-forward-thing-steps-from-a-nested-row ()
+  "A nested row moves to the edge of its subtree."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (tired-insert-subdir)
+    (tired-tests--goto "inner.txt")
+    (forward-thing 'tired-subtree 1)
+    (should (equal ".hidden" (tired-entry-name (tired--row-at-point))))
+    (tired-tests--goto "inner.txt")
+    (forward-thing 'tired-subtree -1)
+    (should (= (point-min) (point)))))
+
+(ert-deftest tired-after-redraw-hook-runs-on-every-print ()
+  "The hook runs once per print, and an unchanged refresh runs none."
+  (tired-tests--with-fixture
+    (let ((calls 0))
+      (let ((tired-after-redraw-hook
+             (list (lambda () (setq calls (1+ calls))))))
+        (tired root)
+        (should (= 1 calls))
+        (tired-sort)
+        (should (= 2 calls))
+        (tired-refresh)
+        (should (= 2 calls))))))
+
+(ert-deftest tired-core-names-no-focus-symbol ()
+  "The core library knows nothing about the focus package."
+  (let ((file (locate-library "tired-core")))
+    (should file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (should-not (search-forward "focus-" nil t)))))
+
 (provide 'tired-tests-core)
 
 ;;; tired-tests-core.el ends here
