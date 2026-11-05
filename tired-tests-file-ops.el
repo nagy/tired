@@ -1077,6 +1077,221 @@ must be a defcustom and not a plain defvar."
       (tired root)
       (should-error (tired-undo) :type 'user-error))))
 
+(ert-deftest tired-redo-without-an-undone-action-errors ()
+  "Redo signals a user error when no undone action waits."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (should-error (tired-redo) :type 'user-error))))
+
+(ert-deftest tired-redo-errors-while-the-hook-owns-the-actions ()
+  "A user with an undo hook takes no redo path."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((tired-undo-push-functions (list #'ignore)))
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should-not tired--undo-actions)
+        (should-error (tired-redo) :type 'user-error)))))
+
+(ert-deftest tired-redo-deletes-the-entry-again ()
+  "Redo moves a restored entry back into the trash.
+One action keeps one trash name, so a cycle grows no entry and
+loses no byte."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (should (= 1 (length (tired-tests--trash-entries))))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should-not (tired-tests--trash-entries))
+      (tired-redo)
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should (= 1 (length (tired-tests--trash-entries))))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should-not (tired-tests--trash-entries)))))
+
+(ert-deftest tired-redo-moves-the-entry-again ()
+  "Redo moves a restored entry to its destination again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((destination (expand-file-name "renamed.txt" root)))
+        (tired-tests--goto "alpha.txt")
+        (tired-move destination)
+        (tired-undo)
+        (should (file-regular-p (expand-file-name "alpha.txt" root)))
+        (tired-redo)
+        (should (file-regular-p destination))
+        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-redo-copies-the-entry-again ()
+  "Redo restores the copy from the trash, bytes and all."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (tired-copy destination)
+        (tired-undo)
+        (should-not (file-exists-p
+                     (expand-file-name "alpha.txt" destination)))
+        (tired-redo)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "abc"))
+        (should-not (tired-tests--trash-entries))))))
+
+(ert-deftest tired-redo-copy-parks-the-replaced-file-again ()
+  "Redo of an overwriting copy takes the old file back out again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (with-temp-file (expand-file-name "alpha.txt" destination)
+          (insert "old"))
+        (tired-tests--goto "alpha.txt")
+        (tired-copy destination)
+        (tired-undo)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "old"))
+        (tired-redo)
+        (should (equal (tired-tests--contents
+                        (expand-file-name "alpha.txt" destination))
+                       "abc"))
+        (should (= 1 (length (tired-tests--trash-entries))))
+        (should (equal (tired-tests--contents
+                        (expand-file-name
+                         (car (tired-tests--trash-entries))
+                         tired-trash-directory))
+                       "old"))))))
+
+(ert-deftest tired-redo-renames-the-entry-again ()
+  "Redo returns the new name after an undo."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-rename "renamed.txt")
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (tired-redo)
+      (should (file-regular-p (expand-file-name "renamed.txt" root)))
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root))))))
+
+(ert-deftest tired-redo-commits-the-name-edits-again ()
+  "Redo of a commit renames every row of the commit."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-edit-names)
+      (tired-tests--edit-name "alpha.txt" "one.txt")
+      (tired-tests--edit-name "beta.txt" "two.txt")
+      (tired-commit-edits)
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (tired-redo)
+      (should (file-regular-p (expand-file-name "one.txt" root)))
+      (should (file-regular-p (expand-file-name "two.txt" root)))
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should-not (file-exists-p (expand-file-name "beta.txt" root))))))
+
+(ert-deftest tired-redo-restores-a-created-directory-with-its-content ()
+  "Redo of a mkdir brings the directory back from the trash."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-mkdir (expand-file-name "new/deep" root))
+      (with-temp-file (expand-file-name "new/deep/keep.txt" root)
+        (insert "kept"))
+      (tired-undo)
+      (should-not (file-exists-p (expand-file-name "new" root)))
+      (tired-redo)
+      (should (file-directory-p (expand-file-name "new/deep" root)))
+      (should (equal (tired-tests--contents
+                      (expand-file-name "new/deep/keep.txt" root))
+                     "kept")))))
+
+(ert-deftest tired-redo-creates-the-empty-file-again ()
+  "Redo of an undo of a touch creates the file again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((path (expand-file-name "new.txt" root)))
+        (tired-touch path)
+        (tired-undo)
+        (should-not (file-exists-p path))
+        (tired-redo)
+        (should (file-regular-p path))
+        (should (= 0 (file-attribute-size (file-attributes path))))))))
+
+(ert-deftest tired-redo-touches-an-existing-file-again ()
+  "Redo of an undone touch moves the modification time forward."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let* ((path (expand-file-name "alpha.txt" root))
+             (past (time-subtract (current-time) (days-to-time 3))))
+        (set-file-times path past)
+        (tired-touch path)
+        (tired-undo)
+        (should (time-equal-p
+                 (file-attribute-modification-time (file-attributes path))
+                 past))
+        (tired-redo)
+        (should (time-less-p
+                 past
+                 (file-attribute-modification-time
+                  (file-attributes path))))))))
+
+(ert-deftest tired-redo-stack-clears-on-a-new-file-command ()
+  "A new action invalidates every undone one."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (tired-undo)
+      (should tired--redo-actions)
+      (tired-tests--goto "beta.txt")
+      (tired-delete)
+      (should-not tired--redo-actions)
+      (should-error (tired-redo) :type 'user-error))))
+
+(ert-deftest tired-redo-prints-the-count ()
+  "Redo prints one line with the number of paths that moved."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (tired-copy destination)
+        (tired-undo)
+        (should (equal (tired-tests--with-messages (tired-redo))
+                       (list (format "Redid copy into %s (2 entries)"
+                                     (abbreviate-file-name
+                                      destination)))))))))
+
+(ert-deftest tired-redo-reaches-the-user-through-m-x-alone ()
+  "No key and no menu entry runs `tired-redo'.
+The command changes paths, so a stray key must not reach it.  `M-x'
+finds it through the autoload in `tired.el'."
+  (tired-tests--with-fixture
+    (tired root)
+    (should-not (where-is-internal #'tired-redo tired-mode-map))
+    (should (commandp #'tired-redo))))
+
 (ert-deftest tired-delete-keeps-no-shell-dependency ()
   "Delete moves the target into the trash without a shell command."
   (tired-tests--with-fixture

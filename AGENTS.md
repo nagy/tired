@@ -28,7 +28,7 @@ README before you document a command.
   Cargo, SQLite and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the
   global count caches and the idle queue
-- `tired-file-ops.el` — copy, move, rename, delete, undo, mkdir,
+- `tired-file-ops.el` — copy, move, rename, delete, undo and redo, mkdir,
   touch, shell, and the in-place name edit
 - `tired-export.el` — the CSV, text and `rclone lsjson` exports and
   their read-only buffers
@@ -213,7 +213,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     that leaves the listing under point keeps its line.
     Otherwise point takes the row below the nearest row that stays
     above point, so a removed block above point does not push it down.
-    Each command pushes one undo function.  `tired-rename` stays outside
+    Each command pushes one undo action through `tired--push-undo`,
+    which takes the description, the undo step and the redo step.
+    `tired-rename` stays outside
     that helper: it reads the row at point alone, so the selection and
     the region stay untouched.
     `tired-copy` and `tired-move` read their destination from another
@@ -459,8 +461,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - File commands never ask a confirmation and never call a shell, except
   `tired-do-shell-command`.  Removal goes through `tired--trash-move`,
   never through `delete-file`, so undo can restore the path.
-- No key, no menu entry and no evil binding runs `tired-undo`.  The
-  command changes paths, so the user reaches it through `M-x` alone.
+- No key, no menu entry and no evil binding runs `tired-undo` or
+  `tired-redo`.  Each command changes paths, so the user reaches it
+  through `M-x` alone.
   The autoload form in `tired.el` keeps that path, because
   `tired-file-ops` carries no cookie.  A test in
   `tired-tests-file-ops` fails when a binding returns.
@@ -944,6 +947,17 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   overwriting copy leaves the replaced copy in the trash.  Never empty
   the trash inside an undo function: it holds the bytes the undo
   restores.
+- An action holds two steps that share one lexical state, and every
+  path parks under one trash name for the whole session through
+  `tired--parking-slot`.  A step that parked a path at a fresh name
+  would leave one dead entry per undo and redo cycle, so keep the slot
+  and let `tired--move-path` decide the move.  `tired--move-path`
+  refuses a move onto an existing path, so a stale redo changes
+  nothing.
+- `tired-redo` signals a user error while `tired-undo-push-functions`
+  holds, because the hook takes the undo step alone and Tired keeps no
+  redo path then.  A new action empties `tired--redo-actions`, so the
+  history keeps one branch.
 - `tired--apply-to-targets` sorts deepest first, and the undo function
   walks its trash list parents first, because a child cannot move back
   before its parent exists.  `tired--restore-path` stays silent when the
@@ -953,8 +967,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   verb, the count, the destination and the first failed path.
   `tired--report-operation` builds it for copy, move, delete and commit,
   and the other commands print their own line.  An undo function returns
-  the number of paths that it put back, and `tired-undo` prints that
-  count.  `tired--undo-restore` counts the restores and stays silent on
+  the number of paths that it put back, and `tired--action-line` builds
+  the undo line and the redo line from that number.
+  `tired--undo-restore` counts the restores and stays silent on
   a failure.
 - Single-child collapse and the size walk skip a remote directory,
   because every read there costs a network round trip.  The size walk
@@ -973,9 +988,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   directories, and `tired--chain-paths` feeds the watched paths from
   the second part.  Drop a chain result when its directory leaves the
   tree, or the watch outlives the row.
-- `tired-tests--with-trash` binds a private trash, an empty undo stack
-  and an empty `tired-undo-push-functions`.  Use it for any test that
-  removes or replaces a path.
+- `tired-tests--with-trash` binds a private trash, an empty undo stack,
+  an empty redo stack and an empty `tired-undo-push-functions`.  Use it
+  for any test that removes or replaces a path.
 - `tired--export-json` follows the `rclone lsjson` object, so a field
   name or a directory size of -1 stays as rclone prints it.  The CSV
   export reports 0 for a directory, because that total needs a walk.

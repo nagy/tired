@@ -145,6 +145,10 @@
 (autoload 'tired-undo "tired-file-ops"
   "Reverse the last Tired file operation." t)
 
+;;;###autoload
+(autoload 'tired-redo "tired-file-ops"
+  "Redo the last Tired file operation that undo reversed." t)
+
 (defun tired--buffer-name (directory)
   "Return the Tired buffer name for DIRECTORY."
   (format "Tired: %s" (abbreviate-file-name directory)))

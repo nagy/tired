@@ -264,6 +264,7 @@ name cell alone."
           (file-name-as-directory (make-temp-file "tired-tests-trash-" t)))
          (tired-undo-push-functions nil)
          (tired--undo-actions nil)
+         (tired--redo-actions nil)
          (tired--trash-counter 0))
      (unwind-protect
          (progn ,@body)

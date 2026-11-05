@@ -42,6 +42,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Edit every name in place, the way =wdired= does, and commit the
   whole listing with =C-c C-c=
 - Delete and replaced targets go to a session trash, so undo restores them
+  and redo removes them again
 - Live name filter, dotfile toggle and regexp-hidden toggle
 - Regexp rules that hide entries, with a mode line count
 - Automatic refresh on directory changes, debounced
@@ -382,8 +383,10 @@ system removes it on reboot.  A copy or a move that replaces a path
 moves the old path there first, so no bytes get lost.  =M-x
 tired-undo= undoes the last operation.  The line names the action and
 the number of paths that moved back.  A reversed delete, copy, move,
-mkdir or touch puts the paths back where they were.  Set the option to
-keep the removed paths elsewhere:
+mkdir or touch puts the paths back where they were.  =M-x tired-redo=
+reverses that undo, and the next =tired-undo= reverses the redo.  A
+new file command drops the redo history, so a redo never overwrites a
+later change.  Set the option to keep the removed paths elsewhere:
 
 #+begin_src elisp
   (setq tired-trash-directory "~/.local/state/tired/trash/")
@@ -392,7 +395,8 @@ keep the removed paths elsewhere:
 A global undo system can take these actions.  Add a function to
 =tired-undo-push-functions=.  It receives a description and a
 function that reverts the action.  While the hook is empty, Tired
-keeps the action on a stack for =tired-undo=.
+keeps the action on a stack for =tired-undo=.  The hook keeps no
+forward step, so =tired-redo= signals a user error while it holds.
 
 =M-x tired-edit-names= makes the names editable in place.  Only the
 name of a row accepts a change: the indentation, the size, date and
