@@ -829,6 +829,7 @@ carries the process id.  A set option wins."
   "Delete of the only row leaves an empty listing and no error."
   (let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
          (default-directory root)
+         (tired-delete-delay nil)
          (tired--size-cache (make-hash-table :test #'equal)))
     (unwind-protect
         (progn
@@ -1456,6 +1457,183 @@ finds it through the autoload in `tired.el'."
       (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
       (should-not (file-exists-p (expand-file-name "beta.txt" root)))
       (should-not (use-region-p)))))
+
+(ert-deftest tired-delete-with-a-nil-delay-deletes-at-once ()
+  "A nil delay keeps the old behaviour: one command, no flag."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (should-not tired-delete-delay)
+      (tired-tests--goto "alpha.txt")
+      (tired-delete)
+      (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+      (should-not tired--flagged-deletion))))
+
+(ert-deftest tired-delete-with-a-zero-delay-deletes-at-once ()
+  "A zero delay deletes at once, so a flag can never wait."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 0))
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+        (should-not tired--flagged-deletion)))))
+
+(ert-deftest tired-delete-delay-keeps-the-files-until-the-countdown-ends ()
+  "A delayed delete flags the row, keeps the file and stores no undo yet."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-delete)
+          (should (tired--flagged-deletion-p
+                   (expand-file-name "alpha.txt" root)))
+          (should (file-regular-p (expand-file-name "alpha.txt" root)))
+          (should-not (tired-tests--trash-entries))
+          (should-not tired--undo-actions)
+          (should (= 1 (length (tired-tests--delete-countdowns
+                                scheduled)))))))))
+
+(ert-deftest tired-delete-delay-adds-a-second-batch ()
+  "A second delete joins the flag set and starts the countdown again."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-delete)
+          (tired-tests--goto "beta.txt")
+          (tired-delete)
+          (should (= 2 (length tired--flagged-deletion)))
+          (should (file-regular-p (expand-file-name "alpha.txt" root)))
+          (should (file-regular-p (expand-file-name "beta.txt" root)))
+          (should (= 2 (length (tired-tests--delete-countdowns
+                                scheduled)))))))))
+
+(ert-deftest tired-delete-flagged-removes-exactly-the-flagged-paths ()
+  "The countdown removes the flagged rows and no other selected row."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-select-toggle)
+          (tired-tests--goto "beta.txt")
+          (tired-select-toggle)
+          (tired-delete)
+          (tired-tests--goto "sub")
+          (tired-select-toggle)
+          (should (equal (tired-tests--target-names) '("sub")))
+          (tired--delete-flagged (current-buffer))
+          (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+          (should-not (file-exists-p (expand-file-name "beta.txt" root)))
+          (should (file-directory-p (expand-file-name "sub" root)))
+          (should (equal (tired-tests--target-names) '("sub")))
+          (should-not tired--flagged-deletion)
+          (should-not tired--delete-timer)
+          (should (= 2 (length (tired-tests--trash-entries)))))))))
+
+(ert-deftest tired-delete-flagged-pushes-one-undo-action ()
+  "One undo action covers the whole countdown, and it restores each path."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-select-toggle)
+          (tired-tests--goto "beta.txt")
+          (tired-select-toggle)
+          (tired-delete)
+          (tired--delete-flagged (current-buffer))
+          (should (= 1 (length tired--undo-actions)))
+          (tired-undo)
+          (should (equal (tired-tests--contents
+                          (expand-file-name "alpha.txt" root))
+                         "abc"))
+          (should (equal (tired-tests--contents
+                          (expand-file-name "beta.txt" root))
+                         (make-string 40 ?x))))))))
+
+(ert-deftest tired-delete-flagged-waits-for-a-minibuffer ()
+  "A countdown that ends inside a prompt waits and retries later."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-delete)
+          (cl-letf (((symbol-function 'active-minibuffer-window)
+                     (lambda () (selected-window))))
+            (tired--delete-flagged (current-buffer)))
+          (should (file-regular-p (expand-file-name "alpha.txt" root)))
+          (should (tired--flagged-deletion-p
+                   (expand-file-name "alpha.txt" root)))
+          (should (= 2 (length (tired-tests--delete-countdowns
+                                scheduled))))
+          (tired--delete-flagged (current-buffer))
+          (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+          (should-not tired--flagged-deletion))))))
+
+(ert-deftest tired-edit-names-cancels-a-delayed-delete ()
+  "An in-place name edit drops the flags and stops the countdown."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-delete)
+          (tired-edit-names)
+          (should-not tired--flagged-deletion)
+          (should-not tired--delete-timer)
+          (should (memq timer cancelled))
+          (should (file-regular-p (expand-file-name "alpha.txt" root)))
+          (tired-abort-edits))))))
+
+(ert-deftest tired-killing-a-buffer-cancels-a-delayed-delete ()
+  "Killing the listing stops the countdown, so no dead buffer deletes."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (tired-tests--goto "alpha.txt")
+          (tired-delete)
+          (kill-buffer (current-buffer))
+          (should (memq timer cancelled))
+          (should (file-regular-p (expand-file-name "alpha.txt" root))))))))
+
+(ert-deftest tired-copy-ignores-a-flagged-row ()
+  "A copy acts on the selection alone and leaves the flag set waiting."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((tired-delete-delay 3)
+            (destination (expand-file-name "out" root)))
+        (tired-tests--with-delete-timers
+          (tired root)
+          (make-directory destination)
+          (tired-tests--goto "alpha.txt")
+          (tired-select-toggle)
+          (tired-tests--goto "beta.txt")
+          (tired-select-toggle)
+          (tired-delete)
+          (tired-tests--goto "sub")
+          (tired-select-toggle)
+          (should (equal (tired-tests--target-names) '("sub")))
+          (tired-copy destination)
+          (should (file-directory-p (expand-file-name "sub" destination)))
+          (should-not (file-exists-p (expand-file-name "alpha.txt"
+                                                       destination)))
+          (should (file-regular-p (expand-file-name "alpha.txt" root)))
+          (should (tired--flagged-deletion-p
+                   (expand-file-name "alpha.txt" root))))))))
 
 (provide 'tired-tests-file-ops)
 

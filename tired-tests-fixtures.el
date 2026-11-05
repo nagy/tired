@@ -69,6 +69,9 @@ a symlink, and removes every Tired buffer it opened."
           (tired--size-always t)
           (tired-persistent-directories nil)
           (tired-directory-size-budget nil)
+          ;; A deletion that waits would outlive the test, so the
+          ;; suite deletes at once unless a test asks for the delay.
+          (tired-delete-delay nil)
           ;; The element cache and the idle queue are global too.
           ;; Stub the two schedulers, because batch Emacs runs no idle
           ;; timer and a test flushes the queue itself.
@@ -273,6 +276,32 @@ name cell alone."
 (defun tired-tests--trash-entries ()
   "Return the names inside `tired-trash-directory'."
   (directory-files tired-trash-directory nil "\\`[^.]"))
+
+(defmacro tired-tests--with-delete-timers (&rest body)
+  "Run BODY with a stubbed deletion scheduler.
+The variable `scheduled' holds one (DELAY FUNCTION ARGS) list per
+`run-at-time' call, and `cancelled' holds every timer that
+`cancel-timer' received.  The stub returns one real timer that never
+fires inside a test, and the macro cancels it after BODY."
+  (declare (indent 0) (debug t))
+  `(let ((timer (run-at-time 100 nil #'ignore))
+         (scheduled nil)
+         (cancelled nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'run-at-time)
+                    (lambda (delay _repeat function &rest arguments)
+                      (push (list delay function arguments) scheduled)
+                      timer))
+                   ((symbol-function 'cancel-timer)
+                    (lambda (value)
+                      (push value cancelled))))
+           ,@body)
+       (cancel-timer timer))))
+
+(defun tired-tests--delete-countdowns (scheduled)
+  "Return the deletion countdowns of SCHEDULED, in call order."
+  (seq-filter (lambda (call) (eq (nth 1 call) #'tired--delete-flagged))
+              (reverse scheduled)))
 
 (defun tired-tests--contents (path)
   "Return the text inside PATH."

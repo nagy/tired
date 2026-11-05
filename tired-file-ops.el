@@ -253,11 +253,14 @@ no longer shows leaves point where the refresh put it."
      ((null row)
       (goto-char (point-min))))))
 
-(defun tired--apply-to-targets (verb place function)
+(defun tired--apply-to-targets (verb place function &optional paths keep-selection)
   "Call FUNCTION with each target path and then clear the selection.
-VERB names the action and PLACE names its destination.  The
-command prints one line that names the count, the destination and
-the first failed path.  Deepest paths run first, so a
+VERB names the action and PLACE names its destination.  PATHS names
+the paths to act on, and a nil value reads the targets of the
+command.  KEEP-SELECTION non-nil leaves the transient selection as it
+stands, because a deletion timer owns its rows and the user never
+selected them.  The command prints one line that names the count, the
+destination and the first failed path.  Deepest paths run first, so a
 selection that holds a directory and its children reaches the
 children first.  A failure does not stop the remaining targets.
 A command that removed the row at point moves point to the row
@@ -271,26 +274,23 @@ name edit holds the buffer text, so the command signals a user
 error there, because its redraw would draw nothing."
   (when tired--name-edit
     (user-error "Commit or abort the name edit first"))
-  (let ((targets (tired--targets)))
-    (unless targets
+  (let ((paths (or paths (mapcar #'tired-entry-path (tired--targets)))))
+    (unless paths
       (user-error "No entry at point"))
-    (setq targets
-          (sort (copy-sequence targets)
-                (lambda (a b)
-                  (> (length (tired-entry-path a))
-                     (length (tired-entry-path b))))))
+    (setq paths
+          (sort (copy-sequence paths)
+                (lambda (a b) (> (length a) (length b)))))
     (let* ((done 0)
            (failures nil)
            (point-row (tired--row-at-point))
-           (doomed (mapcar #'tired-entry-path targets))
-           (anchor (tired--surviving-row-above point-row doomed)))
-      (dolist (entry targets)
-        (let ((path (tired-entry-path entry)))
-          (condition-case err
-              (progn (funcall function path)
-                     (setq done (1+ done)))
-            (error (push (cons path (error-message-string err)) failures)))))
-      (tired-select-none)
+           (anchor (tired--surviving-row-above point-row paths)))
+      (dolist (path paths)
+        (condition-case err
+            (progn (funcall function path)
+                   (setq done (1+ done)))
+          (error (push (cons path (error-message-string err)) failures))))
+      (unless keep-selection
+        (tired--clear-selection))
       (tired-refresh)
       (unless (tired--row-position point-row)
         (tired--goto-row-below anchor))
@@ -754,6 +754,7 @@ alone."
     (user-error "Names are editable already"))
   (unless (tired--visible-entries)
     (user-error "No entry to edit"))
+  (tired--clear-flags)
   (tired-name-edit-mode 1)
   (message "Edit names, C-c C-c renames, C-c C-k drops the changes"))
 
@@ -906,22 +907,50 @@ that failed.  One undo action holds the whole commit, so
           (tired-refresh))
         (tired--report-operation "Renamed" nil done failures)))))
 
-(defun tired-delete ()
-  "Move the targets into `tired-trash-directory'.
-The command asks no question and never calls a shell.  A later
-`tired-undo' moves the paths back."
-  (interactive)
+(defun tired--record-delete (trashed)
+  "Push one undo action for TRASHED, a list of (TRASH . PATH) conses."
+  (when trashed
+    (tired--push-undo
+     (format "delete of %d %s" (length trashed)
+             (if (= (length trashed) 1) "entry" "entries"))
+     (lambda () (tired--undo-delete trashed))
+     (lambda () (tired--redo-delete trashed)))))
+
+(defun tired-delete-flagged (paths)
+  "Delete PATHS, the rows that a delayed `tired-delete' flagged.
+Keep the transient selection, because a flagged row never joined it,
+and let the usual refresh drop the rows that left the disk.  One undo
+action covers the removal and one line reports it."
   (let ((trashed nil))
     (tired--apply-to-targets
      "Deleted" "trash"
      (lambda (path)
-       (push (cons (tired--trash-move path) path) trashed)))
-    (when trashed
-      (tired--push-undo
-       (format "delete of %d %s" (length trashed)
-               (if (= (length trashed) 1) "entry" "entries"))
-       (lambda () (tired--undo-delete trashed))
-       (lambda () (tired--redo-delete trashed))))))
+       (push (cons (tired--trash-move path) path) trashed))
+     (copy-sequence paths)
+     t)
+    (tired--record-delete trashed)))
+
+(defun tired-delete ()
+  "Delete the targets, or flag them for a delayed deletion.
+With `tired-delete-delay' set to a positive number, the command moves
+the targets into the deletion flag set, paints their rows with
+`tired-flagged-deletion' and starts a countdown of that many seconds,
+so a misplaced command costs no bytes.  A selection change starts the
+countdown again, `tired-select-none' drops every flag, and
+`tired-select-toggle' on a flagged row drops that flag alone.  When
+the countdown ends, the command removes exactly the flagged paths,
+and the rest of the selection stays.  A nil or zero delay deletes at
+once, as before.  The command asks no question and never calls a
+shell.  A later `tired-undo' moves the paths back."
+  (interactive)
+  (if (and (numberp tired-delete-delay) (> tired-delete-delay 0))
+      (tired--flag-deletion (mapcar #'tired-entry-path (tired--targets)))
+    (let ((trashed nil))
+      (tired--apply-to-targets
+       "Deleted" "trash"
+       (lambda (path)
+         (push (cons (tired--trash-move path) path) trashed)))
+      (tired--record-delete trashed))))
 
 (defun tired--creation-directory ()
   "Return the directory that creation commands start from.
@@ -1224,7 +1253,7 @@ every other command that acts on targets."
         (shell-command
          (tired--shell-command-line body (mapcar #'tired-entry-path targets)
                                     background sequential)))
-      (tired-select-none)
+      (tired--clear-selection)
       (deactivate-mark)
       (unless background
         (tired-refresh)))))

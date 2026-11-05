@@ -38,6 +38,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Mouse support: one click selects a row, a double click toggles it, the
   middle button opens it in another window
 - Copy, move, delete, mkdir and touch without a confirmation question
+- Delayed deletion: =D= flags the targets with `tired-flagged-deletion'
+  and a countdown removes exactly the flagged rows
 - Rename the row at point, with the old name prefilled
 - Edit every name in place, the way =wdired= does, and commit the
   whole listing with =C-c C-c=
@@ -150,6 +152,13 @@ joins the first, so =%= on a =.el= file and then on a =.org= file
 selects both groups.  A directory stays out.  A selected row takes
 `tired-selected-face', which inherits `dired-marked', so a Dired theme
 colors a selection the way it colors a mark.
+
+A row that waits for a delayed deletion takes
+`tired-flagged-deletion', which inherits `dired-flagged'.  A flagged
+row never joins the selection: =D= moves its targets out of the
+selection, =SPC= on a flagged row drops the flag instead of selecting
+the row, and =t= and =%= skip it.  The two sets stay apart, so a copy
+or a move acts on the selected rows alone.
 
 The active region is the second way to make a selection.  Move with
 =S-<down>= and =S-<up>=, drag with the mouse, or set a mark with
@@ -352,6 +361,26 @@ region stay untouched.
 empty file.  None of these commands asks for a confirmation.  None
 of them calls a shell.  =!= is the one command that runs a shell, and
 the next section covers it.
+
+By default =D= waits.  =tired-delete-delay= holds 3 seconds.  A
+positive value moves the targets out of the selection into the
+deletion flag set, paints each row with `tired-flagged-deletion',
+which inherits `dired-flagged', and starts a countdown of that many
+seconds.  Every change of the selection starts the countdown again
+from zero, so a user who keeps working pushes the removal back.  =u=
+(=tired-select-none=) drops every flag and stops the countdown, and
+=SPC= on a flagged row drops that flag alone.  A region and every
+selection command skip a flagged row, so a copy or a move acts on the
+selected rows alone.  When the countdown ends, Tired removes exactly
+the flagged paths and keeps the rest of the selection.  A countdown
+that ends inside a minibuffer prompt waits for the prompt to close.
+Killing the buffer or starting =tired-edit-names= drops the flags.  A
+flagged path that leaves the disk drops its flag at the next refresh.
+Set the option to nil to delete at once, as before:
+
+#+begin_src elisp
+  (setq tired-delete-delay nil)
+#+end_src
 
 A command that removes the row at point keeps point in place.  A
 collapsed chain row that still shows a path under the removed leaf
@@ -1216,6 +1245,11 @@ absent, and the Nix check supplies =zstd=.
   the size cell, so a directory sorts by the recursive total that the
   column prints.  A directory whose walk has not landed shows no
   total, so the key falls back to the inode size.
+- A delayed deletion keeps a buffer-local flag set apart from the
+  selection.  The countdown starts again on every selection change and
+  removes exactly the flagged paths.
+  `docs/adr/0025-delay-a-deletion-through-a-flag-set.md` holds the
+  reasons.
 - See =docs/adr/= for the recorded decisions.
 
 * License

@@ -35,6 +35,20 @@ The transient set of entry paths that commands act on in a directory
 buffer.  An active region joins it before a command acts.
 _Avoid_: Marks, region, highlight
 
+**Deletion flag**:
+A path that `tired-delete` moved out of the selection while the
+countdown of `tired-delete-delay` runs.  A flagged row takes
+`tired-flagged-deletion`, never joins the selection, and leaves the
+flag set when the user clears it or when the countdown removes the
+path.
+_Avoid_: Mark, pending mark, trash
+
+**Deletion countdown**:
+The buffer-local timer of `tired-delete-delay`.  Every change of the
+selection starts it again from zero, and it removes exactly the
+flagged paths when it ends.
+_Avoid_: Undo timer, grace period
+
 **Extension group**:
 The visible files that share the extension of the row at point.  A
 name without an extension and a dotfile name share one empty key.

@@ -45,6 +45,7 @@
 ;; file commands.
 (declare-function tired-copy "tired-file-ops" (directory))
 (declare-function tired-delete "tired-file-ops" nil)
+(declare-function tired-delete-flagged "tired-file-ops" (paths))
 (declare-function tired-do-shell-command "tired-file-ops" (command))
 (declare-function tired-mkdir "tired-file-ops" (directory))
 (declare-function tired-move "tired-file-ops" (destination))
@@ -304,6 +305,17 @@ targets into that directory at once and asks no question.  When no
 such window exists, the command prompts in the minibuffer."
   :type 'boolean)
 
+(defcustom tired-delete-delay 3
+  "Seconds that `tired-delete' waits before it removes its targets.
+A positive value marks the target rows with `tired-flagged-deletion'
+and starts a countdown of that many seconds.  Any change of the
+selection starts the countdown again, and `tired-select-none' drops
+every mark, so a misplaced command costs no bytes.  When the
+countdown ends, Tired removes exactly the marked paths.  A nil or
+zero value deletes at once, as the command always did."
+  :type '(choice (number :tag "Seconds")
+                 (const :tag "Delete at once" nil)))
+
 (defcustom tired-name-faces nil
   "Alist of rules that colorize entry names.
 Each rule starts with a REGEXP that matches the entry name.  A rule
@@ -403,6 +415,13 @@ The face paints the `w' character alone, as
   "Face for entries in the transient selection.
 The face inherits `dired-marked', so a theme colors a selected row the
 way it colors a marked row in Dired.")
+
+(defface tired-flagged-deletion
+  '((t :inherit dired-flagged :extend t))
+  "Face for entries that wait for a delayed `tired-delete'.
+The face inherits `dired-flagged', so a theme colors a flagged row the
+way it colors a row that Dired flagged for deletion.  An overlay
+paints the whole line, as the selection does.")
 
 (defface tired-section-face
   '((t :inherit default))
@@ -556,6 +575,20 @@ the table keeps one entry per path and a sync costs one lookup.")
 
 (defvar-local tired--filter-timer nil
   "Pending `tired-filter-delay' timer, or nil.")
+
+(defvar-local tired--flagged-deletion nil
+  "List of paths that a delayed `tired-delete' waits to remove.
+The list keeps the order in which the flags joined.  A flagged path
+never joins `tired--selection', because the countdown owns it.")
+
+(defvar-local tired--flagged-deletion-set nil
+  "Hash set of the paths in `tired--flagged-deletion'.")
+
+(defvar-local tired--delete-timer nil
+  "Pending `tired-delete-delay' countdown, or nil.")
+
+(defconst tired--delete-retry-delay 0.2
+  "Seconds that a countdown waits for an active minibuffer prompt.")
 
 (defvar-local tired--collapse-cache nil
   "Hash table mapping a directory to its `tired--chain' result.
@@ -2477,6 +2510,10 @@ an ordinary listing shows no bracket group at all."
                       (length entries)
                       (file-size-human-readable (tired--entries-size entries)))
               parts)))
+    (when tired--flagged-deletion
+      (push (format "%d flagged for deletion"
+                    (length tired--flagged-deletion))
+            parts))
     (when tired--narrowed
       (push "narrowed" parts))
     (when (and (hash-table-p tired--inserted)
@@ -2673,6 +2710,7 @@ nothing when the region holds no entry."
       (when entries
         (tired--set-selection (mapcar #'tired-entry-path entries))
         (tired--apply-selection-overlays)
+        (tired--restart-delete-timer)
         (tired--update-mode-line)))))
 
 (defun tired--display-entry-table ()
@@ -2715,6 +2753,8 @@ the headings of a file reaches that file alone."
                       (or (gethash path table)
                           (tired--entry-for-path path)))))))
             (when (and entry
+                       (not (tired--flagged-deletion-p
+                             (tired-entry-path entry)))
                        (not (gethash (tired-entry-path entry) seen)))
               (puthash (tired-entry-path entry) t seen)
               (push entry entries)))
@@ -2729,10 +2769,11 @@ the headings of a file reaches that file alone."
     (and entry (equal (tired-entry-path entry) path) entry)))
 
 (defun tired--set-selection (paths)
-  "Set the transient selection to PATHS and rebuild its lookup table."
-  (setq tired--selection (copy-sequence paths))
+  "Set the transient selection to PATHS and rebuild its lookup table.
+A flagged path stays out, because a delayed `tired-delete' owns it."
+  (setq tired--selection (seq-remove #'tired--flagged-deletion-p paths))
   (setq tired--selection-set (make-hash-table :test #'equal))
-  (dolist (path paths)
+  (dolist (path tired--selection)
     (puthash path t tired--selection-set)))
 
 (defun tired--set-narrowed (paths)
@@ -2759,6 +2800,152 @@ the headings of a file reaches that file alone."
           (overlay-put overlay 'tired-selection t)
           (overlay-put overlay 'evaporate t)))
       (forward-line 1))))
+
+(defun tired--flagged-deletion-p (path)
+  "Return non-nil when PATH waits for a delayed `tired-delete'."
+  (declare (side-effect-free t))
+  (and (hash-table-p tired--flagged-deletion-set)
+       (gethash path tired--flagged-deletion-set)))
+
+(defun tired--stop-delete-timer ()
+  "Cancel the pending deletion countdown."
+  (when (timerp tired--delete-timer)
+    (cancel-timer tired--delete-timer))
+  (setq tired--delete-timer nil))
+
+(defun tired--restart-delete-timer ()
+  "Start the deletion countdown again, or stop it.
+The countdown runs `tired-delete-delay' seconds and removes the paths
+that `tired-delete' flagged.  A nil or non-positive delay, or an empty
+flag set, leaves no timer."
+  (tired--stop-delete-timer)
+  (when (and (numberp tired-delete-delay)
+             (> tired-delete-delay 0)
+             tired--flagged-deletion)
+    (setq tired--delete-timer
+          (run-at-time tired-delete-delay nil
+                       #'tired--delete-flagged (current-buffer)))))
+
+(defun tired--apply-flag-overlays ()
+  "Highlight every entry that waits for a delayed `tired-delete'."
+  (remove-overlays (point-min) (point-max) 'tired-flagged-deletion t)
+  (when tired--flagged-deletion
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((row (tired--row-at-point)))
+          (when (and (tired-entry-p row)
+                     (tired--flagged-deletion-p (tired-entry-path row)))
+            (let ((overlay (make-overlay
+                            (line-beginning-position)
+                            (min (point-max) (1+ (line-end-position))))))
+              (overlay-put overlay 'face 'tired-flagged-deletion)
+              (overlay-put overlay 'tired-flagged-deletion t)
+              (overlay-put overlay 'evaporate t))))
+        (forward-line 1)))))
+
+(defun tired--set-flags (paths)
+  "Set the deletion flag set to PATHS and repaint the listing.
+Drop a repeated path and keep the order of PATHS."
+  (setq tired--flagged-deletion (delete-dups (copy-sequence paths)))
+  (setq tired--flagged-deletion-set (make-hash-table :test #'equal))
+  (dolist (path tired--flagged-deletion)
+    (puthash path t tired--flagged-deletion-set))
+  (tired--apply-flag-overlays)
+  (tired--update-mode-line))
+
+(defun tired--clear-flags ()
+  "Drop every deletion flag, stop the countdown and unpaint the rows."
+  (tired--stop-delete-timer)
+  (tired--set-flags nil))
+
+(defun tired--flag-deletion (paths)
+  "Flag PATHS for the delayed deletion of `tired-delete'.
+A path that the flag set does not hold yet joins it, and every path
+leaves the selection, because the countdown owns a flagged row.  The
+countdown always starts again from `tired-delete-delay', so each new
+flag pushes the removal back."
+  (unless (and (numberp tired-delete-delay)
+               (> tired-delete-delay 0))
+    (user-error "`tired-delete-delay' turns the delay off"))
+  (let ((flags (copy-sequence tired--flagged-deletion)))
+    (dolist (path paths)
+      (unless (tired--flagged-deletion-p path)
+        (setq flags (append flags (list path)))))
+    (tired--set-flags flags))
+  (tired--set-selection tired--selection)
+  (tired--apply-selection-overlays)
+  (tired--restart-delete-timer)
+  (tired--update-mode-line)
+  (message "Flagged %d %s for deletion, %s %s"
+           (length tired--flagged-deletion)
+           (if (= (length tired--flagged-deletion) 1) "entry" "entries")
+           tired-delete-delay
+           (if (equal tired-delete-delay 1) "second" "seconds")))
+
+(defun tired--unflag-deletion (paths)
+  "Drop PATHS from the deletion flag set.
+Start the countdown again while any flag remains, and stop it when
+the last one leaves."
+  (tired--set-flags
+   (seq-remove (lambda (path) (member path paths))
+               tired--flagged-deletion))
+  (tired--restart-delete-timer)
+  (if tired--flagged-deletion
+      (message "%d %s still flagged for deletion"
+               (length tired--flagged-deletion)
+               (if (= (length tired--flagged-deletion) 1)
+                   "entry" "entries"))
+    (message "Deletion cancelled")))
+
+(defun tired--prune-flags ()
+  "Drop every flagged path that left the disk.
+A path that the listing hides but that the disk still holds keeps its
+flag, because the user flagged it and the countdown still owns it.  A
+countdown of the remaining paths keeps its schedule, and a countdown
+stops when no flag remains."
+  (let ((kept (seq-filter (lambda (path)
+                            (or (file-exists-p path) (file-symlink-p path)))
+                          tired--flagged-deletion)))
+    (unless (= (length kept) (length tired--flagged-deletion))
+      (tired--set-flags kept)
+      (unless kept
+        (tired--stop-delete-timer)))))
+
+(defun tired--clear-selection ()
+  "Clear the transient selection and the active region.
+Keep the deletion flags, because a file command clears the selection
+as bookkeeping and the user never asked to drop a pending deletion.
+Start the countdown again while a flag remains."
+  (tired--set-selection nil)
+  (tired--apply-selection-overlays)
+  (deactivate-mark)
+  (tired--restart-delete-timer)
+  (tired--update-mode-line))
+
+(defun tired--delete-flagged (buffer)
+  "Remove the paths that a delayed `tired-delete' flagged.
+BUFFER holds the countdown that fired.  A countdown that ends while a
+minibuffer prompt is active waits for the prompt to close, so a
+pending deletion never erases files while the user types.  The
+function removes exactly the flagged paths and keeps the rest of the
+selection."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq tired--delete-timer nil)
+      (when tired--flagged-deletion
+        (cond
+         (tired--name-edit
+          (tired--clear-flags)
+          (message "Deletion cancelled: the name edit holds the buffer"))
+         ((active-minibuffer-window)
+          (setq tired--delete-timer
+                (run-at-time tired--delete-retry-delay nil
+                             #'tired--delete-flagged buffer)))
+         (t
+          (let ((paths (copy-sequence tired--flagged-deletion)))
+            (tired--clear-flags)
+            (tired-delete-flagged paths))))))))
 
 (defun tired--goto-path (path)
   "Move point to the line showing PATH.
@@ -3061,6 +3248,7 @@ directory rows and the idle queue fills the size cells."
       (tired--beginning-of-name))
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
+    (tired--apply-flag-overlays)
     (tired--sync-watches)
     (tired--update-mode-line)
     (run-hooks 'tired-after-redraw-hook)))
@@ -3180,6 +3368,7 @@ its printed rows, and the size walks alone run again."
     (tired--reload-tables)
     (tired--set-selection (tired--prune-selection tired--selection))
     (tired--set-narrowed (tired--prune-selection tired--narrowed))
+    (tired--prune-flags)
     (tired--redraw)
     (setq tired--listing-stamps (tired--shown-stamps)))
    (t
@@ -3461,7 +3650,8 @@ it.  Update the overlays and the mode line afterwards."
   (let ((toggled (make-hash-table :test #'equal))
         selection)
     (dolist (path paths)
-      (puthash path t toggled))
+      (unless (tired--flagged-deletion-p path)
+        (puthash path t toggled)))
     (dolist (path tired--selection)
       (unless (gethash path toggled)
         (push path selection)))
@@ -3472,12 +3662,16 @@ it.  Update the overlays and the mode line afterwards."
              toggled)
     (tired--set-selection selection))
   (tired--apply-selection-overlays)
+  (tired--restart-delete-timer)
   (tired--update-mode-line))
 
 (defun tired-select-toggle ()
   "Toggle the entry at point in the selection.
 Signal a user error on a section row, because a section stands for
-its file and a file row already covers that file."
+its file and a file row already covers that file.  On a row that
+waits for a delayed `tired-delete', the command drops the flag
+instead of selecting the row, so the countdown never owns a selected
+path."
   (interactive)
   (let ((entry (tired--row-at-point)))
     (cond
@@ -3485,7 +3679,10 @@ its file and a file row already covers that file."
       (user-error "A section row is not selectable"))
      ((not (tired-entry-p entry))
       (user-error "No entry at point")))
-    (tired--toggle-selection (list (tired-entry-path entry)))))
+    (let ((path (tired-entry-path entry)))
+      (if (tired--flagged-deletion-p path)
+          (tired--unflag-deletion (list path))
+        (tired--toggle-selection (list path))))))
 
 (defun tired-select-toggle-next ()
   "Toggle the selection at point, then move to the next line."
@@ -3523,22 +3720,24 @@ first.  Point stays on the row that started the command."
         (when (and (not (tired--directory-entry-p entry))
                    (equal (or (file-name-extension candidate) "")
                           extension)
+                   (not (tired--flagged-deletion-p candidate))
                    (not (gethash candidate seen)))
           (puthash candidate t seen)
           (push candidate paths))))
     (save-excursion
       (tired--set-selection paths)
       (tired--apply-selection-overlays)
+      (tired--restart-delete-timer)
       (tired--update-mode-line))))
 
 (defun tired-select-none ()
-  "Clear the transient selection and the active region.
-Both sources feed one target list, so a clear drops both."
+  "Clear the transient selection, the active region and every flag.
+Both sources feed one target list, so a clear drops both.  A row
+that waits for a delayed `tired-delete' loses its flag too, and the
+countdown stops when the last row leaves the flag set."
   (interactive)
-  (tired--set-selection nil)
-  (tired--apply-selection-overlays)
-  (deactivate-mark)
-  (tired--update-mode-line))
+  (tired--clear-flags)
+  (tired--clear-selection))
 
 (defun tired-select-invert ()
   "Invert the selection over the visible entries.
@@ -3546,8 +3745,13 @@ Selected entries outside the visible listing drop out."
   (interactive)
   (tired--set-selection
    (mapcar #'tired-entry-path
-           (seq-remove #'tired--selected-p (tired--visible-entries))))
+           (seq-remove (lambda (entry)
+                         (or (tired--selected-p entry)
+                             (tired--flagged-deletion-p
+                              (tired-entry-path entry))))
+                       (tired--visible-entries))))
   (tired--apply-selection-overlays)
+  (tired--restart-delete-timer)
   (tired--update-mode-line))
 
 (defun tired--narrow-ancestors (paths)
@@ -3571,7 +3775,9 @@ An active region joins the selection first."
   (tired--commit-region)
   (unless tired--selection
     (user-error "No selection"))
-  (tired--set-narrowed (tired--narrow-ancestors tired--selection))
+  (tired--set-narrowed
+   (tired--narrow-ancestors
+    (append tired--selection tired--flagged-deletion)))
   (tired--redraw))
 
 (defun tired-widen ()
@@ -3930,8 +4136,7 @@ selection is cleared afterwards."
      (t (user-error "No entry at point")))
     (when (buffer-live-p origin)
       (with-current-buffer origin
-        (tired-select-none)
-        (deactivate-mark)))))
+        (tired--clear-selection)))))
 
 (defun tired-find-file-other-window ()
   "Visit the target entries in another window.
@@ -4251,6 +4456,7 @@ The directory contents come from `directory-files' and
   (setq-local tired--listing-stamps nil)
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (add-hook 'kill-buffer-hook #'tired--queue-forget-current nil t)
+  (add-hook 'kill-buffer-hook #'tired--stop-delete-timer nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
   ;; Emacs draws the sort arrow in the padding, and every Tired column

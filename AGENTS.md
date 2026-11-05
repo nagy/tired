@@ -182,9 +182,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `region-end`, or that newline would name one row too many.
    `tired--apply-to-rows` runs one view function over the targets and
    keeps the selection, because a user selects a directory, inserts it
-   and then adds a child row.  A file command clears both sources.
+   and then adds a child row.  A file command clears both sources
+   through `tired--clear-selection`, which keeps the deletion flags.
    The mode line prints the count and the byte sum of the selection or
-   the region through `tired--entries-size'.
+   the region through `tired--entries-size', and the count of the rows
+   that a delayed deletion waits for.
 8. `tired--sync-watches` watches the root, every inserted directory,
    every expanded file and every skipped chain level.  One hash set of
    wanted paths and one hash table of live watches in `tired--watches`
@@ -206,10 +208,14 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `ESC` reaches the same clear.
    `docs/adr/0021-clear-the-filter-on-a-quit-command.md` holds the
    reasons.
-10. `tired--apply-to-targets` runs one function over the targets, deepest
-    path first, then clears the selection, refreshes, repairs point and
-    reports.  The report is one line: the verb, the count, the
-    destination, and the first failed path when a target failed.  A row
+10. `tired--apply-to-targets` runs one function over the paths of the
+    targets, deepest path first, then clears the selection, refreshes,
+    repairs point and reports.  The optional PATHS argument names the
+    paths to act on, so the deletion countdown hands its own set over,
+    and KEEP-SELECTION leaves the selection as it stands, because a
+    flagged row never joined it.  The report is one line: the verb, the
+    count, the destination, and the first failed path when a target
+    failed.  A row
     that leaves the listing under point keeps its line.
     Otherwise point takes the row below the nearest row that stays
     above point, so a removed block above point does not push it down.
@@ -343,6 +349,22 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     after the point restore, because `tabulated-list-print` erases the
     buffer and the erase collapses every overlay that another library
     set on the text.
+20. `tired-delete` waits through the deletion flag set when
+    `tired-delete-delay` holds a positive number.  The command moves
+    its targets out of the selection into `tired--flagged-deletion`,
+    maps it in `tired--flagged-deletion-set`, paints each row through
+    an overlay with `tired-flagged-deletion`, and starts the countdown
+    in `tired--delete-timer`.  `tired--restart-delete-timer` always
+    starts again from zero, so a selection change pushes the removal
+    back, and it sets no timer while the flag set is empty.
+    `tired--set-selection` drops a flagged path, so the two sets stay
+    disjoint.  `tired--delete-flagged` runs in the buffer that owns the
+    timer, defers while a minibuffer prompt is active, and hands the
+    flagged paths to `tired-delete-flagged`, which removes exactly them
+    through `tired--apply-to-targets` with KEEP-SELECTION set.  A nil or
+    zero delay deletes at once through the same helper.
+    `docs/adr/0025-delay-a-deletion-through-a-flag-set.md` holds the
+    reasons.
 
 ## Conventions
 
@@ -429,6 +451,23 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   this path through a display action: an action that only reuses an
   existing window finds none on a one-window frame, falls through to
   `display-buffer-pop-up-frame` and pops a new frame.
+- The deletion flag follows the selection rule and adds one: a flagged
+  path never joins `tired--selection`, because the countdown owns it.
+  `tired--set-selection` drops a flagged path, so every caller stays
+  disjoint without a test, and `tired--region-entries` skips one.  A
+  selection command that touches a flagged row either drops the flag
+  (`tired-select-toggle`) or skips the row
+  (`tired-select-all`, `tired-select-invert`,
+  `tired-select-extension`).  Do not read a flag as a mark: the flag
+  set is not the selection, and a file command reads the selection,
+  never the flag set.
+- A face for a flagged row writes `:extend t`, the way
+  `tired-selected-face` does, because the overlay covers the line and
+  the newline.
+- Every file command clears the selection through
+  `tired--clear-selection`.  Only the interactive `tired-select-none`
+  clears the deletion flags too, so a copy or a move never cancels a
+  pending deletion.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.  A section
   label follows the same rule through `tired--section-cell`.
@@ -643,6 +682,35 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired--set-narrowed`.  A region over a section row reaches that
   row's file instead, through `tired--display-entry-table`, because a
   collapsed chain hides the file row from its parent table.
+- The deletion countdown runs in the buffer that scheduled it, so
+  `tired--delete-flagged` takes the buffer as its argument and checks
+  `buffer-live-p`.  `kill-buffer-hook` cancels the timer before the
+  buffer dies, and `tired-edit-names` drops the flags, so no timer
+  reaches a buffer that a name edit owns.  Do not read a buffer-local
+  variable first and then switch buffers: the timer supplies the one
+  value that it needs.
+- A countdown that ends while a minibuffer prompt is active retries
+  after `tired--delete-retry-delay` instead of firing.  A copy
+  destination, a rename or a filter prompt must never see its targets
+  vanish under the cursor.
+- `tired--prune-flags` drops a flag by `file-exists-p` and
+  `file-symlink-p`, not by the listing: a hidden, filtered or
+  collapsed row still names a file that the user flagged, and a
+  missing row argument would silently cancel a deletion.  Run it after
+  the selection prune in `tired-refresh`, and stop the timer when no
+  flag remains.
+- A flag set to nil or zero leaves the pending flags alone, because
+  the option governs the next `tired-delete` and the user who set it
+  never asked to drop a row that already waits.
+- `tired-narrow-to-selection` adds `tired--flagged-deletion` to the
+  snapshot, so a narrowed listing keeps a pending row on screen.
+  Narrowing is not a selection change, and a row that vanishes from
+  the window would otherwise still delete.
+- `tired-tests--with-fixture` binds `tired-delete-delay` to nil, so an
+  old delete test stays immediate.  A test of the countdown binds a
+  positive value and `tired-tests--with-delete-timers`, which records
+  `scheduled` and `cancelled` and returns one real timer that never
+  fires.
 - A command body reads `tired--targets`, never `tired--selection-targets`,
   or the region never becomes a selection and `tired-select-none`
   leaves it in place.  A menu `:active` form and an interactive spec

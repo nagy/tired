@@ -3266,6 +3266,190 @@ again under the stub."
       (insert-file-contents file)
       (should-not (search-forward "focus-" nil t)))))
 
+(ert-deftest tired-delete-delay-is-a-user-option ()
+  "The delay is a Custom choice of seconds or immediate deletion."
+  (should (custom-variable-p 'tired-delete-delay))
+  (should (eq (car (get 'tired-delete-delay 'custom-type)) 'choice))
+  (should (equal 3 (default-value 'tired-delete-delay))))
+
+(ert-deftest tired-flagged-deletion-face-inherits-dired-flagged ()
+  "The flag face follows the Dired face, so a theme colors both."
+  (should (eq (face-attribute 'tired-flagged-deletion :inherit)
+              'dired-flagged)))
+
+(ert-deftest tired-delete-flags-the-targets-and-clears-the-selection ()
+  "A delayed delete moves the selected rows into the flag set.
+The countdown starts once and the files stay on the disk."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (tired-delete)
+        (should (equal (mapcar #'file-name-nondirectory
+                               tired--flagged-deletion)
+                       '("alpha.txt" "beta.txt")))
+        (should-not tired--selection)
+        (should (file-exists-p (expand-file-name "alpha.txt" root)))
+        (should (= 1 (length (tired-tests--delete-countdowns scheduled))))
+        (should (equal 3 (car (car (tired-tests--delete-countdowns
+                                    scheduled)))))))))
+
+(ert-deftest tired-delete-flag-paints-the-row-whole-line ()
+  "A flagged row takes the flag face through a line overlay."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should (equal (mapcar (lambda (overlay) (overlay-get overlay 'face))
+                               (seq-filter
+                                (lambda (overlay)
+                                  (overlay-get overlay 'tired-flagged-deletion))
+                                (overlays-in (point-min) (point-max))))
+                       '(tired-flagged-deletion)))))))
+
+(ert-deftest tired-redraw-paints-a-flagged-row ()
+  "A redraw paints the flag again, because the print erases it."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (remove-overlays (point-min) (point-max) 'tired-flagged-deletion t)
+        (tired--redraw)
+        (should (seq-find (lambda (overlay)
+                            (eq (overlay-get overlay 'face)
+                                'tired-flagged-deletion))
+                          (overlays-in (point-min) (point-max))))))))
+
+(ert-deftest tired-mode-line-reports-flagged-rows ()
+  "The mode line names the rows that the countdown waits for."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should (string-match-p "1 flagged for deletion"
+                                (tired--mode-line)))))))
+
+(ert-deftest tired-select-none-clears-every-deletion-flag ()
+  "Clear drops the flags and stops the countdown, so nothing deletes."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-select-none)
+        (should-not tired--flagged-deletion)
+        (should-not tired--delete-timer)
+        (should (memq timer cancelled))
+        (should (file-exists-p (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-select-toggle-unflags-a-flagged-row ()
+  "A toggle on a flagged row drops the flag and selects nothing."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (should-not tired--flagged-deletion)
+        (should-not tired--selection)
+        (should-not tired--delete-timer)
+        (should (file-exists-p (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-select-all-skips-a-flagged-row ()
+  "Select-all never selects a row that the countdown owns."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-select-all)
+        (should (= 4 (length tired--selection)))
+        (should-not (member "alpha.txt"
+                            (tired-tests--target-names)))
+        (should (tired--flagged-deletion-p
+                 (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-select-invert-skips-a-flagged-row ()
+  "Invert leaves a flagged row in the flag set alone."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-select-invert)
+        (should (= 4 (length tired--selection)))
+        (should-not (member "alpha.txt"
+                            (tired-tests--target-names)))
+        (should (tired--flagged-deletion-p
+                 (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-region-skips-a-flagged-row ()
+  "A region stands aside from a row that the countdown owns."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+        (should (equal (tired-tests--target-names) '("beta.txt")))))))
+
+(ert-deftest tired-refresh-drops-a-flagged-path-that-left-the-disk ()
+  "A flag whose path vanishes stops counting and stops the countdown."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (delete-file (expand-file-name "alpha.txt" root))
+        (tired-refresh)
+        (should-not tired--flagged-deletion)
+        (should-not tired--delete-timer)))))
+
+(ert-deftest tired-narrow-keeps-a-flagged-row-visible ()
+  "A narrow snapshot keeps the rows that wait for a deletion."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (tired-narrow-to-selection)
+        (should (member "alpha.txt" (tired-tests--names)))
+        (should (member "beta.txt" (tired-tests--names)))))))
+
+(ert-deftest tired-selection-change-restarts-the-countdown ()
+  "Every selection change starts the countdown again from zero."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should (= 1 (length (tired-tests--delete-countdowns scheduled))))
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (should (= 2 (length (tired-tests--delete-countdowns scheduled))))
+        (should (memq timer cancelled))))))
+
 (provide 'tired-tests-core)
 
 ;;; tired-tests-core.el ends here
