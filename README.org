@@ -172,6 +172,13 @@ filter and applies it at once, =C-g= restores the previous one, and
 an empty input removes the filter.  Set =tired-filter-delay= to 0 to
 redraw on every keystroke.
 
+A kept filter leaves the way a search highlight leaves.  =C-g= in the
+listing clears it, =M-x keyboard-quit= clears it, and in evil =ESC=
+clears it too, because the listing reads the command that runs and not
+the key that reached it.  =tired-filter-quit-commands= names those
+commands, and an empty =C-g= in the listing keeps its usual meaning.
+=F= clears the filter at once.
+
 =w= copies absolute paths, =W= copies paths relative to the shown
 directory, and =P= copies paths relative to the project root.  =P=
 signals an error when the shown directory belongs to no project.

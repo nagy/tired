@@ -272,6 +272,22 @@ range unexpanded around them and `V j j' covers three rows."
       (tired-evil-mode -1)
       (evil-local-mode -1))))
 
+(ert-deftest tired-evil-quit-command-clears-the-filter ()
+  "The evil quit command joins the filter quit list.
+`tired--filter-quit-on-command' reads `this-command', so no key
+binding reaches the clear, and the same list serves the Emacs quit
+commands."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (should (memq 'evil-force-normal-state tired-filter-quit-commands))
+  (tired-tests--with-fixture
+    (tired root)
+    (tired--apply-filter "beta")
+    (let ((this-command 'evil-force-normal-state))
+      (tired--filter-quit-on-command))
+    (should-not tired--filter)
+    (should (= 5 (length (tired-tests--names))))))
+
 (provide 'tired-tests-evil)
 
 ;;; tired-tests-evil.el ends here

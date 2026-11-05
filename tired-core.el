@@ -166,6 +166,16 @@ keystroke."
   :type 'number
   :group 'tired)
 
+(defcustom tired-filter-quit-commands '(keyboard-quit keyboard-escape-quit)
+  "Commands that clear the name filter before they run.
+The listing reads `this-command' in `pre-command-hook', so one list
+covers every key that runs such a command, `M-x' included, and a user
+binding reaches the same clear.  `tired-evil.el' adds
+`evil-force-normal-state' to the list, so the evil quit key clears
+the filter too."
+  :type '(repeat symbol)
+  :group 'tired)
+
 (defcustom tired-collapse-single-child t
   "When non-nil, collapse a single-entry directory chain into one row.
 The chain runs while a directory holds exactly one entry.  It stops
@@ -3312,12 +3322,34 @@ the current buffer when that buffer is not a minibuffer."
                      (tired--apply-filter filter))))
                origin text))))))
 
+(defun tired--filter-quit-on-command ()
+  "Clear the name filter when the next command counts as a quit.
+`tired-mode' runs this from `pre-command-hook'.  The hook reads
+`this-command' and never the pressed key, so `keyboard-quit' from its
+own key, from `M-x' and from a user binding reaches this function
+alike, and `tired-filter-quit-commands' adds the evil quit command.
+A listing without a filter pays one variable read per command and no
+redraw.
+
+The clear keeps its own guard: a signal inside a command hook
+removes that function from the buffer, and the command that follows
+still quits.  A `quit' arriving during the redraw would remove it the
+same way, so the guard catches both."
+  (when (and tired--filter (memq this-command tired-filter-quit-commands))
+    (condition-case nil
+        (tired--apply-filter nil)
+      (quit nil)
+      (error nil))))
+
 (defun tired-filter ()
   "Narrow the listing while typing a filter.
 A change updates the listing after `tired-filter-delay'.
 \[exit-minibuffer] keeps the filter and applies the typed text at
 once, \[keyboard-quit] restores the previous one.  An empty filter
-removes it."
+removes it.  A later quit command clears the kept filter, because
+`tired--filter-quit-on-command' reads `this-command' in
+`pre-command-hook' and `tired-filter-quit-commands' names those
+commands."
   (interactive)
   (unless tired--directory
     (user-error "Not in a Tired buffer"))
@@ -3848,6 +3880,10 @@ The directory contents come from `directory-files' and
   (setq-local tired--mode-line-cache "")
   (setq-local mode-line-format tired--mode-line-base)
   (add-hook 'post-command-hook #'tired--mode-line-maybe-update nil t)
+  ;; A quit command clears the filter before it runs, whatever key
+  ;; reached it.  The hook belongs to the major mode, so a change of
+  ;; major mode drops it together with the mode.
+  (add-hook 'pre-command-hook #'tired--filter-quit-on-command nil t)
   ;; A redraw that no window shows leaves the directory sizes
   ;; unwalked, so the first display of the buffer walks them.
   (add-hook 'window-buffer-change-functions

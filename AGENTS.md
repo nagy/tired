@@ -177,7 +177,16 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    `tired-auto-revert` and `tired-auto-revert-remote`, so a remote
    buffer stays unwatched unless the user opts in.
 9. `tired-filter` reads the minibuffer and schedules a redraw through
-   `tired-filter-delay`; the exit and quit paths flush at once.
+   `tired-filter-delay`; the exit and quit paths flush at once.  A
+   buffer-local `pre-command-hook` entry,
+   `tired--filter-quit-on-command`, clears the kept filter before a
+   quit command runs.  It reads `this-command' and never a key, so one
+   option list, `tired-filter-quit-commands`, covers `C-g`, `M-x
+   keyboard-quit` and every user binding of those commands.
+   `tired-evil.el` appends `evil-force-normal-state`, so the evil
+   `ESC` reaches the same clear.
+   `docs/adr/0021-clear-the-filter-on-a-quit-command.md` holds the
+   reasons.
 10. `tired--apply-to-targets` runs one function over the targets, deepest
     path first, then clears the selection, refreshes, repairs point and
     reports.  The report is one line: the verb, the count, the
@@ -373,6 +382,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   one.
 - `tired-mode` sets no `font-lock-defaults`: the printer built the
   strings, so color belongs in the entry data.
+- `tired--filter-quit-on-command` reads `this-command', so
+  `tired-filter-quit-commands` names commands and never keys.  Do not
+  bind `C-g` for the clear and do not advise `keyboard-quit`: both
+  miss `M-x`, a user binding and the evil quit path, and
+  `tired-evil.el` appends `evil-force-normal-state` to the same list.
 - File commands never ask a confirmation and never call a shell, except
   `tired-do-shell-command`.  Removal goes through `tired--trash-move`,
   never through `delete-file`, so undo can restore the path.
@@ -660,6 +674,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired-tests--flush-sizes`.
 - `minibuffer-contents` returns the current buffer text outside a
   minibuffer, so read it before `with-current-buffer`.
+- A signal inside a command hook removes that function from the hook of
+  the buffer, so `tired--filter-quit-on-command` guards its clear
+  against `quit` and `error`.  The guard covers the redraw alone, and a
+  command that follows still quits.  The hook stays buffer-local and
+  carries no `permanent-local-hook`, because a change of major mode
+  drops the mode and its hook together.
 - `tabulated-list-print` erases the buffer, and the erase strands the
   mark, the window point and the display start on line one.
   `tired--redraw` repairs all three and sets the window point before the

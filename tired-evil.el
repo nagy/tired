@@ -69,6 +69,14 @@
 (require 'evil)
 (require 'tired)
 
+;; `tired--filter-quit-on-command' reads `this-command' and not the
+;; pressed key, so one entry covers the evil quit path: `ESC' runs
+;; `evil-force-normal-state' in every state, and `M-x keyboard-quit'
+;; runs the Emacs command.  The clever part is that `C-g' in the filter
+;; minibuffer needs no entry at all, because `tired-filter' catches the
+;; `quit' signal on its own.
+(add-to-list 'tired-filter-quit-commands 'evil-force-normal-state)
+
 (defvar tired-evil-keys
   '(;; Opening a row.
     ("RET" . tired-find-file)

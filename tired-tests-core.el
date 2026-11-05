@@ -675,6 +675,48 @@ costs one redraw and not one per character."
       (should-not tired--filter-timer)
       (should (equal tired--filter "beta")))))
 
+(ert-deftest tired-filter-quit-command-clears-the-filter ()
+  "The quit hook clears a kept filter before its command runs."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (memq #'tired--filter-quit-on-command pre-command-hook))
+    (tired--apply-filter "beta")
+    (let ((this-command 'keyboard-quit))
+      (tired--filter-quit-on-command))
+    (should-not tired--filter)
+    (should (= 5 (length (tired-tests--names))))))
+
+(ert-deftest tired-filter-quit-command-keeps-the-row-at-point ()
+  "A cleared filter leaves point on the row that it showed."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired--apply-filter "beta")
+    (tired-tests--goto "beta.txt")
+    (let ((this-command 'keyboard-quit))
+      (tired--filter-quit-on-command))
+    (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))))
+
+(ert-deftest tired-filter-quit-command-ignores-another-command ()
+  "A command outside the list keeps the filter."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired--apply-filter "beta")
+    (let ((this-command 'tired-next-line))
+      (tired--filter-quit-on-command))
+    (should (equal tired--filter "beta"))
+    (should (equal (tired-tests--names) '("beta.txt")))))
+
+(ert-deftest tired-filter-quit-command-without-a-filter-does-nothing ()
+  "A listing without a filter takes no redraw."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((called nil))
+      (cl-letf (((symbol-function 'tired--apply-filter)
+                 (lambda (&rest _) (setq called t))))
+        (let ((this-command 'keyboard-quit))
+          (tired--filter-quit-on-command)))
+      (should-not called))))
+
 (ert-deftest tired-selection-drives-targets ()
   "Selecting an entry makes it the target of file commands."
   (tired-tests--with-fixture
