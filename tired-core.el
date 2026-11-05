@@ -499,7 +499,8 @@ The redraw counts them, so the mode line reads one number.")
 (defvar-local tired--copy-name-absolute nil
   "When non-nil, `tired-copy-name' copies a full path.
 The command flips the value after each call, so one key alternates
-between the name and the path.")
+between the name and the path.  A line motion clears the value, so
+a row commands the name first.")
 
 (defvar-local tired--selection nil
   "List of absolute file names in the transient selection.")
@@ -3237,17 +3238,23 @@ that moves point into the name itself."
 (defun tired-next-line (&optional arg)
   "Move point ARG lines down and put it at the start of the name.
 ARG defaults to one line.  The `^' interactive code keeps
-`shift-select-mode' working, as it does in `dired-next-line'."
+`shift-select-mode' working, as it does in `dired-next-line'.
+The motion drops the path form of `tired-copy-name', so one key
+copies a name of the new row first."
   (interactive "^p")
   (forward-line (or arg 1))
+  (setq tired--copy-name-absolute nil)
   (tired--beginning-of-name))
 
 (defun tired-previous-line (&optional arg)
   "Move point ARG lines up and put it at the start of the name.
 ARG defaults to one line.  The `^' interactive code keeps
-`shift-select-mode' working, as it does in `dired-previous-line'."
+`shift-select-mode' working, as it does in `dired-previous-line'.
+The motion drops the path form of `tired-copy-name', so one key
+copies a name of the new row first."
   (interactive "^p")
   (forward-line (- (or arg 1)))
+  (setq tired--copy-name-absolute nil)
   (tired--beginning-of-name))
 
 (defun tired--last-row-position ()

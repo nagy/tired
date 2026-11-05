@@ -494,7 +494,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - `tired-copy-name` alternates between the name and the abbreviated
   path through the buffer-local `tired--copy-name-absolute`.  The
   next call copies the other form, so one key reaches both, and both
-  forms stay on the kill ring.
+  forms stay on the kill ring.  `tired-next-line` and
+  `tired-previous-line` clear the value, so a row copies a name
+  first and a user who moves between rows never lands on the path
+  form by accident.  Do not clear it in `tired--beginning-of-name`:
+  a redraw calls that helper, so a copy would lose its second
+  form.
 
 ## Gotchas
 

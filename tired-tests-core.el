@@ -828,6 +828,35 @@ The home directory of a path takes its abbreviation."
       (tired-copy-name)
       (should (equal (current-kill 0) "alpha.txt")))))
 
+(ert-deftest tired-next-line-drops-the-path-form-of-copy-name ()
+  "A line motion makes the next copy a name again."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (tired-copy-name)
+    (should (equal (current-kill 0) "alpha.txt"))
+    (tired-copy-name)
+    (should (equal (current-kill 0)
+                   (abbreviate-file-name
+                    (expand-file-name "alpha.txt" root))))
+    (tired-next-line)
+    (tired-copy-name)
+    (should (equal (current-kill 0) "beta.txt"))))
+
+(ert-deftest tired-previous-line-drops-the-path-form-of-copy-name ()
+  "A line motion up makes the next copy a name again."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "beta.txt")
+    (tired-copy-name)
+    (tired-copy-name)
+    (should (equal (current-kill 0)
+                   (abbreviate-file-name
+                    (expand-file-name "beta.txt" root))))
+    (tired-previous-line)
+    (tired-copy-name)
+    (should (equal (current-kill 0) "alpha.txt"))))
+
 (ert-deftest tired-copy-name-keeps-targets-on-one-line-each ()
   "A selection copies every target in the current form."
   (tired-tests--with-fixture
