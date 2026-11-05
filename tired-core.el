@@ -121,6 +121,18 @@ a mode sorts by a number that says little.  Add `mode-asc' and
 See `format-time-string' for the available conversions."
   :type 'string)
 
+(defcustom tired-refresh-keeps-an-unchanged-listing t
+  "When non-nil, a refresh keeps the rows that the disk did not change.
+`tired-refresh' compares the modification time and the size of every
+directory that the listing reads and of every expanded file, and a
+listing whose stamps all match reads no directory, sorts no row and
+prints nothing again.  The size walks still run, so a total that the
+disk changed below an unchanged directory lands through the idle
+reprint.  Set the option to nil to re-read and reprint on every
+refresh."
+  :type 'boolean
+  :group 'tired)
+
 (defcustom tired-auto-revert t
   "When non-nil, refresh the listing when a watched directory changes."
   :type 'boolean)
@@ -406,7 +418,10 @@ size in bytes.  MTIME is a float time value.  MODE is the permission
 string as returned by `file-attribute-modes'.  LINK is the link
 target for symbolic links.  BROKEN is non-nil when a symbolic link
 does not resolve.  COLLAPSED is non-nil on a display clone of a
-single-entry chain, whose NAME holds the relative path."
+single-entry chain, whose NAME holds the relative path.  REMOTE is
+non-nil for a row on a network file system, nil for a local row, and
+the symbol `unknown' for a row that no directory read built, so the
+code that needs the answer asks `file-remote-p' once."
   name
   path
   type
@@ -416,7 +431,8 @@ single-entry chain, whose NAME holds the relative path."
   mode
   link
   broken
-  collapsed)
+  collapsed
+  (remote 'unknown))
 
 (cl-defstruct (tired-section (:constructor tired--section-create))
   "One row that a file handler extracted from a file.
@@ -507,7 +523,9 @@ two.  The value is nil outside a redraw, so any other caller walks
 the tree itself and never sees a stale row set.")
 
 (defvar-local tired--watches nil
-  "Alist of watched directory names to file notification descriptors.")
+  "Hash table of watched directory names to file descriptors.
+A listing that collapses chains watches thousands of directories, so
+the table keeps one entry per path and a sync costs one lookup.")
 
 (defvar-local tired--revert-timer nil
   "Pending `tired-auto-revert-delay' timer, or nil.")
@@ -516,10 +534,22 @@ the tree itself and never sees a stale row set.")
   "Pending `tired-filter-delay' timer, or nil.")
 
 (defvar-local tired--collapse-cache nil
-  "Hash table mapping a directory to its single-entry chain result.
-The value is a cons of the leaf entry and the directories that the
-chain walk visited, start first.  The leaf stays nil when the chain
-does not collapse.  Refresh clears the cache.")
+  "Hash table mapping a directory to its `tired--chain' result.
+A refresh keeps the table and bumps `tired--collapse-generation', so
+a chain result survives one refresh until a directory that it walked
+reports another stamp.")
+
+(defvar-local tired--collapse-generation 0
+  "Counter that a refresh bumps when it re-reads the disk.
+A chain result records the generation that computed it, so a redraw
+inside one generation trusts the table and reads nothing, and the
+first redraw after a refresh checks the stamps of the walked
+directories.")
+
+(defvar-local tired--listing-stamps nil
+  "Alist of the paths that the last read covered to their stamp.
+A path holds its `(MTIME . SIZE)' pair.  `tired-refresh' compares it,
+so a listing that the disk did not change reprints nothing.")
 
 (defvar-local tired--expanded nil
   "Hash set of absolute file names whose sections appear in the listing.")
@@ -664,22 +694,46 @@ Return JOB when it joins the queue, and nil when it does not."
   (when (functionp (tired--job-finish job))
     (funcall (tired--job-finish job) job)))
 
+(defun tired--queue-holds-p (job)
+  "Return non-nil when JOB still holds its place in the queue.
+A pass that runs keeps its jobs in a local list, so this asks the
+index, and a job that `tired--queue-drop' removed during the pass
+costs no step."
+  (declare (side-effect-free t))
+  (let ((key (tired--queue-index-key job)))
+    (or (null key)
+        (eq (gethash key tired--queue-index) job))))
+
 (defun tired--queue-run ()
   "Advance the queue until a budget ends or a key waits.
 Each step gives way to the next job, so one large job never holds
-the others.  A pass that leaves work schedules another idle pass."
+the others.  A pass that leaves work schedules another idle pass.
+The pass takes the queue down while it runs, so a finished job drops
+from a short list and a job that joins the queue lands on a clean
+one; a rotation of the whole queue per step would cost one list copy
+per step."
   (setq tired--queue-timer nil)
   (let* ((head (car tired--queue-jobs))
          (budget (and head (tired--job-budget head)))
-         (deadline (and budget (+ (float-time) budget))))
-    (while (and tired--queue-jobs
+         (deadline (and budget (+ (float-time) budget)))
+         (pending tired--queue-jobs)
+         (kept nil))
+    (setq tired--queue-jobs nil)
+    (while (and (or pending kept)
                 (not (input-pending-p))
                 (or (null deadline) (< (float-time) deadline)))
-      (let ((job (car tired--queue-jobs)))
-        (if (eq (funcall (tired--job-step job) job) :done)
-            (tired--queue-finish job)
-          (setq tired--queue-jobs
-                (nconc (cdr tired--queue-jobs) (list job)))))))
+      (if (null pending)
+          ;; Every job took one step, so the unfinished ones take the
+          ;; next round inside this pass.
+          (setq pending (nreverse kept)
+                kept nil)
+        (let ((job (pop pending)))
+          (when (tired--queue-holds-p job)
+            (if (eq (funcall (tired--job-step job) job) :done)
+                (tired--queue-finish job)
+              (push job kept))))))
+    (setq tired--queue-jobs
+          (nconc (nreverse kept) pending (nreverse tired--queue-jobs))))
   (when tired--queue-jobs
     (tired--queue-schedule))
   (when tired--queue-dirty
@@ -717,22 +771,31 @@ next redraw."
 
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
-The table maps file names to `tired-entry' structs."
-  (let ((table (make-hash-table :test #'equal)))
+The table maps file names to `tired-entry' structs.  One
+`file-remote-p' call answers the network state of every row of the
+directory, so a redraw asks no second time per row."
+  (let ((table (make-hash-table :test #'equal))
+        (remote (if (file-remote-p directory) t 'local)))
     (dolist (pair (directory-files-and-attributes directory nil nil t))
       (let ((name (car pair)))
         (unless (member name '("." ".."))
-          (puthash name (tired--make-entry directory name (cdr pair))
+          (puthash name (tired--make-entry directory name (cdr pair) remote)
                    table))))
     table))
 
-(defun tired--make-entry (directory name &optional attributes)
+(defun tired--make-entry (directory name &optional attributes remote)
   "Return a `tired-entry' for NAME inside DIRECTORY.
 ATTRIBUTES defaults to the result of `file-attributes' for the file.
-`tired--read-entries' passes attributes that it already fetched."
+`tired--read-entries' passes attributes that it already fetched.
+REMOTE carries the network state that the caller read for DIRECTORY:
+the symbol `local' for a local directory, any other non-nil value for
+a remote one, and nil to ask `file-remote-p' for this row."
   (let* ((path (expand-file-name name directory))
          (attributes (or attributes (file-attributes path)))
-         (type (file-attribute-type attributes)))
+         (type (file-attribute-type attributes))
+         (remote (cond ((eq remote 'local) nil)
+                       (remote t)
+                       (t (and (file-remote-p path) t)))))
     (tired--entry-create
      :name name
      :path path
@@ -746,7 +809,8 @@ ATTRIBUTES defaults to the result of `file-attributes' for the file.
      :mtime (float-time (file-attribute-modification-time attributes))
      :mode (file-attribute-modes attributes)
      :link (and (stringp type) type)
-     :broken (and (stringp type) (tired--broken-link-p path)))))
+     :broken (and (stringp type) (tired--broken-link-p path))
+     :remote remote)))
 
 (defun tired--broken-link-p (path)
   "Return non-nil when the symbolic link at PATH does not resolve.
@@ -816,7 +880,7 @@ has not finished show nothing, so the value stays nil."
   (cond
    ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
    ((not tired-directory-size) nil)
-   ((tired--size-skip-p (tired-entry-path entry)) nil)
+   ((tired--size-skip-p (tired-entry-path entry) entry) nil)
    (t (tired--directory-total (tired-entry-path entry)))))
 
 (defun tired--directory-matches-p (directory regexps)
@@ -846,14 +910,30 @@ The rules match the way `tired--directory-matches-p' matches them."
   (declare (side-effect-free t))
   (tired--directory-matches-p directory tired-directory-size-exclude))
 
-(defun tired--size-skip-p (directory)
+(defun tired--entry-remote-p (entry)
+  "Return non-nil when ENTRY sits on a network file system.
+A row that `tired--read-entries' built carries the answer that its
+directory read, so a redraw asks nothing.  A row that a caller built
+by hand holds `unknown' and asks `file-remote-p' here."
+  (declare (side-effect-free t))
+  (let ((remote (tired-entry-remote entry)))
+    (if (eq remote 'unknown)
+        (and (file-remote-p (tired-entry-path entry)) t)
+      remote)))
+
+(defun tired--size-skip-p (directory &optional entry)
   "Return non-nil when DIRECTORY takes no recursive size walk.
 A remote directory always skips, because a walk there costs one
 network round trip per file.  `tired-directory-size-exclude' skips a
-local directory that the user names, such as a mount point."
+local directory that the user names, such as a mount point.
+ENTRY, when given, holds the row of DIRECTORY and its network state,
+so no second `file-remote-p' runs for a row that a read already
+answered."
   (declare (side-effect-free t))
   (and (stringp directory)
-       (or (file-remote-p directory)
+       (or (if entry
+               (tired--entry-remote-p entry)
+             (and (file-remote-p directory) t))
            (tired--size-excluded-p directory))))
 
 (defun tired--sort-value (entry)
@@ -980,18 +1060,82 @@ a caller reads the file that the row stands for."
     (seq-remove (lambda (name) (member name '("." "..")))
                 (directory-files directory nil nil t))))
 
+(cl-defstruct (tired--chain (:constructor tired--chain-create))
+  "One cached single-child chain walk.
+LEAF holds the entry that the chain ends at, or nil when the chain
+does not collapse.  VISITED holds the directories that the walk
+read, start first.  STAMPS holds one `(MTIME . SIZE)' stamp per
+visited directory, in the same order.  GENERATION holds the
+`tired--collapse-generation' that produced the result."
+  leaf
+  visited
+  stamps
+  generation)
+
+(defun tired--directory-stamp (directory)
+  "Return the `(MTIME . SIZE)' stamp of DIRECTORY, or nil.
+A new child changes the modification time of a directory and the
+size of its name list, so the pair detects a chain that broke."
+  (declare (side-effect-free t))
+  (let ((attributes (file-attributes directory)))
+    (when attributes
+      (cons (float-time (file-attribute-modification-time attributes))
+            (file-attribute-size attributes)))))
+
+(defun tired--shown-stamps ()
+  "Return the stamp of every path that the listing reads.
+The value is an alist of `(PATH . STAMP)', sorted by path, and it
+covers the shown directory, every inserted directory, every level of
+every collapsed chain and every expanded file."
+  (declare (side-effect-free t))
+  (let (stamps)
+    (when tired--directory
+      (push (cons tired--directory
+                  (tired--directory-stamp tired--directory))
+            stamps))
+    ;; A collapsed chain hides the levels below its directory row, so a
+    ;; new child deep in the chain changes no directory that the tables
+    ;; hold.  Stamp every level that a chain walk read.
+    (when (hash-table-p tired--collapse-cache)
+      (maphash (lambda (_directory chain)
+                 (when (tired--chain-leaf chain)
+                   (dolist (visited (tired--chain-visited chain))
+                     (push (cons visited
+                                 (tired--directory-stamp visited))
+                           stamps))))
+               tired--collapse-cache))
+    (when (hash-table-p tired--tables)
+      (maphash (lambda (directory _table)
+                 (push (cons directory
+                             (tired--directory-stamp directory))
+                       stamps))
+               tired--tables))
+    (when (hash-table-p tired--expanded)
+      (maphash (lambda (path _ignore)
+                 (push (cons path (tired--directory-stamp path)) stamps))
+               tired--expanded))
+    (sort (delete-dups stamps)
+          (lambda (a b) (string< (car a) (car b))))))
+
+(defun tired--listing-changed-p ()
+  "Return non-nil when a path that the listing reads did change.
+A buffer that never read the disk counts as changed."
+  (not (equal (tired--shown-stamps) tired--listing-stamps)))
+
 (defun tired--single-entry-leaf (directory)
-  "Return the leaf of the single-entry chain that starts at DIRECTORY.
-The value is a cons of the leaf entry and the directories that the
-walk visited, start first.  The leaf stays nil when DIRECTORY holds
-zero or several entries, because such a chain does not collapse.
-Every later level shortens the chain: the walk stops at the first
-branch, at a hidden link, at an unreadable directory or at a cycle,
-and the entry it reached becomes the leaf.  A visited-truename set
-stops cycles."
+  "Return the `tired--chain' of the single-entry walk from DIRECTORY.
+The leaf stays nil when DIRECTORY holds zero or several entries,
+because such a chain does not collapse.  Every later level shortens
+the chain: the walk stops at the first branch, at a hidden link, at
+an unreadable directory or at a cycle, and the entry that it reached
+becomes the leaf.  A visited-truename set stops cycles.  One
+attributes read per level records the stamp that a later refresh
+checks."
   (let ((current (directory-file-name (expand-file-name directory)))
+        (remote (if (file-remote-p directory) t 'local))
         (seen (make-hash-table :test #'equal))
         (visited nil)
+        (stamps nil)
         (leaf nil)
         (searching t))
     (while searching
@@ -1000,25 +1144,48 @@ stops cycles."
             (setq searching nil)
           (puthash key t seen)
           (push current visited)
+          (push (tired--directory-stamp current) stamps)
           (let ((names (tired--directory-names current)))
             (if (or (/= 1 (length names))
                     (tired--chain-name-hidden-p (car names)))
                 (setq searching nil)
-              (let ((entry (tired--make-entry current (car names))))
+              (let ((entry (tired--make-entry current (car names) nil remote)))
                 (setq leaf entry)
                 (if (tired-entry-dirp entry)
                     (setq current (tired-entry-path entry))
                   (setq searching nil))))))))
-    (cons leaf (nreverse visited))))
+    (tired--chain-create :leaf leaf
+                         :visited (nreverse visited)
+                         :stamps (nreverse stamps)
+                         :generation tired--collapse-generation)))
+
+(defun tired--chain-current-p (chain)
+  "Return non-nil when CHAIN still describes the disk.
+A result of the current generation counts, because a redraw inside
+one refresh reads no directory.  An older result needs every walked
+directory to keep its stamp."
+  (declare (side-effect-free t))
+  (or (= (tired--chain-generation chain) tired--collapse-generation)
+      (let ((directories (tired--chain-visited chain))
+            (stamps (tired--chain-stamps chain))
+            (live t))
+        (while (and live directories)
+          (unless (equal (tired--directory-stamp (car directories))
+                         (car stamps))
+            (setq live nil))
+          (setq directories (cdr directories)
+                stamps (cdr stamps)))
+        live)))
 
 (defun tired--collapse-result (directory)
-  "Return the cached chain result for DIRECTORY.
-The value is a cons of the leaf entry, or nil, and the visited
-directories."
+  "Return the cached `tired--chain' result for DIRECTORY.
+Recompute a result that a changed directory invalidated, and keep the
+one that still matches, so a refresh costs one attributes read per
+walked level instead of a directory read."
   (let* ((key (directory-file-name (expand-file-name directory)))
          (cached (and (hash-table-p tired--collapse-cache)
-                      (gethash key tired--collapse-cache 'missing))))
-    (if (not (eq cached 'missing))
+                      (gethash key tired--collapse-cache))))
+    (if (and cached (tired--chain-current-p cached))
         cached
       (let ((result (tired--single-entry-leaf key)))
         (when (hash-table-p tired--collapse-cache)
@@ -1027,7 +1194,7 @@ directories."
 
 (defun tired--collapsed-file (directory)
   "Return the cached chain leaf for DIRECTORY, or nil."
-  (car (tired--collapse-result directory)))
+  (tired--chain-leaf (tired--collapse-result directory)))
 
 (defun tired--collapsed-display-entry (directory entry)
   "Return a display clone for ENTRY when it collapses to one entry.
@@ -1038,7 +1205,7 @@ directory never collapses, because the chain walk reads one
 directory per level, and every read costs a network round trip."
   (when (and tired-collapse-single-child
              (tired-entry-dirp entry)
-             (not (file-remote-p (tired-entry-path entry))))
+             (not (tired--entry-remote-p entry)))
     (let ((file (tired--collapsed-file (tired-entry-path entry))))
       (when file
         (let ((clone (copy-tired-entry file)))
@@ -1291,6 +1458,19 @@ children of its directory, when the user expands it."
       (walk tired--directory 0))
     (nreverse rows)))
 
+(defun tired--rows-between (start end)
+  "Return the rows of the printed lines from START to END.
+A line without a row, such as the empty line that the printer leaves
+below the last row, adds nothing."
+  (save-excursion
+    (goto-char start)
+    (let (rows)
+      (while (and (< (point) end) (not (eobp)))
+        (let ((row (tabulated-list-get-id)))
+          (when row (push row rows)))
+        (forward-line 1))
+      (nreverse rows))))
+
 (defun tired--visible-rows ()
   "Return the visible (ROW . DEPTH) conses of the current listing.
 Inside a redraw the value comes from `tired--rows', so the tree
@@ -1384,8 +1564,9 @@ face.  NAME itself stays unchanged."
         (put-text-property start end 'font-lock-face value string)))
     string))
 
-(defun tired--directory-empty-p (directory)
+(defun tired--directory-empty-p (directory &optional entry)
   "Return non-nil when the subtree of DIRECTORY holds no byte.
+ENTRY, when given, holds the row of DIRECTORY and its network state.
 Read the memo table alone, so a redraw never walks a subtree.  A
 directory with no cached total counts as non-empty, and the idle
 walk dims it one pass later.  A remote directory counts as
@@ -1393,7 +1574,7 @@ non-empty, because its walk costs one round trip per file.  A
 directory that `tired-directory-size-exclude' names counts as
 non-empty too, because no walk reads it."
   (and (stringp directory)
-       (not (tired--size-skip-p directory))
+       (not (tired--size-skip-p directory entry))
        (let ((total (tired--directory-total directory)))
          (and total (zerop total)))))
 
@@ -1416,7 +1597,7 @@ symbolic link, special file.  The order otherwise follows
   (let ((name (or name (tired-entry-name entry))))
     (cond
      ((and (tired-entry-dirp entry)
-           (tired--directory-empty-p (tired-entry-path entry)))
+           (tired--directory-empty-p (tired-entry-path entry) entry))
       'tired-ignored-face)
      ((tired-entry-dirp entry) 'tired-directory-face)
      ((and (eq (tired-entry-type entry) 'symlink)
@@ -1502,8 +1683,27 @@ slash.  A symbolic link keeps its target arrow."
             (when (eq (tired-entry-type entry) 'symlink)
               (tired--symlink-suffix entry)))))
 
+(defvar tired--name-cells nil
+  "Hash table of name cells for one redraw, or nil.
+`tired--redraw-buffer' binds it, so one row builds its cell once for
+the width pass, for the print and for the mouse region, instead of
+three times.")
+
+(defconst tired--name-cells-missing (make-symbol "tired--name-cells-missing")
+  "Value that marks a row with no cached name cell.")
+
 (defun tired--name-cell (entry)
   "Return the name column string for ENTRY."
+  (if (hash-table-p tired--name-cells)
+      (let ((cached (gethash entry tired--name-cells
+                             tired--name-cells-missing)))
+        (if (eq cached tired--name-cells-missing)
+            (puthash entry (tired--name-cell-1 entry) tired--name-cells)
+          cached))
+    (tired--name-cell-1 entry)))
+
+(defun tired--name-cell-1 (entry)
+  "Return the name column string for ENTRY, without the redraw cache."
   (let* ((name (tired-entry-name entry))
          (face (tired--name-face entry))
          (spans (tired--entry-name-spans entry name)))
@@ -1573,6 +1773,16 @@ total here instead of in `tired--size-cache', under the same
 `(TOTAL . STAMP)' value.  No age drops a value: it lasts until
 `tired-clear-caches', a change of the rules or Emacs exits.")
 
+(defvar tired--child-cache (make-hash-table :test #'equal)
+  "Global table of directory child counts.
+The directory size walk reads every directory of a subtree with
+`directory-files-and-attributes', so it stores the number of names
+that it saw here, under the key of `tired--size-cache'.  A count
+therefore lasts as long as the total beside it, and no second
+directory read answers the Elements column.  A count of a key that
+`tired--size-cache-permanent' holds outlives a prune, because the
+prune walks the size tables alone.")
+
 (defvar tired--size-cache-rules nil
   "Value of `tired-persistent-directories' that the table holds.
 `tired--size-cache-prune' compares it, so a change of the rules
@@ -1581,6 +1791,11 @@ empties `tired--size-cache-permanent' once.")
 (defvar tired--size-always nil
   "When non-nil, queue a directory size walk with no window.
 Batch Emacs shows no window, so the test suite binds this to t.")
+
+(defvar-local tired--elements-deferred nil
+  "Non-nil when a redraw left the element counts of its rows unqueued.
+The core sets it while no window shows the listing, and the next
+display queues the rows that the window holds.")
 
 (defvar-local tired--size-deferred nil
   "Non-nil when a redraw left a directory size unqueued.
@@ -1629,7 +1844,8 @@ round trip per path component."
 Empty `tired--size-cache-permanent' as well, so a directory under a
 rule walks its subtree again."
   (clrhash tired--size-cache)
-  (clrhash tired--size-cache-permanent))
+  (clrhash tired--size-cache-permanent)
+  (clrhash tired--child-cache))
 
 (defun tired--size-cache-prune ()
   "Drop every cached total that `tired-size-cache-ttl' expired.
@@ -1646,7 +1862,9 @@ as well, so a rule that left the list stops after one refresh."
                  (push key stale)))
              tired--size-cache)
     (dolist (key stale)
-      (remhash key tired--size-cache))))
+      (remhash key tired--size-cache)
+      (unless (gethash key tired--size-cache-permanent)
+        (remhash key tired--child-cache)))))
 
 (defun tired--size-window-p ()
   "Return non-nil when a window shows the listing.
@@ -1654,6 +1872,13 @@ A test binds `tired--size-always', because batch Emacs shows no
 buffer in a window."
   (or tired--size-always
       (and (get-buffer-window-list (current-buffer) nil t) t)))
+
+(defun tired--child-count (directory)
+  "Return the number of names that the size walk saw in DIRECTORY.
+Return nil when no walk of DIRECTORY has landed yet, so the caller
+reads the directory itself."
+  (declare (side-effect-free t))
+  (gethash (tired--size-key directory) tired--child-cache))
 
 (defun tired--size-store (key total walk)
   "Store TOTAL for KEY under the start stamp of WALK.
@@ -1674,10 +1899,12 @@ unreadable directory counts as empty."
          (frame (car stack))
          (directory (plist-get frame :directory))
          (total 0)
+         (names 0)
          children)
     (dolist (pair (ignore-errors
                    (directory-files-and-attributes directory nil nil t)))
       (unless (member (car pair) '("." ".."))
+        (setq names (1+ names))
         (let ((type (file-attribute-type (cdr pair))))
           (cond
            ((eq t type)
@@ -1688,6 +1915,7 @@ unreadable directory counts as empty."
                 (push child children))))
            ((stringp type) nil)
            (t (setq total (+ total (or (file-attribute-size (cdr pair)) 0))))))))
+    (puthash (tired--size-key directory) names tired--child-cache)
     (setcar stack (plist-put (plist-put (plist-put frame :total total)
                                         :names (nreverse children))
                              :scanned t))))
@@ -1765,7 +1993,7 @@ costs one pass and no second walk inside the cache window."
   (declare (pure t) (side-effect-free t))
   (eq (tired--job-kind job) 'size))
 
-(defun tired--size-enqueue (key directory &optional force)
+(defun tired--size-enqueue (key directory &optional force entry)
   "Queue an idle walk of DIRECTORY under the cache key KEY.
 A kept total, a young total, a remote directory, an excluded
 directory and a queued walk cost no walk.  A kept total is one that
@@ -1777,7 +2005,7 @@ started before FORCE, because that walk can still store a scan that
 predates the change.  A walk that started after FORCE stays, so one
 refresh never restarts itself."
   (when (and (not (gethash key tired--size-cache-permanent))
-             (not (tired--size-skip-p directory))
+             (not (tired--size-skip-p directory entry))
              (or force
                  (not (tired--size-cache-valid-p
                        (gethash key tired--size-cache))))
@@ -1836,12 +2064,12 @@ queues, because a walk covers the subtree of its row."
         (let ((row (car cell)))
           (when (and (tired-entry-p row)
                      (tired-entry-dirp row)
-                     (not (tired--size-skip-p (tired-entry-path row))))
+                     (not (tired--size-skip-p (tired-entry-path row) row)))
             (puthash (tired--size-key (tired-entry-path row)) row
                      directories))))
-      (maphash (lambda (key _row)
+      (maphash (lambda (key row)
                  (unless (tired--size-ancestor-p key directories)
-                   (tired--size-enqueue key key force)))
+                   (tired--size-enqueue key key force row)))
                directories))))
 
 (defun tired--directory-total (directory)
@@ -1858,6 +2086,12 @@ change that the refresh just read from the disk."
                    (gethash key tired--size-cache))))
       (when (consp hit)
         (car hit)))))
+
+(defvar-local tired--name-column-window-width nil
+  "Width of the window that the last print sized the name column for.
+A redraw records it, and `tired--width-changed-p' compares it, so a
+resize costs one `window-width' call instead of a walk over every
+row.")
 
 (defvar-local tired--width-window nil
   "Window that decides the name column width, or nil before a redraw.
@@ -1917,12 +2151,21 @@ walk."
                  (tired--size-window-p))
         (tired--redraw (tired--width-window))))))
 
+(defun tired--elements-queue-shown ()
+  "Queue the element counts that the windows of the listing show.
+`post-command-hook' calls this, so a scroll queues the rows that it
+revealed.  The core keeps no count itself, so it calls
+`tired--elements-queue-function'."
+  (when (and tired--elements-queue-function
+             (tired--size-window-p))
+    (funcall tired--elements-queue-function)))
+
 (defun tired--window-buffer-changed (_window)
   "Redraw the listing after a window starts to show it.
-A redraw that no window shows queues no directory size walk, so the
-first redisplay of the buffer queues them.  Redisplay runs this hook,
-so the reprint goes through a timer."
-  (when tired--size-deferred
+A redraw that no window shows queues no directory size walk and no
+element count, so the first redisplay of the buffer queues both.
+Redisplay runs this hook, so the reprint goes through a timer."
+  (when (or tired--size-deferred tired--elements-deferred)
     (tired--schedule-size-redraw 0)))
 
 (defun tired--size-cell (entry)
@@ -2295,7 +2538,7 @@ round trip per file, and a directory that
 reads it."
   (cond
    ((not (tired-entry-dirp entry)) (or (tired-entry-size entry) 0))
-   ((tired--size-skip-p (tired-entry-path entry)) 0)
+   ((tired--size-skip-p (tired-entry-path entry) entry) 0)
    (t (or (tired--directory-total (tired-entry-path entry)) 0))))
 
 (defun tired--entries-size (entries)
@@ -2489,8 +2732,10 @@ when the user inserts it, so the duplicates cost nothing."
   (let (paths)
     (when (hash-table-p tired--collapse-cache)
       (maphash (lambda (_directory result)
-                 (when (car result)
-                   (setq paths (append (cdr result) paths))))
+                 (when (tired--chain-leaf result)
+                   ;; Copy the visited list: `nconc' would splice the
+                   ;; paths onto the list that the chain struct holds.
+                   (setq paths (append (tired--chain-visited result) paths))))
                tired--collapse-cache))
     paths))
 
@@ -2516,8 +2761,10 @@ edit to a file inside that directory."
   (when (timerp tired--size-timer)
     (cancel-timer tired--size-timer)
     (setq tired--size-timer nil))
-  (dolist (watch tired--watches)
-    (ignore-errors (file-notify-rm-watch (cdr watch))))
+  (when (hash-table-p tired--watches)
+    (maphash (lambda (_directory descriptor)
+               (ignore-errors (file-notify-rm-watch descriptor)))
+             tired--watches))
   (setq tired--watches nil))
 
 (defun tired--auto-revert-enabled-p ()
@@ -2534,31 +2781,47 @@ round trip and some TRAMP methods refuse one."
   "Add missing watches and remove watches for vanished paths.
 A path that matches `tired-persistent-directories' takes no watch,
 because no change arrives under it, so a new child reaches the
-listing through `tired-refresh' alone."
+listing through `tired-refresh' alone.
+One hash set of wanted paths and one hash table of live watches turn
+a listing that collapses thousands of chains into a linear pass."
   (if (not (tired--auto-revert-enabled-p))
       (tired--stop-watching)
-    (let ((wanted (seq-remove #'tired--persistent-p (tired--watch-paths))))
-      (dolist (directory wanted)
-        (unless (assoc directory tired--watches)
-          (let* ((buffer (current-buffer))
-                 (callback (lambda (_event)
+    (let* ((wanted (make-hash-table :test #'equal))
+           (buffer (current-buffer))
+           (watches tired--watches)
+           stale)
+      (dolist (directory (tired--watch-paths))
+        (unless (tired--persistent-p directory)
+          (puthash directory t wanted)))
+      (when (hash-table-p watches)
+        (maphash (lambda (directory _descriptor)
+                   (unless (gethash directory wanted)
+                     (push directory stale)))
+                 watches)
+        (dolist (directory stale)
+          (ignore-errors
+            (file-notify-rm-watch (gethash directory watches)))
+          (remhash directory watches)))
+      (maphash (lambda (directory _ignore)
+                 (unless (and (hash-table-p watches)
+                              (gethash directory watches))
+                   (let* ((callback
+                           (lambda (_event)
                              (when (buffer-live-p buffer)
                                (with-current-buffer buffer
                                  (tired--schedule-revert)))))
-                 (descriptor (ignore-errors
-                               (file-notify-add-watch directory
-                                                      '(change)
-                                                      callback))))
-            (when descriptor
-              (push (cons directory descriptor) tired--watches)))))
-      (setq tired--watches
-            (seq-filter
-             (lambda (watch)
-               (if (member (car watch) wanted)
-                   t
-                 (ignore-errors (file-notify-rm-watch (cdr watch)))
-                 nil))
-             tired--watches)))))
+                          (descriptor
+                           (ignore-errors
+                             (file-notify-add-watch directory '(change)
+                                                    callback))))
+                     (when descriptor
+                       (unless (hash-table-p watches)
+                         (setq watches (make-hash-table :test #'equal)))
+                       (puthash directory descriptor watches)))))
+               wanted)
+      ;; A listing without a watch keeps no table, so `tired--watches'
+      ;; stays nil and a test reads ``no watch''.
+      (setq tired--watches watches))))
 
 (defun tired--schedule-revert ()
   "Schedule a refresh after `tired-auto-revert-delay' seconds."
@@ -2667,6 +2930,8 @@ on no subtree.  `tired--size-queue' then queues the visible
 directory rows and the idle queue fills the size cells."
   (setq tired--size-deferred nil)
   (let* ((window (tired--pin-width-window window))
+         (_ (setq tired--name-column-window-width
+                  (window-width window)))
          (point-entry (tired--point-row window))
          (point-line (line-number-at-pos))
          (at-name (tired--at-name-p))
@@ -2674,7 +2939,8 @@ directory rows and the idle queue fills the size cells."
          (views (tired--window-views)))
     (setq tired--hidden-total (tired--count-hidden))
     (setq tired--rows (tired--display-rows t))
-    (unwind-protect
+    (let ((tired--name-cells (make-hash-table :test #'eq)))
+      (unwind-protect
         (progn
           (setq tabulated-list-format
                 (tired--format (tired--name-column-width window)))
@@ -2693,7 +2959,7 @@ directory rows and the idle queue fills the size cells."
           (when tired--elements-queue-function
             (funcall tired--elements-queue-function))
           (tired--size-queue))
-      (setq tired--rows nil))
+        (setq tired--rows nil)))
     (unless (tired--goto-entry point-entry)
       ;; The printed row is gone, and the print left point on the first
       ;; line.  Hold the line instead, so a removal of the last row
@@ -2711,13 +2977,15 @@ directory rows and the idle queue fills the size cells."
     (tired--update-mode-line)))
 
 (defun tired--width-changed-p (window)
-  "Return non-nil when WINDOW needs a different name column width.
-The size hook fires once per changed window of a frame, and it also
-fires when the echo area grows.  A redraw that finds the same width
-has nothing to do, and its reprint would only cost the point and the
-scroll position of the window."
-  (/= (tired--name-column-width (tired--width-window window))
-      (nth 1 (aref tabulated-list-format 0))))
+  "Return non-nil when WINDOW shows a listing that needs another width.
+Compare the width of the window that decides the column with the
+width that the last print used, so the answer costs one call.  The
+size hook fires once per changed window of a frame, and it also
+fires when the echo area grows, which leaves the width alone.  A
+window that does not show the listing decides nothing, so it never
+needs a repaint."
+  (/= (window-width (tired--width-window window))
+      (or tired--name-column-window-width 0)))
 
 (defun tired--window-size-changed (frame)
   "Redraw Tired listings in the windows of FRAME.
@@ -2773,7 +3041,11 @@ or a directory change made stale, and keep `tired--size-cache', so a
 refresh inside one `tired-size-cache-ttl' window reads no directory
 twice."
   (setq tired--tables (make-hash-table :test #'equal))
-  (setq tired--collapse-cache (make-hash-table :test #'equal))
+  ;; The chain results stay, and the new generation makes the next
+  ;; redraw check the stamp of every directory that they walked.  A
+  ;; refresh of a static directory then costs one attributes read per
+  ;; level instead of a directory read.
+  (setq tired--collapse-generation (1+ tired--collapse-generation))
   (tired--queue-drop-where #'tired--size-walk-job-p)
   (tired--size-cache-prune)
   ;; The refresh reads the disk, so a young total can hide a file that
@@ -2806,14 +3078,37 @@ twice."
         (remhash path tired--sections)))))
 
 (defun tired-refresh ()
-  "Reload the listing from disk and redraw the buffer."
+  "Reload the listing from disk and redraw the buffer.
+With `tired-refresh-keeps-an-unchanged-listing', a listing whose
+directories and expanded files keep the stamp of the last read keeps
+its printed rows, and the size walks alone run again."
   (interactive)
   (unless tired--directory
     (user-error "Not in a Tired buffer"))
-  (tired--reload-tables)
-  (tired--set-selection (tired--prune-selection tired--selection))
-  (tired--set-narrowed (tired--prune-selection tired--narrowed))
-  (tired--redraw))
+  (cond
+   ((or (not tired-refresh-keeps-an-unchanged-listing)
+        (tired--listing-changed-p))
+    (tired--reload-tables)
+    (tired--set-selection (tired--prune-selection tired--selection))
+    (tired--set-narrowed (tired--prune-selection tired--narrowed))
+    (tired--redraw)
+    (setq tired--listing-stamps (tired--shown-stamps)))
+   (t
+    ;; No row changed, so keep the printed rows and let the idle
+    ;; reprint show the totals that the walks store.  A changed
+    ;; `tired-elements-functions' invalidates a count without a change
+    ;; on the disk, and queueing the shown rows again notices that.
+    (setq tired--size-forced (float-time))
+    (when (and tired--elements-prune-function
+               (funcall tired--elements-prune-function))
+      ;; A cached count left the table, so queue the rows that show
+      ;; one and let the idle reprint fill the cells.
+      (when tired--elements-queue-function
+        (funcall tired--elements-queue-function)))
+    (tired--size-queue)
+    (if (tired--width-changed-p (tired--width-window))
+        (tired--redraw)
+      (tired--update-mode-line)))))
 
 (defun tired--revert (_ignore-auto _noconfirm)
   "Revert the buffer by refreshing the listing.
@@ -3858,6 +4153,7 @@ The directory contents come from `directory-files' and
   (setq-local tired--expanded (make-hash-table :test #'equal))
   (setq-local tired--sections (make-hash-table :test #'equal))
   (setq-local tired--folded (make-hash-table :test #'equal))
+  (setq-local tired--listing-stamps nil)
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (add-hook 'kill-buffer-hook #'tired--queue-forget-current nil t)
   (setq-local tabulated-list-format (tired--format))
@@ -3888,6 +4184,9 @@ The directory contents come from `directory-files' and
   ;; unwalked, so the first display of the buffer walks them.
   (add-hook 'window-buffer-change-functions
             #'tired--window-buffer-changed nil t)
+  ;; A scroll reveals rows that the last redraw never queued for an
+  ;; element count, and `tired-elements' answers the seam.
+  (add-hook 'post-command-hook #'tired--elements-queue-shown nil t)
   ;; `context-menu-functions' lives in mouse.el.  A session without a
   ;; menu has no context menu mode, so skip the hook there.
   (when (boundp 'context-menu-functions)

@@ -157,6 +157,28 @@ One row that represents a directory chain whose subtree holds exactly
 one file.
 _Avoid_: Flatten, fold, compress
 
+**Chain result**:
+The cached outcome of one single-entry walk: the leaf entry, the
+directories that the walk read and one stamp per level.  A refresh
+keeps the result and checks the stamps, so a chain that gained a
+sibling re-walks and one that did not costs one attributes read per
+level.
+_Avoid_: Collapse record, chain memo
+
+**Stamp**:
+The pair of a modification time and a size that describes one path at
+one moment.  A directory stamp changes when a child arrives or leaves,
+so `tired--shown-stamps` and a chain result both use one to decide
+whether a cached read still describes the disk.
+_Avoid_: Version, checksum, mtime
+
+**Listing stamp**:
+The stamps of every path whose change can reach a printed row: the
+shown directory, the inserted directories, the levels of every chain
+and the expanded files.  `tired-refresh` compares it, and a listing
+that keeps every stamp reprints nothing.
+_Avoid_: Refresh stamp, snapshot stamp
+
 **Empty directory**:
 A directory whose subtree holds no byte.  Its name row takes
 `tired-ignored-face', and the slash follows the name.

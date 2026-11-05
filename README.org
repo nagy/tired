@@ -595,9 +595,21 @@ redraw reads no database.  One count query per table runs then, so a
 very large table costs a scan when the file parses.
 
 A count needs a file read, so the column fills after the listing
-prints.  Tired does the work in the idle state, one small step at a
-time.  A step reads one chunk and stops when the budget ends or when a
-key waits, so Emacs never blocks for a whole file:
+prints.  The listing queues the rows of every window and a hundred rows
+below each window, so a directory of forty thousand files queues about
+as many counts as the screen holds, and a scroll queues the rows that
+it reveals.  Set =tired-elements-lookahead= to queue more or fewer rows
+ahead of a scroll:
+
+#+begin_src elisp
+  (setq tired-elements-lookahead 100)
+#+end_src
+
+Tired does the work in the idle state, one small step at a time.  A
+step reads one chunk and stops when the budget ends or when a key
+waits, so Emacs never blocks for a whole file.  The chunk size serves
+the CSV, Markdown and Parquet dissectors, because the JSON dissector
+hands its file to the C parser in one step:
 
 #+begin_src elisp
   (setq tired-elements-budget 0.02
@@ -620,14 +632,20 @@ seconds:
   (setq tired-elements-cache-ttl 60)
 #+end_src
 
-The section fallback parses a whole file in one step, so it runs only
-below =tired-elements-sync-limit= bytes.  The Parquet dissector holds
-its footer under the same bound.  A larger file keeps an empty cell
-until the user expands it:
+A JSON file counts through =json-parse-buffer=, one C call for the
+whole file, because a scan of a byte at a time in Elisp costs about one
+microsecond per byte.  The parse holds the document, so a bound keeps
+the memory finite and the idle step short.  The same bound holds the
+Parquet footer and the section fallback, which also read a whole file
+in one step, and a larger file keeps an empty cell:
 
 #+begin_src elisp
-  (setq tired-elements-sync-limit 1000000)
+  (setq tired-elements-sync-limit (* 100 1024 1024))
 #+end_src
+
+The C parser costs about a second at 100 MB.  The section fallback
+parses in Elisp, so a file near the bound blocks one idle pass for the
+length of that parse.  Lower the bound to keep an idle pass short.
 
 =tired-elements-functions= is an abnormal hook.  Each function receives
 the absolute file name and returns =nil= for no opinion, an integer for
@@ -711,7 +729,20 @@ change arrives there.  A new child of a watched root, such as a fresh
 store path, reaches the listing through =g= alone.
 
 M-x tired-refresh re-reads a listing, and M-x tired-clear-caches
-empties every cache, the windowed ones and the permanent ones.  The
+empties every cache, the windowed ones and the permanent ones.
+A refresh first compares the modification time and the size of every
+directory that the listing reads, of every level of a single-child
+chain and of every expanded file.  A listing whose stamps all match
+keeps its printed rows: it reads no directory, sorts no row and prints
+nothing again, and the size walks alone run, so a total that the disk
+changed below an unchanged directory still lands.  Set
+=tired-refresh-keeps-an-unchanged-listing= to =nil= to re-read and
+reprint on every =g=:
+
+#+begin_src elisp
+  (setq tired-refresh-keeps-an-unchanged-listing t)
+#+end_src
+  The
 command has no key and no menu entry:
 
 #+begin_src elisp
@@ -839,20 +870,24 @@ A chain of single-entry directories collapses into one row for its
 last entry.  A file at the end gives `sub/deep/leaf.txt' in place of
 the `sub' row.  A directory at the end gives `docs/adr/' when `docs'
 holds only `adr', so a branch one level down loses no row.  Every
-listed directory is inspected on refresh.  The chain stops at the
-first branch, so a directory with two entries ends the chain, and an
-empty directory ends it as well.  A hidden name ends the chain before
-the hidden row, so `tired-hidden-regexps' and the dotfile toggle keep
-their reach.  A remote directory keeps its own row, because the walk
-reads one directory per level and a remote read costs a network
-round trip.
+listed directory is inspected when the listing first reads it.  The
+chain stops at the first branch, so a directory with two entries ends
+the chain, and an empty directory ends it as well.  A hidden name
+ends the chain before the hidden row, so `tired-hidden-regexps' and
+the dotfile toggle keep their reach.  A remote directory keeps its
+own row, because the walk reads one directory per level and a remote
+read costs a network round trip.  The row carries the network state
+that its directory read, so no row asks the network twice.
 
-The collapsed row keeps the directory group, shows the attributes of
-the last entry, and acts as that entry.  A size, time or mode sort
-then places the row by the number that it shows, so the column reads
-in order.  A name sort keeps the place of the directory, because the
-leaf name must not regroup the row.  =RET= opens a
-file leaf, and opens a Tired buffer for a directory leaf.  =w= copies
+A chain result stays across a refresh: a refresh compares the
+modification time and the size of every level that the walk read, so a
+chain that gained a sibling re-walks and one that did not costs a stat
+per level.  The collapsed row keeps the directory group, shows the
+attributes of the last entry, and acts as that entry.  A size, time or
+mode sort then places the row by the number that it shows, so the
+column reads in order.  A name sort keeps the place of the directory,
+because the leaf name must not regroup the row.  =RET= opens a file
+leaf, and opens a Tired buffer for a directory leaf.  =w= copies
 the real path.  The directory components of the row name take the
 directory face, and the last component takes the face that its own
 row would take, so `tools/file.el' shows a colored `tools/' and a

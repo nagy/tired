@@ -123,8 +123,13 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 4. `tired--collapsed-display-entry` swaps a directory row for the leaf
    of a single-entry chain, a file or a directory.  It runs before the
    sort, so the row sorts by the size, the time and the mode that it
-   shows, and it caches per refresh in `tired--collapse-cache`,
-   together with the directories that the chain walk visited.
+   shows, and it caches in `tired--collapse-cache` as a `tired--chain'
+   of the leaf, the directories that the walk read and one
+   `(MTIME . SIZE)' stamp per level.  A refresh keeps the table and
+   bumps `tired--collapse-generation', so a redraw inside one
+   generation trusts a result and reads nothing, and the first redraw
+   after a refresh checks the stamps with one `file-attributes' call
+   per level instead of a directory read.
 5. `tired-file-sections` picks a handler through `tired-file-handlers`,
    runs it in a temporary buffer, and turns the plists into
    `tired-section` structs.  A file above
@@ -145,13 +150,23 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    rebuilds the mode line.  A row that left the listing leaves point on
    its old line, clamped to the last row, so a removal never sends point
    to the first line.  A view change (filter, sort, dotfile, hidden,
-   insert, expand, fold) calls it.  `tired-refresh` re-reads the tables,
-   prunes dead state and then redraws.  A redraw reads the size memo
+   insert, expand, fold) calls it.  A redraw binds `tired--name-cells`,
+   so one row builds its name cell once for the width pass, the print
+   and the mouse region, and it records the window width in
+   `tired--name-column-window-width`, so `tired--width-changed-p`
+   answers with one `window-width' call.  A redraw reads the size memo
    table alone, so it blocks on no subtree, and `tired--size-queue'
    then queues the visible directory rows for an idle walk.  The name
    column width comes from `tired--pin-width-window`,
    which pins the window that renders the listing in
    `tired--width-window` and returns it.
+   `tired-refresh` compares `tired--shown-stamps' with
+   `tired--listing-stamps' first.  A listing whose shown directory,
+   inserted directories, chain levels and expanded files keep their
+   stamp reads nothing, sorts nothing and prints nothing: it sets
+   `tired--size-forced', prunes the element cache, queues the counts
+   that the prune dropped and the size walks, and updates the mode
+   line.  `tired-refresh-keeps-an-unchanged-listing' turns that off.
 7. Selection and region share one target path.  `tired--selection`
    holds paths and `tired--selection-set` mirrors it.
    `tired--targets` commits an active region into the selection, then
@@ -171,7 +186,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    The mode line prints the count and the byte sum of the selection or
    the region through `tired--entries-size'.
 8. `tired--sync-watches` watches the root, every inserted directory,
-   every expanded file and every skipped chain level.  `tired--file-changed`
+   every expanded file and every skipped chain level.  One hash set of
+   wanted paths and one hash table of live watches in `tired--watches`
+   keep the pass linear, because a collapsed listing watches thousands
+   of directories.  The table stays nil while no watch exists.
+   `tired--file-changed`
    debounces into `tired--auto-revert-now`, and `kill-buffer-hook` stops
    the watches.  `tired--auto-revert-enabled-p` reads both
    `tired-auto-revert` and `tired-auto-revert-remote`, so a remote
@@ -251,9 +270,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     `tired--elements-show` reads the `count` slot of the section, and a
     handler fills it through the optional `:count` plist key.  The
     SQLite handler puts the row count of a table there, so a table row
-    prints a number and a column row stays empty.  `tired--redraw-buffer` queues the
-    visible rows after the print, and `tired--reload-tables` prunes the
-    cache.  The number comes from `tired-elements-functions`, an
+    prints a number and a column row stays empty.
+    `tired--redraw-buffer` queues the rows that every window shows plus
+    `tired-elements-lookahead` rows below each window, and a
+    buffer-local `post-command-hook` entry, `tired--elements-queue-shown`,
+    queues the rows that a scroll reveals, so a listing of forty
+    thousand rows costs about as many jobs as the screen holds.  A
+    listing that no window shows queues nothing and sets
+    `tired--elements-deferred`.  `tired--reload-tables` prunes the
+    cache, and the prune drops a count that another hook value
+    produced and returns non-nil, so a refresh of an unchanged listing
+    queues the rows again.  The number comes from
+    `tired-elements-functions`, an
     abnormal hook that `run-hook-with-args-until-success` walks.  A
     dissector returns nil, an integer, or a `tired--elements-job`.
     The library keeps the count state of a job in a
@@ -268,8 +296,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     seconds, the buffers that wait for a repaint and a data slot for
     the job kind.  The kind joins the key in `tired--queue-index`, so
     a size walk and an element count of one directory stay two jobs.
-    A pass advances the head job, rotates it to the tail, and stops on
-    its budget or on `input-pending-p`.  A pass that leaves work
+    A pass takes the queue down, runs one step of every job in order,
+    and starts another round over the unfinished jobs until the budget
+    of the head job or `input-pending-p' stops it, so one rotation
+    copies no list.  A finished job drops from the local list through
+    `tired--queue-finish`, and `tired--queue-holds-p' skips a job that
+    a step dropped during the pass.  A pass that leaves work
     schedules its own successor through an idle timer, because an idle
     timer fires once for one transition into the idle state.  A
     finished job marks its owners dirty, and one timer repaints them
@@ -291,6 +323,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     flushes its own permanent table once, and `tired-clear-caches`
     empties all four.  `tired--sync-watches` drops every path that a
     rule matches, because no change arrives under it.
+    The same walk fills `tired--child-cache` with the number of names
+    that it read for each directory, under the size key, and
+    `tired--child-count` answers the Elements count of a directory
+    from there, so a store path costs no second `directory-files`
+    call.  A prune drops a count together with the total beside it,
+    and a total that the permanent table holds keeps its count.
 
 ## Conventions
 
@@ -305,6 +343,17 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - The Elements number has one owner: `tired--elements-value-function`.
   Do not read `tired-elements-functions` from `tired-core`, and do not
   call a dissector from a redraw.  A redraw reads the cache alone.
+  A child count that the size walk read reaches the column through
+  `tired--child-count`, which answers a directory question and no
+  element count.
+- One row carries the network state that its directory read, in the
+  `remote` slot of `tired-entry`.  Read it through
+  `tired--entry-remote-p` and pass the row to `tired--size-skip-p`, so
+  a redraw runs no `file-remote-p` per row.  A row that a caller built
+  by hand holds `unknown`, and the helper asks once.
+- A helper that answers a question about the disk and writes nothing
+  carries `(declare (side-effect-free t))`, such as
+  `tired--shown-stamps` and `tired--chain-current-p`.
 - Public commands carry `;;;###autoload` only as entry points (`tired`,
   `tired-other-window`, `tired-noselect`, `tired-find-file-mode`,
   `tired-jump`) and as the cache command `tired-clear-caches`.  Keep
@@ -627,7 +676,9 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   rule states that no change arrives under the path, and a rule that
   contradicts the disk keeps a stale total until `tired-clear-caches`
   or a change of the rule value, which each prune reads once.
-- A refresh forces a walk of every directory that it shows.
+- A refresh forces a walk of every directory that it shows, and a
+  refresh of an unchanged listing forces the walk without a read and
+  without a print.
   `tired--reload-tables` sets `tired--size-forced` to the refresh
   time, and `tired--size-queue` reads the flag once and passes it to
   `tired--size-enqueue`, so a young total cannot keep a size cell or
@@ -636,6 +687,14 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   flag keeps the cache of a plain redraw.  `docs/adr/0018-refresh-recomputes-a-shown-size.md`
   holds the reasons.  A refresh of a hidden listing keeps the flag
   until a window shows the listing.
+- `tired--shown-stamps` covers every path whose change can reach a
+  printed row: the shown directory, the inserted directories, every
+  level of every collapsed chain and every expanded file.  A chain
+  level matters because a new child deep in a chain breaks its row
+  while no directory table holds it.  Add a read path to the listing
+  and its stamp belongs there too, or a refresh of that path prints a
+  stale row.  `tired-refresh-keeps-an-unchanged-listing` turns the
+  short circuit off for a user who wants every `g` to read again.
 - `tired--size-enqueue` drops a queued walk that started before the
   forced time, because that walk can still store a scan that predates
   the change, and keeps a walk that started after it, so one refresh
@@ -643,6 +702,21 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - `tired-directory-size-budget` limits one idle pass, not one redraw.
   A zero budget leaves the job in the queue, and a nil budget walks
   every queued directory in one pass.
+- `tired--name-cell` answers from `tired--name-cells`, the hash table
+  that `tired--redraw-buffer` binds, because the width pass, the print
+  and `tired--name-region` each build the same cell.  Do not build a
+  second cell per row, and do not keep the table past the redraw: the
+  empty-directory face depends on the size cache.
+- `tired--width-changed-p` compares the width of the window that
+  decides the column with `tired--name-column-window-width`, the value
+  that the last print recorded.  Measuring the name column there would
+  walk every row and build every cell, which cost 4 s on a listing of
+  39,000 rows.
+- `tired--watches` is a hash table of directory names to descriptors,
+  and it stays nil while no watch exists, so a test reads "no watch"
+  from the variable alone.  Keep the sync linear: a collapsed listing
+  watches 5,473 directories, and an alist with `assoc` made it
+  quadratic.
 - `tabulated-list-format` is buffer-local and permanent-local, so one
   name column width serves every window and every frame that shows the
   listing.  `tired--pin-width-window` pins the window that renders the
@@ -899,10 +973,18 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   fence, a string and an escape all carry over a chunk boundary.  Do
   not decode the chunk: `tired--elements-read` returns the literal
   bytes, so only ASCII structure decides a count.
-- The section fallback parses a whole file in one step, so it runs only
-  below `tired-elements-sync-limit`.  Do not raise that limit without
-  making the section handlers resumable, or one idle pass blocks Emacs
-  for the length of a large parse.
+- The JSON dissector parses with `json-parse-buffer` in one C call, so
+  a 21 MB index file costs 0.2 s and about 15 MB of live conses.  Do
+  not write a byte-at-a-time JSON scanner: one 21 MB file cost 20 s of
+  Elisp scanning, which was 94 percent of the first element pass of
+  `/nix/store`.
+- One option bounds every dissector that holds a whole file in one
+  step: `tired-elements-sync-limit`, which holds 100 MB.  It covers the
+  JSON parser, the Parquet footer and the section fallback.  The three
+  differ in speed, so the bound buys about a second of C parse and a
+  much longer Elisp parse.  A section handler that parses in steps
+  would let the option grow; until then a user who keeps an idle pass
+  short lowers the value.
 - The Elements count follows the section tree: the first section or
   heading sets the top level, and a later shallower one joins it, so
   the number equals the rows that print at depth zero.  A count of the

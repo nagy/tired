@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'json)
 (require 'seq)
 (require 'subr-x)
 
@@ -46,7 +47,8 @@ it has no opinion, an integer for a count that it knows now, or a
 `tired--elements-job' for a count that it reads in steps.  The first
 non-nil result wins, so a cheap test belongs before an expensive
 read.  `tired-elements-directory' counts the immediate children of a
-directory, `tired-elements-json' counts a top-level JSON container,
+directory, `tired-elements-json' counts a top-level JSON container in
+one `json-parse-buffer' step,
 `tired-elements-markdown' counts the top-level Markdown headings,
 `tired-elements-csv' counts the uncommented rows of a CSV file,
 `tired-elements-parquet' reads the row count of a Parquet footer, and
@@ -62,18 +64,31 @@ A nil value lets one pass run until the queue empties.
   :type '(choice (number :tag "Seconds") (const :tag "No budget" nil))
   :group 'tired)
 
+(defcustom tired-elements-lookahead 100
+  "Rows below the window that a redraw queues for an element count.
+A listing of 40,000 rows queues about as many jobs as the screen
+holds, plus this many rows, so the first counts arrive at once and a
+scroll finds the next ones ready.  Zero queues the visible rows
+alone."
+  :type '(integer 0 *)
+  :group 'tired)
+
 (defcustom tired-elements-chunk-size 65536
   "Bytes that one step reads from a file.
 Only a dissector that reads a file in steps uses the value."
   :type '(integer 1 *)
   :group 'tired)
 
-(defcustom tired-elements-sync-limit 1000000
-  "Largest file, in bytes, that the section fallback parses.
-The Parquet dissector holds its footer under the same bound.
-`tired-file-sections' parses a whole file in one call, so a larger
-file keeps an empty cell instead of blocking the idle pass, and a
-footer beyond the bound keeps no count."
+(defcustom tired-elements-sync-limit (* 100 1024 1024)
+  "Largest file, in bytes, that a dissector reads in one step.
+Three dissectors hold a whole file in one step: the JSON parser, the
+Parquet footer and the section fallback.  A larger file keeps an
+empty cell, so the bound decides how long one idle pass can run and
+how much memory a parse holds.
+`json-parse-buffer' parses at C speed, so a 100 MB bound costs about a
+second there.  `tired-file-sections' parses a whole file in Elisp in
+one call, so a file near the bound blocks one idle pass for the length
+of that parse."
   :type '(integer 0 *)
   :group 'tired)
 
@@ -216,17 +231,49 @@ one read serves every listing."
                    :offset 0
                    :step #'tired--elements-dispatch)))))))))
 
+(defun tired--elements-lookahead-end (position)
+  "Return the buffer position above POSITION after the lookahead rows."
+  (save-excursion
+    (goto-char position)
+    (forward-line tired-elements-lookahead)
+    (point)))
+
+(defun tired--elements-shown-rows ()
+  "Return the rows that the windows of the listing show.
+Every window adds `tired-elements-lookahead' rows below its end, so a
+scroll finds the counts of the rows that it reveals."
+  (let (rows)
+    (dolist (window (get-buffer-window-list (current-buffer) nil t))
+      (dolist (row (tired--rows-between
+                    (window-start window)
+                    (tired--elements-lookahead-end
+                     (or (window-end window t) (point-max)))))
+        (unless (memq row rows)
+          (push row rows))))
+    (nreverse rows)))
+
 (defun tired--elements-queue ()
-  "Queue every visible row of the listing for an element count.
-`tired--redraw-buffer' calls this after the print.  Walk the rows
-backwards, so the job of the top row sits at the head of the queue
-and runs first.  A row whose count is fresh needs nothing, and a
-section row has no count."
-  (when (or tired--elements-always (tired--size-window-p))
+  "Queue the rows that a window shows for an element count.
+`tired--redraw-buffer' calls this after the print, and a scroll calls
+it again through `tired--elements-scroll'.  Queue the rows backwards,
+so the job of the top row sits at the head of the queue and runs
+first.  A row whose count is fresh needs nothing, and a section row
+has no count.
+A listing that no window shows queues nothing and sets
+`tired--elements-deferred', so the next display queues its rows.  A
+test binds `tired--elements-always' to queue every row instead."
+  (cond
+   ((get-buffer-window-list (current-buffer) nil t)
+    (setq tired--elements-deferred nil)
+    (dolist (row (reverse (tired--elements-shown-rows)))
+      (when (tired-entry-p row)
+        (tired--elements-enqueue row))))
+   (tired--elements-always
     (dolist (cell (reverse (tired--visible-rows)))
       (let ((row (car cell)))
         (when (tired-entry-p row)
-          (tired--elements-enqueue row))))))
+          (tired--elements-enqueue row)))))
+   (t (setq tired--elements-deferred t))))
 
 (defun tired--elements-queue-job-p (job)
   "Return non-nil when JOB counts an element of a file."
@@ -301,23 +348,44 @@ costs no second read.  A path that matches
     (tired--queue-mark-dirty (tired--job-owners job))))
 
 (defun tired--elements-prune ()
-  "Drop the cached counts that no buffer read for the cache window.
-Call it on refresh, so the table holds no path that the user left.
-A change of `tired-persistent-directories' empties
-`tired--elements-cache-permanent' once."
-  (unless (equal tired--elements-cache-rules tired-persistent-directories)
-    (setq tired--elements-cache-rules
-          (copy-sequence tired-persistent-directories))
-    (clrhash tired--elements-cache-permanent))
-  (when tired-elements-cache-ttl
+  "Drop the cached counts that a refresh invalidated.
+Drop a count that no buffer read for the cache window, and drop every
+count that another hook value produced, because the printed cell
+would keep the old number.  A change of
+`tired-persistent-directories' empties
+`tired--elements-cache-permanent' once, and no age drops a count that
+the rule protects.
+Return non-nil when a count left a table, so the caller queues the
+rows that it shows again."
+  (let ((hooks (copy-sequence tired-elements-functions))
+        (dropped nil))
+    (unless (equal tired--elements-cache-rules tired-persistent-directories)
+      (setq tired--elements-cache-rules
+            (copy-sequence tired-persistent-directories))
+      (when (> (hash-table-count tired--elements-cache-permanent) 0)
+        (setq dropped t))
+      (clrhash tired--elements-cache-permanent))
     (let (stale)
       (maphash (lambda (key entry)
-                 (when (> (- (float-time) (nth 2 entry))
-                          tired-elements-cache-ttl)
+                 (when (or (not (equal (nth 1 entry) hooks))
+                           (and tired-elements-cache-ttl
+                                (> (- (float-time) (nth 2 entry))
+                                   tired-elements-cache-ttl)))
                    (push key stale)))
                tired--elements-cache)
+      (when stale (setq dropped t))
       (dolist (key stale)
-        (remhash key tired--elements-cache)))))
+        (remhash key tired--elements-cache)))
+    ;; Only another hook value invalidates a count that a rule keeps.
+    (let (stale)
+      (maphash (lambda (key entry)
+                 (unless (equal (nth 1 entry) hooks)
+                   (push key stale)))
+               tired--elements-cache-permanent)
+      (when stale (setq dropped t))
+      (dolist (key stale)
+        (remhash key tired--elements-cache-permanent)))
+    (and dropped t)))
 
 (defun tired-elements-clear-cache ()
   "Drop every cached element count and count the shown rows again.
@@ -363,128 +431,28 @@ file, so one step costs one read, whatever the size of the file."
 
 ;;; JSON
 
-(defconst tired--json-whitespace '(?\s ?\t ?\n ?\r)
-  "Characters that JSON reads as whitespace.")
-
-(cl-defstruct (tired--json-state (:constructor tired--json-state-create))
-  "Scanner state for the top-level items of a JSON file.
-MODE holds `array', `object' or nil before the root.  DEPTH counts
-the open containers.  COUNT holds the items that the scan found.
-IN-STRING and ESCAPE track a string, and KEY-OPEN marks the key
-string of an object.  EXPECT holds whether a new value or key may
-start.  DONE holds when the root closed, and INVALID holds when the
-first byte is no container."
-  mode
-  depth
-  count
-  in-string
-  escape
-  expect
-  key-open
-  done
-  invalid)
-
-(defun tired--json-scan (state string)
-  "Advance STATE over STRING and return STATE.
-Count the items of a top-level array and the keys of a top-level
-object.  A string, an escape and a chunk boundary carry over, so one
-chunk of a split string never changes the count."
-  (let ((index 0)
-        (length (length string)))
-    (while (and (< index length)
-                (not (tired--json-state-done state))
-                (not (tired--json-state-invalid state)))
-      (let ((char (aref string index)))
-        (cond
-         ((null (tired--json-state-mode state))
-          (unless (memq char tired--json-whitespace)
-            (pcase char
-              (?\[
-               (setf (tired--json-state-mode state) 'array
-                     (tired--json-state-depth state) 1
-                     (tired--json-state-count state) 0
-                     (tired--json-state-expect state) t))
-              (?\{
-               (setf (tired--json-state-mode state) 'object
-                     (tired--json-state-depth state) 1
-                     (tired--json-state-count state) 0
-                     (tired--json-state-expect state) t))
-              (_
-               (setf (tired--json-state-invalid state) t
-                     (tired--json-state-done state) t)))))
-         ((tired--json-state-in-string state)
-          (cond
-           ((tired--json-state-escape state)
-            (setf (tired--json-state-escape state) nil))
-           ((eq char ?\\)
-            (setf (tired--json-state-escape state) t))
-           ((eq char ?\")
-            (setf (tired--json-state-in-string state) nil)
-            (when (and (eq (tired--json-state-mode state) 'object)
-                       (= (tired--json-state-depth state) 1)
-                       (tired--json-state-key-open state))
-              (setf (tired--json-state-key-open state) nil
-                    (tired--json-state-expect state) nil
-                    (tired--json-state-count state)
-                    (1+ (tired--json-state-count state)))))))
-         ((memq char tired--json-whitespace) nil)
-         (t
-          (when (and (eq (tired--json-state-mode state) 'array)
-                     (= (tired--json-state-depth state) 1)
-                     (tired--json-state-expect state)
-                     (not (eq char ?\])))
-            (setf (tired--json-state-expect state) nil
-                  (tired--json-state-count state)
-                  (1+ (tired--json-state-count state))))
-          (cond
-           ((eq char ?\")
-            (setf (tired--json-state-in-string state) t)
-            (when (and (eq (tired--json-state-mode state) 'object)
-                       (= (tired--json-state-depth state) 1)
-                       (tired--json-state-expect state))
-              (setf (tired--json-state-key-open state) t)))
-           ((memq char '(?\[ ?\{))
-            (setf (tired--json-state-depth state)
-                  (1+ (tired--json-state-depth state))
-                  (tired--json-state-expect state) nil))
-           ((memq char '(?\] ?\}))
-            (setf (tired--json-state-depth state)
-                  (1- (tired--json-state-depth state)))
-            (when (= (tired--json-state-depth state) 0)
-              (setf (tired--json-state-done state) t)))
-           ((eq char ?\,)
-            (when (= (tired--json-state-depth state) 1)
-              (setf (tired--json-state-expect state) t)))))))
-      (setq index (1+ index))))
-  state)
-
-(defun tired--json-step (job)
-  "Advance JOB over the next chunk of its JSON file.
-Return `:done' when the root container closed or the file ended."
-  (let ((state (tired--elements-job-state job)))
-    (if (or (tired--json-state-done state)
-            (>= (or (tired--elements-job-offset job) 0)
-                (or (tired--elements-job-size job) 0)))
-        (progn
-          (setf (tired--elements-job-count job)
-                (and (tired--json-state-done state)
-                     (not (tired--json-state-invalid state))
-                     (tired--json-state-count state)))
-          :done)
-      (when-let* ((chunk (tired--elements-read job)))
-        (tired--json-scan state chunk))
-      :more)))
-
 (defun tired-elements-json (path)
-  "Return a count or a job for the JSON file at PATH.
+  "Return the number of top-level items of the JSON file at PATH.
 A top-level array counts its items, and a top-level object counts
-its keys.  Return nil for another name, so the next dissector
-decides."
+its keys.  Return nil for another name, for a file above
+`tired-elements-sync-limit', and for text that `json-parse-buffer'
+refuses.
+One C parser reads the whole file in one step, because the scan of a
+byte at a time in Elisp costs about one microsecond per byte.  The
+size bound guards that step, and a bound file keeps an empty cell."
   (when (let ((case-fold-search t))
           (string-match-p "\\.json\\'" path))
-    (tired--elements-job-create
-     :step #'tired--json-step
-     :state (tired--json-state-create))))
+    (let* ((attributes (file-attributes path))
+           (size (and attributes (file-attribute-size attributes))))
+      (when (and (integerp size)
+                 (<= size tired-elements-sync-limit))
+        (condition-case nil
+            (with-temp-buffer
+              (insert-file-contents path)
+              (goto-char (point-min))
+              (length (json-parse-buffer :object-type 'alist
+                                         :array-type 'list)))
+          (error nil))))))
 
 ;;; Markdown
 
@@ -998,13 +966,16 @@ Return nil when no handler claims PATH."
   "Return the number of immediate children of the directory at PATH.
 Count every name that `directory-files' returns, dotfiles included,
 and never a subtree.  A shown directory already holds its names in
-its entry table, so it costs no read.  Return nil for a file."
+its entry table, and a directory that the size walk read keeps its
+count in `tired--child-cache', so neither costs a second read.
+Return nil for a file."
   (when (file-directory-p path)
     (let ((table (and (derived-mode-p 'tired-mode)
                       (tired--table path))))
-      (if table
-          (hash-table-count table)
-        (length (tired--directory-names path))))))
+      (cond
+       (table (hash-table-count table))
+       ((tired--child-count path))
+       (t (length (tired--directory-names path)))))))
 
 (setq tired--elements-value-function #'tired--elements-value
       tired--elements-queue-function #'tired--elements-queue

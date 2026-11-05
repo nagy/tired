@@ -1093,6 +1093,52 @@ The home directory of a path takes its abbreviation."
     (should-not tired--selection)
     (should-not (member "beta.txt" (tired-tests--names)))))
 
+(ert-deftest tired-refresh-keeps-an-unchanged-listing ()
+  "A refresh of a directory that did not change reads no entry again."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq reads (1+ reads))
+                   (apply original args))))
+        (tired-refresh))
+      (should (= 0 reads)))))
+
+(ert-deftest tired-refresh-re-reads-a-changed-listing ()
+  "A child that arrived reaches the listing through a refresh."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--write "arrived.txt" "x")
+    (tired-refresh)
+    (should (member "arrived.txt" (tired-tests--names)))))
+
+(ert-deftest tired-refresh-option-re-reads-every-time ()
+  "The option turns the keep for an unchanged listing off."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((tired-refresh-keeps-an-unchanged-listing nil)
+          (reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq reads (1+ reads))
+                   (apply original args))))
+        (tired-refresh))
+      (should (> reads 0)))))
+
+(ert-deftest tired-refresh-notices-a-child-inside-a-chain ()
+  "A new child deep in a collapsed chain breaks the row of the chain."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "deep/a/b" root) t)
+    (tired-tests--write "deep/a/b/only.txt" "x")
+    (tired root)
+    (should (member "deep/a/b/only.txt" (tired-tests--names)))
+    (tired-tests--write "deep/a/b/other.txt" "x")
+    (tired-refresh)
+    (should (member "deep/a/b" (tired-tests--names)))))
+
 (ert-deftest tired-refresh-keeps-sort-and-point ()
   "Refresh keeps the sort order and the entry at point."
   (tired-tests--with-fixture
@@ -2602,7 +2648,7 @@ The same substitution rules apply to the header line."
                 ((symbol-function 'file-notify-rm-watch)
                  (lambda (descriptor) (push descriptor removed))))
         (let ((buffer (tired root)))
-          (should (= 1 (length tired--watches)))
+          (should (= 1 (hash-table-count tired--watches)))
           (kill-buffer buffer)
           (should (= 1 (length removed))))))))
 
@@ -2824,16 +2870,23 @@ reaches the network."
 (ert-deftest tired-collapse-skips-a-remote-directory ()
   "A remote directory keeps its own row instead of a collapsed one.
 The chain walk reads one directory per level, and a remote read
-costs a network round trip, so the row stays plain."
+costs a network round trip, so the row stays plain.  The row carries
+the network state that its directory read, so the listing is read
+again under the stub."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "chain/inner" root) t)
     (tired-tests--write "chain/inner/only.txt" "x")
     (tired root)
-    (let ((entry (tired--entry-for-path (expand-file-name "chain" root))))
-      (should (tired--collapsed-display-entry root entry))
-      (cl-letf (((symbol-function 'file-remote-p)
-                 (lambda (&rest _) "/ssh:host:")))
-        (should-not (tired--collapsed-display-entry root entry))))))
+    (should (tired--collapsed-display-entry
+             root (tired--entry-for-path (expand-file-name "chain" root))))
+    (let ((added nil)
+          (tired-refresh-keeps-an-unchanged-listing nil))
+      (tired-tests--with-remote root added
+        (tired root)
+        (should-not (tired--collapsed-display-entry
+                     root
+                     (tired--entry-for-path
+                      (expand-file-name "chain" root))))))))
 
 (ert-deftest tired-collapse-paints-the-path-and-the-file-apart ()
   "A collapsed row paints its directory part and its file part apart."

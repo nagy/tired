@@ -141,14 +141,22 @@ not a file."
     (should-not (tired--elements-value (tired-tests--entry "b.json")))
     (should-not (tired--elements-value (tired-tests--entry "c.json")))))
 
-(ert-deftest tired-elements-json-survives-a-chunk-boundary ()
-  "A string, an escape and a nested container cross a chunk boundary."
+(ert-deftest tired-elements-json-counts-a-nested-container ()
+  "A string, an escape and a nested container stay one top-level item."
   (tired-tests--with-fixture
     (tired-tests--write "a.json" "[\"a\\\"b\",2,[3,4],{\"k\":5}]")
-    (let ((tired-elements-chunk-size 3))
+    (tired root)
+    (tired-tests--flush-elements)
+    (should (= 4 (tired--elements-value (tired-tests--entry "a.json"))))))
+
+(ert-deftest tired-elements-json-skips-a-file-above-the-limit ()
+  "A file above `tired-elements-sync-limit' keeps an empty cell."
+  (tired-tests--with-fixture
+    (tired-tests--write "a.json" "[1,2,3]")
+    (let ((tired-elements-sync-limit 4))
       (tired root)
       (tired-tests--flush-elements))
-    (should (= 4 (tired--elements-value (tired-tests--entry "a.json"))))))
+    (should-not (tired--elements-value (tired-tests--entry "a.json")))))
 
 ;;; Markdown
 
@@ -508,6 +516,54 @@ The header row counts, and a blank line stays out."
       (tired--queue-run)
       (should (equal (nreverse calls) '("/one" "/two" "/one" "/two")))
       (should-not tired--queue-jobs))))
+
+(ert-deftest tired-elements-queue-covers-the-window-alone ()
+  "A redraw queues the rows of the window, not the whole listing."
+  (tired-tests--with-fixture
+    (dotimes (i 20) (tired-tests--write (format "f%02d.txt" i) "x"))
+    (let ((buffer (tired root))
+          (tired-elements-lookahead 0))
+      (with-current-buffer buffer
+        (setq tired--queue-jobs nil)
+        (clrhash tired--queue-index)
+        (goto-char (point-min))
+        (forward-line 3)
+        (let ((end (point)))
+          (cl-letf (((symbol-function 'window-end) (lambda (&rest _) end))
+                    ((symbol-function 'window-start)
+                     (lambda (&rest _) (point-min))))
+            (tired--elements-queue)))
+        (should (= 3 (length (tired-tests--queued-jobs 'elements))))
+        (should (< 3 (length (tired--visible-rows))))))))
+
+(ert-deftest tired-elements-directory-uses-the-size-walk-count ()
+  "The size walk answers the child count, so no directory read follows."
+  (tired-tests--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (tired-tests--flush-sizes))
+    (should (= 3 (tired--child-count (expand-file-name "sub" root))))
+    (let ((reads 0)
+          (original (symbol-function 'directory-files)))
+      (cl-letf (((symbol-function 'directory-files)
+                 (lambda (&rest args)
+                   (setq reads (1+ reads))
+                   (apply original args))))
+        (should (= 3 (tired-elements-directory
+                      (expand-file-name "sub" root)))))
+      (should (= 0 reads)))))
+
+(ert-deftest tired-elements-scroll-queues-a-revealed-row ()
+  "A scroll queues the counts of the rows that it reveals."
+  (tired-tests--with-fixture
+    (dotimes (i 5) (tired-tests--write (format "f%d.txt" i) "x"))
+    (let ((buffer (tired root)))
+      (with-current-buffer buffer
+        (tired-tests--flush-elements)
+        (should-not (tired-tests--queued-jobs 'elements))
+        (clrhash tired--elements-cache)
+        (tired--elements-queue-shown)
+        (should (tired-tests--queued-jobs 'elements))))))
 
 (ert-deftest tired-elements-queue-holds-one-job-per-path ()
   "A second queue pass adds no second job for the same path."
