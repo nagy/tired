@@ -110,7 +110,8 @@ fallback.
 =M-x tired-jump= visits the directory of the current buffer.  From a
 Tired buffer it opens the parent directory and puts point on the
 directory that was shown.  From a buffer without a visited file it uses
-=default-directory=.  The mode map remaps =dired-jump=, so =C-x C-j=
+=default-directory=.  The row of the buffer that you left goes to the
+middle of the window, so the jump lands on it and not near an edge.  The mode map remaps =dired-jump=, so =C-x C-j=
 reaches =tired-jump= in a Tired buffer and =dired-jump= elsewhere.
 
 =tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=

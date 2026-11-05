@@ -2021,6 +2021,27 @@ forced walk waits for the display that follows."
       (should (eq (current-buffer) origin))
       (should (equal (tired-entry-name (tired--row-at-point)) "sub")))))
 
+(ert-deftest tired-jump-centers-the-origin-row ()
+  "A jump puts the row of the origin buffer in the middle of the window."
+  (tired-tests--with-fixture
+    ;; Twenty-four sibling directories give the origin row more rows
+    ;; above it than half a batch window, so a centered window start
+    ;; stays inside the listing.
+    (dotimes (index 24)
+      (make-directory (expand-file-name (format "d%02d" index))))
+    (tired root)
+    (let ((origin (current-buffer))
+          (height (window-body-height)))
+      (tired-tests--goto "d15")
+      (tired-find-file)
+      (tired-jump)
+      (should (eq (current-buffer) origin))
+      (should (eq (window-buffer) origin))
+      (should (equal (tired-entry-name (tired--row-at-point)) "d15"))
+      (should (<= (abs (- (count-lines (window-start) (point))
+                          (/ height 2)))
+                  1)))))
+
 (ert-deftest tired-jump-uses-default-directory ()
   "Jumping from a buffer without a file uses `default-directory'."
   (tired-tests--with-fixture

@@ -239,7 +239,8 @@ the split runs horizontally or vertically."
 In a Tired buffer, visit the parent directory and put point on the
 directory that was shown.  Without a visited file, use
 `default-directory'.  When OTHER-WINDOW is non-nil, show the buffer in
-another window."
+another window.  The row of the origin buffer goes to the middle of
+the window, so a jump lands on that row and not near an edge."
   (interactive "P")
   (let* ((here (expand-file-name
                 (cond ((derived-mode-p 'tired-mode) tired--directory)
@@ -256,7 +257,11 @@ another window."
                        (directory-p nil)
                        (t (directory-file-name here)))))
     (if other-window (tired-other-window directory) (tired directory))
-    (tired--goto-path anchor)))
+    (when (tired--goto-path anchor)
+      ;; A window that shows another buffer keeps its own point, so
+      ;; only the window of the listing recenters.
+      (when (eq (window-buffer) (current-buffer))
+        (recenter)))))
 
 ;;; Cache
 

@@ -399,6 +399,14 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   wrong window and defeats a `display-buffer-alist' rule that asks for
   the selected window.  `tired--show-buffer` wraps such a value in a
   list, and the defcustom does not offer one.
+- `tired-jump` puts the row of the buffer that it left in the middle
+  of the window through `recenter`, so the jump lands on the origin
+  row and not near an edge, as `evil-scroll-line-to-center` does.  It
+  recenters only a window that shows the listing, because `recenter`
+  moves the window start of the selected window even when that window
+  shows another buffer.  `tired--goto-path` stays free of `recenter`:
+  the file commands call it too, and a repaint has no user view to
+  center.
 - `tired-other-window` and every directory row that opens with
   OTHER-WINDOW call `switch-to-buffer-other-window`, as
   `dired-other-window` and `dired-find-file-other-window` do.  The
