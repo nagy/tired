@@ -209,11 +209,18 @@ hidden entries until the next toggle.  The mode line counts the hidden
 entries of the shown directories.
 _Avoid_: Ignored file, filtered file
 
+**Subtree**:
+One depth-zero entry of the listing with every row that prints below
+it: the children of an inserted directory and the sections of an
+expanded file, at any depth.  A subtree of the disk, the way `Collapse`
+and the size walk read it, stays a different question.
+_Avoid_: Block, branch, section tree
+
 **Section**:
 One item that a handler extracted from a file, such as a heading, a
 declaration or a PDF bookmark.  A section row follows the row of its
 file.
-_Avoid_: Subtree, outline item, node, chunk
+_Avoid_: Section tree, outline item, node, chunk
 
 **Label**:
 The text of one section row in the name column.  A handler builds it
