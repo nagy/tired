@@ -658,6 +658,29 @@ The copy joins the undo stack, so `tired-undo' removes it again."
                                 (expand-file-name "alpha.txt" root))))))
           (delete-directory other t))))))
 
+(ert-deftest tired-copy-refreshes-the-destination-window ()
+  "Copy shows the new entry in the Tired buffer of the destination.
+The destination window holds no watch on a path that it does not
+list yet, so the command refreshes that listing itself."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (let ((other (file-name-as-directory
+                    (make-temp-file "tired-tests-other-" t))))
+        (unwind-protect
+            (progn
+              (tired root)
+              (tired-tests--goto "alpha.txt")
+              (tired-tests--with-other-window other
+                (let ((target (get-buffer (tired--buffer-name other))))
+                  (should target)
+                  (should-not (with-current-buffer target
+                                (tired-tests--names)))
+                  (tired-copy other)
+                  (with-current-buffer target
+                    (should (equal (list "alpha.txt")
+                                   (tired-tests--names)))))))
+          (delete-directory other t))))))
+
 (ert-deftest tired-copy-prompts-when-dwim-is-off ()
   "The dwim option nil keeps the question in the minibuffer for copy."
   (tired-tests--with-fixture

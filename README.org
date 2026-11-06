@@ -423,7 +423,11 @@ directory at once and asks no question.  The window scan follows
 =dired-do-copy=.  A Tired buffer for the shown directory names no
 target, because a copy or a move into that directory would change
 nothing.  =M-x tired-undo= undoes a copy and a move.  Set
-=tired-dwim-target= to nil to keep the minibuffer question.
+=tired-dwim-target= to nil to keep the minibuffer question.  A copy,
+a move or a deletion refreshes every Tired buffer, so the destination
+window of a dwim copy shows the new entry at once and no wait for the
+file notification follows.  A listing that the command did not change
+keeps its printed rows, because the stamps still match.
 
 Every command prints one line that names the verb, the count and the
 destination.  A failed target joins that line with its path, and the

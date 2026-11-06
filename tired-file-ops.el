@@ -216,12 +216,17 @@ cycle of one action and the trash holds one entry per path."
       slots
     (cons (cons target (tired--trash-name target)) slots)))
 
-(defun tired--refresh-buffers ()
-  "Refresh every live Tired buffer."
+(defun tired--refresh-buffers (&optional skip)
+  "Refresh every live Tired buffer, except SKIP.
+A listing keeps its printed rows while the disk changed no stamp,
+so a refresh of a buffer without a changed path costs one stamp
+pass.  SKIP names the buffer that the caller refreshed itself, as
+`tired--apply-to-targets' does."
   (dolist (buffer (buffer-list))
-    (with-current-buffer buffer
-      (when (and (derived-mode-p 'tired-mode) tired--directory)
-        (ignore-errors (tired-refresh))))))
+    (unless (eq buffer skip)
+      (with-current-buffer buffer
+        (when (and (derived-mode-p 'tired-mode) tired--directory)
+          (ignore-errors (tired-refresh)))))))
 
 (defun tired--push-undo (description undo redo)
   "Hand UNDO and REDO to the undo stack as the two sides of DESCRIPTION.
@@ -394,9 +399,11 @@ above point does not push point down.  A row that leaves the
 listing under point keeps its line through the refresh, so a
 collapsed chain row that still shows a path under a removed leaf
 keeps focus.  A shorter listing clamps point to its last row,
-never to the first line.  Refresh the listing after the line.  A
-name edit holds the buffer text, so the command signals a user
-error there, because its redraw would draw nothing."
+never to the first line.  Refresh the listing after the line, and
+refresh the other Tired buffers too, because the destination may
+belong to another window.  A name edit holds the buffer text, so
+the command signals a user error there, because its redraw would
+draw nothing."
   (when tired--name-edit
     (user-error "Commit or abort the name edit first"))
   (let ((paths (or paths (mapcar #'tired-entry-path (tired--targets)))))
@@ -417,6 +424,12 @@ error there, because its redraw would draw nothing."
       (unless keep-selection
         (tired--clear-selection))
       (tired-refresh)
+      ;; A command reaches the listing of another window, because a
+      ;; copy or a move writes into a directory that the dwim target
+      ;; or the minibuffer question named.  That window holds no watch
+      ;; on a path that it does not list yet, so it takes the same
+      ;; stamp check here.
+      (tired--refresh-buffers (current-buffer))
       (unless (tired--row-position point-row)
         (tired--goto-row-below anchor))
       (deactivate-mark)
