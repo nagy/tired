@@ -454,6 +454,10 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   shows another buffer.  `tired--goto-path` stays free of `recenter`:
   the file commands call it too, and a repaint has no user view to
   center.
+- `M-f` runs `tired-find-file-literally`, which reads every file
+  target through `find-file-literally` and opens a directory target
+  in a Tired buffer, as `RET` does.  It reads the same targets as
+  `tired-find-file`.
 - `tired-other-window` and every directory row that opens with
   OTHER-WINDOW call `switch-to-buffer-other-window`, as
   `dired-other-window` and `dired-find-file-other-window` do.  The

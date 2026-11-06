@@ -88,6 +88,7 @@
     ("TAB" . tired-toggle-subdir)
     ("gf" . tired-find-file)
     ("gF" . tired-find-file-other-window)
+    ("M-f" . tired-find-file-literally)
     ("q" . quit-window)
     ;; Tree and sections.
     ("i" . tired-insert-subdir)

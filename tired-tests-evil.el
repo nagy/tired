@@ -64,6 +64,8 @@
           (should (eq (key-binding (key-parse "<mouse-2>"))
                       #'tired-mouse-find-file-other-window))
           (should (eq (key-binding (key-parse "f")) #'tired-find-file))
+          (should (eq (key-binding (key-parse "M-f"))
+                      #'tired-find-file-literally))
           (should (eq (key-binding (key-parse "gr")) #'tired-refresh))
           ;; The search key narrows the listing instead of searching it.
           (should (eq (key-binding (key-parse "/")) #'tired-filter))

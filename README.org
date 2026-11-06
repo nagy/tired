@@ -58,6 +58,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   the top-level sections of any file with a handler, filled in the idle
   state through a hook that the user extends
 - Optional evil bindings in =tired-evil.el=, with the evil motions kept
+- Visit a file literally with =M-f=, so Emacs decodes no text and
+  converts no line ending
 - Native Elisp listing, no external process
 - A `thing-at-point' provider for `filename' and `existing-filename',
   confined to the name column, so `embark' and any tool that reads

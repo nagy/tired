@@ -4221,6 +4221,39 @@ selection is cleared afterwards."
       (with-current-buffer origin
         (tired--clear-selection)))))
 
+(defun tired--open-entry-literally (entry)
+  "Visit ENTRY without decoding or format conversion.
+A section visits the file that holds it, and a directory opens a
+Tired buffer, because the function `find-file-literally' reads a
+file alone."
+  (let ((path (if (tired-section-p entry)
+                  (tired-section-path entry)
+                (tired-entry-path entry))))
+    (if (file-directory-p path)
+        (tired path)
+      (find-file-literally path))))
+
+(defun tired-find-file-literally ()
+  "Visit the target entries literally.
+Read every file with the function `find-file-literally', so Emacs
+decodes no text and converts no line ending.  Act on the selection,
+then on the active region, then on the row at point.  A directory
+target opens a Tired buffer, because that function reads a file
+alone.  The selection is cleared afterwards."
+  (interactive)
+  (let* ((row (tired--row-at-point))
+         (targets (or (tired--targets)
+                      (cond ((tired-entry-p row) (list row))
+                            ((tired-section-p row) (list row)))))
+         (origin (current-buffer)))
+    (unless targets
+      (user-error "No entry at point"))
+    (dolist (entry targets)
+      (tired--open-entry-literally entry))
+    (when (buffer-live-p origin)
+      (with-current-buffer origin
+        (tired--clear-selection)))))
+
 (defun tired-find-file-other-window ()
   "Visit the target entries in another window.
 A directory opens through `switch-to-buffer-other-window', so the
@@ -4385,6 +4418,7 @@ into `context-menu-functions' locally."
   "TAB" #'tired-toggle-subdir
   "j" #'tired-find-file
   "J" #'tired-find-file-other-window
+  "M-f" #'tired-find-file-literally
   "s" #'tired-sort
   "S" #'tired-sort-backward
   ">" #'tired-sort

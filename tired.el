@@ -48,6 +48,7 @@
 ;;   E       collapse the sections of the file at point
 ;;   j       visit the entry at point, like RET
 ;;   J       the same, in another window
+;;   M-f     visit the file at point literally
 ;;   M-i     remove the inserted children of the directory at point
 ;;   s       sort the listing
 ;;   SPC     toggle selection, then move to the next line

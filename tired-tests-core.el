@@ -997,6 +997,17 @@ The home directory of a path takes its abbreviation."
     (should (equal (buffer-file-name) (expand-file-name "alpha.txt" root)))
     (kill-buffer (current-buffer))))
 
+(ert-deftest tired-find-file-literally-visits-the-file ()
+  "Opening a file entry literally reads it without conversion."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let (visited)
+      (cl-letf (((symbol-function 'find-file-literally)
+                 (lambda (path &rest _) (push path visited))))
+        (tired-find-file-literally))
+      (should (equal visited (list (expand-file-name "alpha.txt" root)))))))
+
 (ert-deftest tired-find-file-directory-replaces-the-listing ()
   "Opening a directory entry shows it in a Tired buffer."
   (tired-tests--with-fixture
