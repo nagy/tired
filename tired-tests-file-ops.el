@@ -149,6 +149,79 @@ though the moved leaf sits inside the destination directory now."
       (should (file-regular-p (expand-file-name "alpha.txt" root)))
       (should-not (file-exists-p (expand-file-name "renamed.txt" root))))))
 
+(ert-deftest tired-rename-renames-a-visiting-buffer ()
+  "A renamed file takes its open buffer along, as wdired does.
+The buffer keeps the modified flag that the user set."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((buffer (find-file-noselect (expand-file-name "alpha.txt" root)))
+            (target (expand-file-name "renamed.txt" root)))
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer
+                (insert "more"))
+              (tired-tests--goto "alpha.txt")
+              (tired-rename "renamed.txt")
+              (should (equal (buffer-file-name buffer) target))
+              (should (equal (buffer-name buffer) "renamed.txt"))
+              (should (buffer-modified-p buffer)))
+          (kill-buffer buffer))))))
+
+(ert-deftest tired-rename-takes-a-unique-buffer-name ()
+  "A taken buffer name takes a suffix, as `rename-buffer' does."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      ;; Build the plain suffix, because `uniquify' shapes the name
+      ;; with the directory whenever that library holds.
+      (let ((uniquify-buffer-name-style nil))
+        (tired root)
+        (let ((buffer (find-file-noselect (expand-file-name "alpha.txt" root)))
+              (taken nil))
+          (unwind-protect
+              (progn
+                (setq taken (get-buffer-create "renamed.txt"))
+                (tired-tests--goto "alpha.txt")
+                (tired-rename "renamed.txt")
+                (should (equal (buffer-name buffer) "renamed.txt<2>")))
+            (kill-buffer buffer)
+            (kill-buffer taken)))))))
+
+(ert-deftest tired-rename-leaves-a-buffer-name-alone-when-the-option-is-nil ()
+  "A nil option keeps the buffer name and the old visited path."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((tired-rename-visiting-buffer nil)
+            (buffer (find-file-noselect (expand-file-name "alpha.txt" root)))
+            (name nil))
+        (unwind-protect
+            (progn
+              (setq name (buffer-name buffer))
+              (tired-tests--goto "alpha.txt")
+              (tired-rename "renamed.txt")
+              (should (equal (buffer-name buffer) name))
+              (should (equal (buffer-file-name buffer)
+                             (expand-file-name "alpha.txt" root))))
+          (kill-buffer buffer))))))
+
+(ert-deftest tired-rename-renames-a-buffer-below-a-directory ()
+  "A directory rename moves the visited path of every buffer below it."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (let ((buffer (find-file-noselect
+                     (expand-file-name "sub/deep/leaf.txt" root))))
+        (unwind-protect
+            (progn
+              (tired-tests--goto "sub")
+              (tired-rename "other")
+              (should (equal (buffer-file-name buffer)
+                             (expand-file-name "other/deep/leaf.txt" root)))
+              (should (equal (buffer-name buffer) "leaf.txt"))
+              (should-not (buffer-modified-p buffer)))
+          (kill-buffer buffer))))))
+
 (ert-deftest tired-rename-keeps-the-selection ()
   "Rename reads the row at point and leaves the selection alone."
   (tired-tests--with-fixture

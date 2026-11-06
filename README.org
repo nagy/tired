@@ -357,6 +357,19 @@ current name, and an existing destination goes to the trash first.
 The command reads the row at point alone, so a selection and a
 region stay untouched.
 
+A rename takes the buffer that visits the row along, the way
+=wdired= does.  An open =a.txt= buffer becomes =b.txt=, and a
+buffer that visits a file below a renamed directory takes the new
+directory prefix.  The buffer keeps its text and its modified flag.
+A name that another buffer holds becomes unique with a suffix such
+as =<2>=, and =uniquify= shapes that name when the library holds.
+Set =tired-rename-visiting-buffer= to nil to leave the buffer names
+as they stand:
+
+#+begin_src elisp
+  (setq tired-rename-visiting-buffer nil)
+#+end_src
+
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
 empty file.  None of these commands asks for a confirmation.  None
 of them calls a shell.  =!= is the one command that runs a shell, and

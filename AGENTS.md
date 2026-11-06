@@ -223,7 +223,16 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
     which takes the description, the undo step and the redo step.
     `tired-rename` stays outside
     that helper: it reads the row at point alone, so the selection and
-    the region stay untouched.
+    the region stay untouched.  It also renames the buffer that
+    visits the path through `tired--rename-visiting-buffers` while
+    `tired-rename-visiting-buffer` holds, the way `dired-rename-file`
+    does for a file and `dired-rename-subdir` does for a directory,
+    and a directory rename rewrites the visited path of every buffer
+    below it.  The helper calls `set-visited-file-name', never
+    `rename-buffer', so `uniquify' shapes a taken name and a plain
+    Emacs gives the `<2>' suffix.  No other command reaches it: a
+    move, a name edit commit and an undo leave the buffer names
+    alone.
     `tired-copy` and `tired-move` read their destination from another
     Tired window when `tired-dwim-target` holds, through
     `tired--other-tired-directory`, so neither asks a question then and

@@ -62,6 +62,18 @@ action on `tired--undo-actions' for `tired-undo'."
   :type 'hook
   :group 'tired)
 
+(defcustom tired-rename-visiting-buffer t
+  "When non-nil, `tired-rename' renames the buffer that visits a path.
+The buffer of a renamed file takes the new name through
+`set-visited-file-name', as `dired-rename-file' does, and the
+buffer of a file below a renamed directory takes the new directory
+prefix, as `dired-rename-subdir' does.  A name that another buffer
+holds becomes unique with a suffix such as `<2>', and `uniquify'
+shapes that name when the library holds.  A nil value leaves every
+buffer name as it stands."
+  :type 'boolean
+  :group 'tired)
+
 (defvar tired--undo-actions nil
   "Stack of actions as (DESCRIPTION UNDO-FUNCTION REDO-FUNCTION) lists.
 The most recent action comes first, and both functions take no
@@ -216,6 +228,48 @@ first failed path."
         (parent (directory-file-name (expand-file-name parent))))
     (or (equal path parent)
         (string-prefix-p (file-name-as-directory parent) path))))
+
+(defun tired--rename-file-buffer (path target)
+  "Point the buffer that visits PATH at TARGET.
+Do nothing while no buffer visits PATH.  Pass ALONG-WITH-FILE, so
+`set-visited-file-name' keeps the modification time that the buffer
+read, as `dired-rename-file' does."
+  (let ((buffer (get-file-buffer path)))
+    (when buffer
+      (with-current-buffer buffer
+        (set-visited-file-name target nil t)))))
+
+(defun tired--rename-subtree-buffers (path target)
+  "Rewrite the directory PATH to TARGET in every buffer below PATH.
+Keep the modified flag of each buffer, as `dired-rename-subdir'
+does, and skip a buffer that visits the renamed directory itself,
+because a directory name is no visited file, and an indirect
+buffer, because `set-visited-file-name' refuses one."
+  (let ((from (file-name-as-directory (expand-file-name path)))
+        (to (file-name-as-directory (expand-file-name target))))
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (and buffer-file-name
+                   (not (buffer-base-buffer))
+                   (tired--path-under-p buffer-file-name from))
+          (let ((name (expand-file-name buffer-file-name)))
+            (unless (equal (directory-file-name name)
+                           (directory-file-name from))
+              (let ((modified (buffer-modified-p)))
+                (set-visited-file-name
+                 (expand-file-name (substring name (length from)) to))
+                (set-buffer-modified-p modified)))))))))
+
+(defun tired--rename-visiting-buffers (path target)
+  "Rename every buffer that visits PATH to TARGET.
+PATH names a file or a directory.  Run the function after the move
+of the disk, so TARGET exists and decides the branch.  A buffer
+that visits a path below a renamed directory takes the new prefix
+through `tired--rename-subtree-buffers', and every other buffer
+takes the new name through `tired--rename-file-buffer'."
+  (if (file-directory-p target)
+      (tired--rename-subtree-buffers path target)
+    (tired--rename-file-buffer path target)))
 
 (defun tired--surviving-row-above (row doomed)
   "Return the nearest row above ROW that the command keeps.
@@ -534,8 +588,10 @@ puts it back.  A destination that names a directory signals a user
 error, so no subtree leaves the listing by accident.  The command
 reads the row at point alone and ignores the selection and the
 region.  A later `tired-undo' returns the old name.  Point follows
-the renamed row.  The command never calls a shell, and it signals a
-user error while a name edit holds the buffer text."
+the renamed row.  A buffer that visits the path takes the new name
+too when `tired-rename-visiting-buffer' holds.  The command never
+calls a shell, and it signals a user error while a name edit holds
+the buffer text."
   (interactive
    (if tired--name-edit
        (user-error "Commit or abort the name edit first")
@@ -571,6 +627,8 @@ user error while a name edit holds the buffer text."
               (moved nil)
               (trashed nil))
           (rename-file path target)
+          (when tired-rename-visiting-buffer
+            (tired--rename-visiting-buffers path target))
           (setq moved (list (cons target path)))
           (when previous
             (setq trashed (list (cons previous target))))
