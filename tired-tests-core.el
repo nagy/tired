@@ -2418,6 +2418,65 @@ The file row may lie inside the same region, and it joins once."
     (should-not tired--selection)
     (should (equal (tired-tests--target-names) '("alpha.txt")))))
 
+(ert-deftest tired-select-none-at-point-unmarks-one-row ()
+  "Unmark drops the row at point alone and moves down."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-select-all)
+    (tired-tests--goto "alpha.txt")
+    (let ((line (line-number-at-pos)))
+      (tired-select-none-at-point)
+      (should (= (line-number-at-pos) (1+ line))))
+    (should (= 4 (length tired--selection)))
+    (should-not (member (expand-file-name "alpha.txt" root)
+                        tired--selection))
+    (should (= 4 (length (seq-filter
+                          (lambda (overlay)
+                            (overlay-get overlay 'tired-selection))
+                          (overlays-in (point-min) (point-max))))))))
+
+(ert-deftest tired-select-none-at-point-keeps-an-unselected-row ()
+  "Unmark on a row outside the selection changes nothing but point."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "beta.txt")
+    (tired-select-toggle)
+    (tired-tests--goto "alpha.txt")
+    (let ((line (line-number-at-pos)))
+      (tired-select-none-at-point)
+      (should (= (line-number-at-pos) (1+ line))))
+    (should (equal tired--selection
+                   (list (expand-file-name "beta.txt" root))))))
+
+(ert-deftest tired-select-none-at-point-refuses-a-section-row ()
+  "A section row stands for its file, so unmark signals an error."
+  (tired-tests--with-fixture
+    (tired-tests--write "notes.org" "* one\n** one-a\n")
+    (tired root)
+    (tired-expand-file "notes.org")
+    (tired-tests--goto-section "one")
+    (should-error (tired-select-none-at-point) :type 'user-error)))
+
+(ert-deftest tired-select-none-at-point-unflags-a-flagged-row ()
+  "Unmark drops the deletion flag of the row at point."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-none-at-point)
+        (should-not tired--flagged-deletion)
+        (should-not tired--delete-timer)
+        (should (file-exists-p (expand-file-name "alpha.txt" root)))))))
+
+(ert-deftest tired-selection-keys-split-the-row-and-the-whole-listing ()
+  "The lower-case key unmarks one row, the capital key clears all."
+  (should (eq (lookup-key tired-mode-map "u")
+              #'tired-select-none-at-point))
+  (should (eq (lookup-key tired-mode-map "U") #'tired-select-none)))
+
 (ert-deftest tired-narrow-to-selection-accepts-a-region ()
   "Narrow reads the region when the selection stays empty."
   (tired-tests--with-fixture

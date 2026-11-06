@@ -145,8 +145,10 @@ afterwards, and a view command keeps it.  =t= toggles every visible
 entry.  With an empty selection it selects them all, with a full
 selection it clears them, and with a partial selection it inverts the
 visible part.  A selected entry that a filter or a narrow snapshot
-hides stays selected, so =u= remains the way to clear the whole
-selection.  =%= adds every visible file that shares the extension of
+hides stays selected, so =U= remains the way to clear the whole
+selection.  =u= unmarks the row at point and moves down, the way
+Dired's =u= does, and =U= unmarks every row at once.  =%= adds
+every visible file that shares the extension of
 the row at point, and point stays on that row.  A second extension
 joins the first, so =%= on a =.el= file and then on a =.org= file
 selects both groups.  A directory stays out.  A selected row takes
@@ -168,7 +170,7 @@ one row to the run.  A run costs one motion instead of one =SPC= per
 row.  A command turns the region into a selection before it acts, so
 =D=, =c=, =m=, =y=, =w=, =!=, =i=, =M-i= and =TAB= read
 the same rows that =SPC= on each row would select.  The mode line
-reports the region count and size, as it does for a selection.  =u=
+reports the region count and size, as it does for a selection.  =U=
 clears both sources.  A non-empty selection wins over the region.  A
 section row stands for the file that holds it, so a region over
 headings reaches the file, the way point on a heading does.  The mode
@@ -380,9 +382,10 @@ positive value moves the targets out of the selection into the
 deletion flag set, paints each row with `tired-flagged-deletion',
 which inherits `dired-flagged', and starts a countdown of that many
 seconds.  Every change of the selection starts the countdown again
-from zero, so a user who keeps working pushes the removal back.  =u=
-(=tired-select-none=) drops every flag and stops the countdown, and
-=SPC= on a flagged row drops that flag alone.  A region and every
+from zero, so a user who keeps working pushes the removal back.  =U=
+(=tired-select-none=) drops every flag and stops the countdown, =u=
+(=tired-select-none-at-point=) on a flagged row drops that flag
+alone, and =SPC= on a flagged row drops it too.  A region and every
 selection command skip a flagged row, so a copy or a move acts on the
 selected rows alone.  When the countdown ends, Tired removes exactly
 the flagged paths and keeps the rest of the selection.  A countdown

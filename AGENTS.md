@@ -465,8 +465,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired--set-selection` drops a flagged path, so every caller stays
   disjoint without a test, and `tired--region-entries` skips one.  A
   selection command that touches a flagged row either drops the flag
-  (`tired-select-toggle`) or skips the row
-  (`tired-select-all`, `tired-select-invert`,
+  (`tired-select-toggle`, `tired-select-none-at-point`) or skips the
+  row (`tired-select-all`, `tired-select-invert`,
   `tired-select-extension`).  Do not read a flag as a mark: the flag
   set is not the selection, and a file command reads the selection,
   never the flag set.
@@ -477,6 +477,11 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired--clear-selection`.  Only the interactive `tired-select-none`
   clears the deletion flags too, so a copy or a move never cancels a
   pending deletion.
+- The selection keys follow Dired: `u` runs
+  `tired-select-none-at-point`, which unmarks the row at point and
+  moves down, and `U` runs `tired-select-none`, which clears the
+  selection, the region and every flag.  The evil normal table
+  carries the same two keys, so both shadow the evil undo key.
 - Name cells carry `face` and `font-lock-face`, so a name keeps its color
   with font-lock off and after `font-lock-unfontify-region`.  A section
   label follows the same rule through `tired--section-cell`.

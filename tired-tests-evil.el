@@ -73,6 +73,13 @@
                       #'tired-rename))
           (should (eq (key-binding (key-parse "m"))
                       #'tired-select-toggle-next))
+          ;; The lower-case unmark drops one row, the capital key clears
+          ;; the whole selection, as `dired-unmark' and
+          ;; `dired-unmark-all-marks' do.
+          (should (eq (key-binding (key-parse "u"))
+                      #'tired-select-none-at-point))
+          (should (eq (key-binding (key-parse "U"))
+                      #'tired-select-none))
           ;; The toggle key replaces the selection invert on the evil map.
           (should (eq (key-binding (key-parse "~"))
                       #'tired-toggle-hidden))

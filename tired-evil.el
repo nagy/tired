@@ -118,7 +118,8 @@
     ("M-SPC" . tired-select-toggle)
     ("t" . tired-select-all)
     ("%" . tired-select-extension)
-    ("u" . tired-select-none)
+    ("u" . tired-select-none-at-point)
+    ("U" . tired-select-none)
     ;; Files.
     ("D" . tired-delete)
     ("!" . tired-do-shell-command)

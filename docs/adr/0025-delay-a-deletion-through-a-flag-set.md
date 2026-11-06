@@ -10,7 +10,8 @@ deletes at once, as the command always did.
 The flag set stays apart from the selection.  A flagged path never
 joins `tired--selection`: `tired--set-selection` drops it,
 `tired-select-toggle` on a flagged row drops the flag instead of
-selecting the row, and `tired-select-all`, `tired-select-invert`,
+selecting the row, `tired-select-none-at-point` on a flagged row
+drops that flag alone, and `tired-select-all`, `tired-select-invert`,
 `tired-select-extension` and `tired--region-entries` skip it.  The
 user asked for a separation: a copy of the selected rows must never
 carry a row that waits for deletion.  A file command clears the
@@ -40,7 +41,7 @@ Rejected alternatives: a timer per row, because a selection of many
 rows would schedule many deletions and one clear would have to cancel
 each; a flag that mirrors the selection, because selecting a row for a
 copy would then arm its deletion; a flag that a selection edit never
-touches, because `u` would stop clearing the pending deletion; an
+touches, because `U` would stop clearing the pending deletion; an
 immediate `tired-delete` as the default, because the delay protects
 the user without a confirmation question.
 

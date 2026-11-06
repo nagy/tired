@@ -3690,6 +3690,33 @@ path."
   (tired-select-toggle)
   (forward-line 1))
 
+(defun tired-select-none-at-point ()
+  "Remove the entry at point from the selection, then move down.
+A row that waits for a delayed `tired-delete' loses its flag instead,
+so the command unmarks a row in both sets, the way `dired-unmark'
+does.  A row that the selection does not hold costs nothing but the
+move.  Signal a user error on a section row, because a section stands
+for its file and a file row already covers that file."
+  (interactive)
+  (let ((entry (tired--row-at-point)))
+    (cond
+     ((tired-section-p entry)
+      (user-error "A section row is not selectable"))
+     ((not (tired-entry-p entry))
+      (user-error "No entry at point")))
+    (let ((path (tired-entry-path entry)))
+      (cond
+       ((tired--flagged-deletion-p path)
+        (tired--unflag-deletion (list path)))
+       ((tired--selected-p entry)
+        (tired--set-selection
+         (seq-remove (lambda (selected) (equal selected path))
+                     tired--selection))
+        (tired--apply-selection-overlays)
+        (tired--restart-delete-timer)
+        (tired--update-mode-line)))))
+  (forward-line 1))
+
 (defun tired-select-all ()
   "Toggle the selection of every visible entry.
 An unselected entry joins the selection and a selected entry leaves
@@ -4309,7 +4336,8 @@ into `context-menu-functions' locally."
   "S-SPC" #'tired-select-toggle
   "t" #'tired-select-all
   "%" #'tired-select-extension
-  "u" #'tired-select-none
+  "u" #'tired-select-none-at-point
+  "U" #'tired-select-none
   "~" #'tired-toggle-hidden
   "N" #'tired-toggle-narrow
   "A" #'tired-toggle-auto-revert
@@ -4377,6 +4405,9 @@ command that needs an entry stays insensitive on an empty row."
      ["By extension" tired-select-extension
       :active (tired--row-at-point)
       :help "Add every visible file with the extension of point"]
+     ["None at point" tired-select-none-at-point
+      :active (tired--row-at-point)
+      :help "Remove the row at point from the selection and move down"]
      ["None" tired-select-none
       :active tired--selection]
      ["Invert" tired-select-invert]
