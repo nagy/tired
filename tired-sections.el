@@ -51,6 +51,7 @@
 (declare-function treesit-node-child "treesit" (node n &optional named))
 (declare-function treesit-node-child-count "treesit" (node &optional named))
 (declare-function treesit-node-children "treesit" (node &optional named))
+(declare-function treesit-node-end "treesit" (node))
 (declare-function treesit-node-field-name "treesit" (node))
 (declare-function treesit-node-start "treesit" (node))
 (declare-function treesit-node-parent "treesit" (node))
@@ -216,6 +217,94 @@ source text."
                   sections)))))
     (nreverse sections)))
 
+(defun tired--treesit-keyword-string (kind)
+  "Return KIND as a string that carries `font-lock-keyword-face'.
+A row whose source text holds no prefix of its own uses this string,
+so its kind word still reads like a keyword of the major mode."
+  (propertize (symbol-name kind) 'face 'font-lock-keyword-face))
+
+(defun tired--treesit-collapse-space (string)
+  "Return STRING with each run of whitespace replaced by one space.
+Trim both ends.  The parts that stay keep their text properties, so a
+keyword keeps the face that the major mode gave it, and one item
+prefix never breaks a row onto a second line."
+  (let ((position 0)
+        (end (length string))
+        (parts nil))
+    (while (< position end)
+      (let ((space (string-match "[ \t\n\r\f]+" string position)))
+        (if (and space (< space end))
+            (progn
+              (when (< position space)
+                (push (substring string position space) parts))
+              (push " " parts)
+              (setq position (match-end 0)))
+          (push (substring string position end) parts)
+          (setq position end))))
+    (string-trim (apply #'concat (nreverse parts)))))
+
+(defun tired--treesit-keyword-text (start end)
+  "Return the source text from START to END as a keyword prefix.
+Collapse the whitespace, so one row holds one line.  A part that
+carries no source face takes `font-lock-keyword-face', so a mode that
+fontifies nothing still shows a keyword.  Return nil when the range
+holds no text."
+  (let ((text (tired--treesit-collapse-space (buffer-substring start end))))
+    (when (> (length text) 0)
+      (let ((position 0)
+            (size (length text)))
+        (while (< position size)
+          (let ((next (or (next-single-property-change position 'face
+                                                       text size)
+                          size)))
+            (unless (get-text-property position 'face text)
+              (add-text-properties position next
+                                   '(face font-lock-keyword-face)
+                                   text))
+            (setq position next))))
+      text)))
+
+(defun tired--treesit-prefixed-label (prefix name)
+  "Return PREFIX and NAME as one label, separated by a space.
+Return NAME alone without a PREFIX, so a name that starts a row takes
+no leading space."
+  (if (and prefix (> (length prefix) 0))
+      (concat prefix " " name)
+    name))
+
+(defun tired--rust-prefix-start (node)
+  "Return the position where the prefix text of NODE starts.
+Skip a visibility modifier, so a row never shows `pub' and a
+multi-line `pub(in path)' costs no line break."
+  (if-let* ((visibility
+             (seq-find (lambda (child)
+                         (equal (treesit-node-type child)
+                                "visibility_modifier"))
+                       (treesit-node-children node))))
+      (treesit-node-end visibility)
+    (treesit-node-start node)))
+
+(defun tired--rust-section-label (node kind)
+  "Return the label for the Rust item NODE of KIND.
+Take the item prefix from the source text, so a struct reads `struct'
+and a function reads `fn', `async fn' or `unsafe fn', and each prefix
+keeps the face that `rust-ts-mode' gave its keyword.  A visibility
+modifier stays out, so a struct never reads differently for `pub'.
+An impl block names its type and its trait, the way its source line
+does."
+  (if (equal (treesit-node-type node) "impl_item")
+      (if-let* ((body (treesit-node-child-by-field-name node "body")))
+          (or (tired--treesit-keyword-text (tired--rust-prefix-start node)
+                                           (treesit-node-start body))
+              (tired--treesit-keyword-string kind))
+        (tired--treesit-keyword-string kind))
+    (if-let* ((name (treesit-node-child-by-field-name node "name")))
+        (tired--treesit-prefixed-label
+         (tired--treesit-keyword-text (tired--rust-prefix-start node)
+                                      (treesit-node-start name))
+         (treesit-node-text name))
+      (tired--treesit-keyword-string kind))))
+
 (defconst tired--rust-section-spec
   '(:language rust
     :mode rust-ts-mode
@@ -232,7 +321,7 @@ source text."
             ("static_item" . static)
             ("macro_definition" . macro))
     :containers ("impl_item" "mod_item" "trait_item")
-    :fields ("name" "type"))
+    :label tired--rust-section-label)
   "Tree-sitter section spec for a Rust file.")
 
 (defconst tired--markdown-section-spec
@@ -427,20 +516,25 @@ Each name keeps the faces that the buffer fontification gave it."
 
 (defun tired--go-section-label (node kind)
   "Return the label for the Go NODE of KIND.
-A method names its receiver type, so two methods of one name stay
-apart.  A constant and a variable name every name that one spec
-declares."
-  (pcase (treesit-node-type node)
-    ("method_declaration"
-     (format "%s (%s) %s" kind
-             (or (tired--go-receiver-name node) "?")
-             (or (tired--treesit-field-text node '("name")) "?")))
-    ((or "const_spec" "var_spec")
-     (format "%s %s" kind
-             (or (string-join (tired--go-name-texts node) ", ") "?")))
-    (_
-     (format "%s %s" kind
-             (or (tired--treesit-field-text node '("name")) "?")))))
+A declaration that starts with its keyword takes the keyword from the
+source text, so a function reads `func' and a method reads
+`func (c *Config)', and each keyword keeps the face that `go-ts-mode'
+gave it.  A type, constant or variable spec sits inside its
+declaration, so its kind word carries `font-lock-keyword-face' alone.
+A constant and a variable name every name that one spec declares."
+  (let ((name (pcase (treesit-node-type node)
+                ((or "const_spec" "var_spec")
+                 (or (string-join (tired--go-name-texts node) ", ") "?"))
+                (_ (or (tired--treesit-field-text node '("name")) "?")))))
+    (if (member (treesit-node-type node)
+                '("function_declaration" "method_declaration"))
+        (tired--treesit-prefixed-label
+         (when-let* ((child (treesit-node-child-by-field-name node "name")))
+           (tired--treesit-keyword-text (treesit-node-start node)
+                                        (treesit-node-start child)))
+         name)
+      (tired--treesit-prefixed-label (tired--treesit-keyword-string kind)
+                                     name))))
 
 (defun tired--go-node-shown-p (node)
   "Return non-nil when NODE belongs in a Go listing.

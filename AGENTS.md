@@ -489,6 +489,21 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   alone, as `dired-font-lock-keywords` does.  The first character must
   read `-` or `d`, so a symlink keeps its mode plain, and the cell
   carries `face` and `font-lock-face` like a name cell.
+- A Rust or Go row repeats the prefix of its source line, so a Rust
+  item reads `fn', `async fn' or `struct' and a Go declaration reads
+  `func' or `func (c *Config)'.  `tired--treesit-keyword-text` copies
+  that prefix out of the fontified buffer, collapses its whitespace
+  onto one line, and paints `font-lock-keyword-face' on every part
+  that the major mode left plain, so a buffer that fontifies nothing
+  still shows a keyword.  `tired--rust-prefix-start` skips a
+  `visibility_modifier', so `pub' never widens a row and a multi-line
+  `pub(in path)' costs no line break.  An impl row takes the text up
+  to its `body' field, so it names its type and its trait.
+  `tired--treesit-keyword-string` supplies a kind word that the source
+  text does not hold, such as the `type' of a Go type spec, and paints
+  the same face.  Do not hardcode a kind word for a node that starts
+  with its own keyword: the source text holds the right word and its
+  face already.
 - A handler label that holds one token per part paints each part with
   its own face.  The SQLite handler paints the column name, the
   declared type and each constraint keyword through

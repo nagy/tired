@@ -162,28 +162,65 @@
       (should (eq (get-text-property 0 'font-lock-face cell) 'org-level-1)))))
 
 (ert-deftest tired-rust-section-labels-take-mode-faces ()
-  "A Rust item label keeps its source face over a plain kind prefix."
+  "A Rust item label reads like its source line and keeps its faces."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
   (tired-tests--with-fixture
-    (tired-tests--write "lib.rs" "struct Config { n: u8 }\n\nfn main() {}\n")
+    (tired-tests--write "lib.rs" "pub struct Config { n: u8 }\n\nfn main() {}\n")
     (let* ((path (expand-file-name "lib.rs" root))
            (sections (tired-file-sections path))
            (structure (car sections))
            (function (cadr sections))
            (cell (tired--section-cell structure)))
+      ;; The visibility modifier stays out of the row.
       (should (equal (tired-section-label structure) "struct Config"))
+      (should (eq (get-text-property 0 'face (tired-section-label structure))
+                  'font-lock-keyword-face))
       (should (eq (get-text-property 7 'face (tired-section-label structure))
                   'font-lock-type-face))
-      (should (eq (get-text-property 9 'face (tired-section-label function))
+      (should (equal (tired-section-label function) "fn main"))
+      (should (eq (get-text-property 5 'face (tired-section-label function))
                   'font-lock-function-name-face))
-      ;; The kind prefix carries no source face, so it takes the
-      ;; section face, and the name keeps its own.
-      (should (eq (get-text-property 0 'face cell) 'tired-section-face))
+      ;; The keyword proves the source face, and the name keeps its own.
+      (should (eq (get-text-property 0 'face cell) 'font-lock-keyword-face))
       (should (eq (get-text-property 0 'font-lock-face cell)
-                  'tired-section-face))
+                  'font-lock-keyword-face))
       (should (eq (get-text-property 7 'face cell) 'font-lock-type-face))
       (should (eq (get-text-property 7 'font-lock-face cell)
                   'font-lock-type-face)))))
+
+(ert-deftest tired-rust-function-rows-read-fn-and-async-fn ()
+  "A Rust function row takes its prefix from the source text."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "lib.rs"
+                        (concat "fn plain() {}\n\n"
+                                "async fn fetch() {}\n\n"
+                                "unsafe fn raw() {}\n\n"
+                                "pub(crate)\nstruct Foo;\n"))
+    (let* ((path (expand-file-name "lib.rs" root))
+           (labels (mapcar (lambda (section)
+                             (substring-no-properties
+                              (tired-section-label section)))
+                           (tired-file-sections path))))
+      (should (equal labels
+                     '("fn plain" "async fn fetch" "unsafe fn raw"
+                       "struct Foo"))))))
+
+(ert-deftest tired-rust-prefix-takes-the-keyword-face-when-none-arrives ()
+  "A Rust prefix with no source face takes `font-lock-keyword-face'."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "lib.rs" "fn main() {}\n")
+    ;; A mode that fontifies nothing leaves every word plain, so the
+    ;; handler paints the keyword itself.
+    (cl-letf (((symbol-function 'font-lock-ensure) #'ignore))
+      (let* ((path (expand-file-name "lib.rs" root))
+             (label (tired-section-label (car (tired-file-sections path)))))
+        (should (equal (substring-no-properties label) "fn main"))
+        (should (eq (get-text-property 0 'face label)
+                    'font-lock-keyword-face))
+        (should (eq (get-text-property 1 'face label)
+                    'font-lock-keyword-face))))))
 
 (ert-deftest tired-markdown-section-labels-take-mode-faces ()
   "A Markdown heading label keeps the face of its level."
@@ -255,8 +292,8 @@
     (should (equal (tired-tests--sections)
                    '(("struct Config" . 1)
                      ("impl Config" . 1)
-                     ("function new" . 2)
-                     ("function main" . 1))))))
+                     ("fn new" . 2)
+                     ("fn main" . 1))))))
 
 (ert-deftest tired-sections-of-a-go-file ()
   "A Go file lists declarations and indents a method under its type."
@@ -276,8 +313,8 @@
                    '(("const Limit" . 1)
                      ("var name" . 1)
                      ("type Config" . 1)
-                     ("method (Config) Label" . 2)
-                     ("function main" . 1))))))
+                     ("func (c *Config) Label" . 2)
+                     ("func main" . 1))))))
 
 (ert-deftest tired-go-method-declared-before-its-type-stays-flat ()
   "A method that precedes its type takes no indent from it."
@@ -291,19 +328,21 @@
     (tired-tests--goto "main.go")
     (tired-toggle-subdir)
     (should (equal (tired-tests--sections)
-                   '(("method (Config) Label" . 1)
+                   '(("func (c *Config) Label" . 1)
                      ("type Config" . 1))))))
 
 (ert-deftest tired-go-section-labels-take-mode-faces ()
-  "A Go label keeps the face of its source name."
+  "A Go label takes its keyword from the source text."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
   (tired-tests--with-fixture
     (tired-tests--write "main.go" "package main\n\nfunc main() {}\n")
     (let* ((path (expand-file-name "main.go" root))
            (label (tired-section-label
                    (car (tired-file-sections path)))))
-      (should (equal label "function main"))
-      (should (eq (get-text-property 9 'face label)
+      (should (equal label "func main"))
+      (should (eq (get-text-property 0 'face label)
+                  'font-lock-keyword-face))
+      (should (eq (get-text-property 5 'face label)
                   'font-lock-function-name-face)))))
 
 (ert-deftest tired-rust-constant-and-static-rows-name-their-kind ()
