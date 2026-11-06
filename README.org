@@ -9,6 +9,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 * Features
 
 - Column listing with name, size, modification time and permission mode
+- Mode column in octal, such as =755=, aligned right, or the long
+  =drwxr-xr-x= form on request
 - Modification time column colored by `tired-date', which inherits
   `org-date'
 - Size column colored by `tired-file-size', which inherits `default'
@@ -238,6 +240,10 @@ as mode, gives way to the first state forward and to the last state
 back.  A position outside the list signals an error.  A click on a
 column header still sorts and flips that column.  Under evil, the
 =↓= character walks the same list.
+
+A mode sort compares the octal permission bits, so =755= lists before
+=1000= and =4755= lists after both.  The sort value comes from
+=tired--mode-octal=, the same function that fills the short cell.
 
 * Mouse
 
@@ -827,6 +833,27 @@ at each level.  Press =~=, or run =M-x tired-toggle-hidden=, to show
 the hidden entries and to hide them again.  The mode line then reads
 `[2 hidden shown]'.
 
+* Mode column
+
+=tired-short-mode= starts on, so the Mode column prints the permission
+bits in octal.  A row then reads =755= instead of =drwxr-xr-x=, and
+the column agrees with =chmod=.  It takes six places and aligns
+right, so =644= ends at the same edge as =4755=.  A set-user-ID, a
+set-group-ID or the sticky bit adds a fourth digit.
+
+A symbolic link prints the same way, so =lrwxrwxrwx= reads =777=.
+The name face and the arrow tell a link apart from a file.
+
+Set the option to nil for the long form:
+
+#+begin_src elisp
+  (setq tired-short-mode nil)
+#+end_src
+
+A file with a mode string that holds fewer than ten characters prints
+that string as it stands, so a row from another file system or from a
+hand-built entry keeps its text.
+
 * Name colors
 
 A name takes its face from the matching Dired face: `dired-directory',
@@ -901,7 +928,9 @@ The mode column takes =tired-perm-write-face=, which inherits
 or the world can write.  Only that character takes the face, as in a
 Dired buffer, so the rest of the mode string stays plain.  A symbolic
 link keeps its mode plain, because the Dired rule reads a =-= or a
-=d= in the first place.
+=d= in the first place.  The face needs the long form, so
+=tired-short-mode= nil; the octal cell of the short form carries no
+face.
 
 A directory row ends with a slash.  That slash takes the
 =tired-directory-suffix-face= face, which inherits =parenthesis=, so a

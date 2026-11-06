@@ -493,7 +493,22 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   reads the write bit at column 5 and at column 8 of the mode string
   alone, as `dired-font-lock-keywords` does.  The first character must
   read `-` or `d`, so a symlink keeps its mode plain, and the cell
-  carries `face` and `font-lock-face` like a name cell.
+  carries `face` and `font-lock-face` like a name cell.  That paint
+  holds under the long form alone, because `tired-short-mode` starts
+  on and the octal cell carries no face.
+
+- `tired-short-mode` prints the Mode column as the octal permission
+  bits of `tired--mode-octal`, such as `755`, for every entry type.
+  The column takes six places, aligns right, and the long form keeps
+  ten.  `tired--fixed-column-width` answers 44 or 48 from that option,
+  so it stays a function and never a constant: a `defconst` would
+  freeze the value that the option had at load time.  The mode sort
+  value holds the same integer, so a `755` row lists before a `1000`
+  row and the order follows the cell.  `tired--mode-cell` and
+  `tired--fixed-column-width` read that option, so neither carries
+  `(declare (pure t))`: the compiler would fold the call under a
+  `let` that binds the option and print the form that the global
+  value asked for.
 - A Rust or Go row repeats the prefix of its source line, so a Rust
   item reads `fn', `async fn' or `struct' and a Go declaration reads
   `func' or `func (c *Config)'.  `tired--treesit-keyword-text` copies
@@ -1131,6 +1146,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   for a count keep the hash order.
 - The Elements header label with the sort arrow is ten characters wide,
   so the column and its share of `tired--fixed-column-width` are ten.
+  The Mode header label with the arrow is six, which is the width that
+  the short form of `tired-short-mode` gives it.
 - A line scanner must copy `(match-end 0)` into its own binding before
   it calls a function, because that function runs its own regexp match
   and overwrites the match data.  `tired--markdown-scan` lost the end of

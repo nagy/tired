@@ -103,9 +103,10 @@ Each state names a column and a direction.  The text before the
 last hyphen is the column that `tired--sort-by-column' reads, and
 the suffix `asc' or `desc' gives the direction.  `tired-sort'
 selects a state by its position in this list, so one numeric
-prefix names it.  The default leaves out the `mode' column, because
-a mode sorts by a number that says little.  Add `mode-asc' and
-`mode-desc' to cycle that column too."
+prefix names it.  The default leaves out the `mode' column.  Add
+`mode-asc' and `mode-desc' to cycle that column too.  A mode sort
+compares the octal permission bits of `tired--mode-octal', so a
+`755' row lists before a `1000' row."
   :type '(repeat (choice (const :tag "Name, ascending" name-asc)
                          (const :tag "Name, descending" name-desc)
                          (const :tag "Size, ascending" size-asc)
@@ -121,6 +122,17 @@ a mode sorts by a number that says little.  Add `mode-asc' and
   "Format string for the modification time column.
 See `format-time-string' for the available conversions."
   :type 'string)
+
+(defcustom tired-short-mode t
+  "When non-nil, print the Mode column in octal.
+A row then prints `755' instead of `drwxr-xr-x', and the column
+aligns right and takes six places.  A set-user-ID, set-group-ID or
+sticky bit adds a fourth digit, so `4755' and `1777' hold a place
+too.  Every entry type prints the same way, so a symbolic link
+shows `777' as well.  Set the option to nil for the long form,
+where the group and the world write bits take
+`tired-perm-write-face', the way Dired paints them."
+  :type 'boolean)
 
 (defcustom tired-refresh-keeps-an-unchanged-listing t
   "When non-nil, a refresh keeps the rows that the disk did not change.
@@ -994,6 +1006,28 @@ answered."
              (and (file-remote-p directory) t))
            (tired--size-excluded-p directory))))
 
+(defun tired--mode-octal (modes)
+  "Return the permission bits of MODES as an integer, or nil.
+MODES is the mode string that `file-attributes' returns.  The
+result holds three octal digits, and four when a set-user-ID,
+set-group-ID or sticky bit is set, so `rwsr-xr-x' answers 4755 and
+`drwxrwxrwt' answers 1777.  A string too short for the nine
+permission places answers nil."
+  (declare (pure t) (side-effect-free t))
+  (when (and (stringp modes) (<= 10 (length modes)))
+    (let ((digits 0)
+          (special 0))
+      (dotimes (position 3)
+        (let* ((base (1+ (* 3 position)))
+               (exec (aref modes (+ base 2))))
+          (setq digits (+ (* digits 8)
+                          (if (eq (aref modes base) ?r) 4 0)
+                          (if (eq (aref modes (1+ base)) ?w) 2 0)
+                          (if (memq exec '(?x ?s ?t)) 1 0)))
+          (when (memq exec (if (= position 2) '(?t ?T) '(?s ?S)))
+            (setq special (+ special (ash 4 (- position)))))))
+      (+ (* special 512) digits))))
+
 (defun tired--sort-value (entry)
   "Return the value that `tired--sort-key' compares for ENTRY.
 The name value holds the folded extension, so a group of one
@@ -1001,7 +1035,8 @@ extension stays together.  Without `tired-sort-by-extension' every
 name shares one empty extension, so the name alone decides.  The
 elements value comes from `tired--elements-show', so the order
 follows the number that the column prints, and a row without a count
-stays nil."
+stays nil.  The mode value holds the permission bits as an integer,
+so a `755' row lists before a `1000' row."
   (pcase tired--sort-key
     ('name (if tired-sort-by-extension
                (tired--sort-extension entry)
@@ -1009,7 +1044,7 @@ stays nil."
     ('size (or (tired--shown-size entry) (tired-entry-size entry) 0))
     ('modified (tired-entry-mtime entry))
     ('elements (tired--elements-show entry))
-    ('mode (tired-entry-mode entry))
+    ('mode (tired--mode-octal (tired-entry-mode entry)))
     (_ (error "Unknown sort key: %S" tired--sort-key))))
 
 (cl-defstruct (tired-sort-row (:constructor tired--sort-row-create))
@@ -2328,15 +2363,20 @@ nothing until the idle queue fills it."
 
 (defun tired--mode-cell (entry)
   "Return the Mode column string for ENTRY.
-A mode whose group or world part holds a `w' paints that character
-with `tired-perm-write-face', the way Dired paints it.  Like the
-Dired rule, the cell needs a `-' or a `d' in its first place."
-  (declare (pure t) (side-effect-free t))
+With `tired-short-mode' set, the cell holds the permission bits in
+octal, such as `755', and every entry type prints that form.  The
+option nil keeps the long string, where a `w' in the group or the
+world part takes `tired-perm-write-face', the way Dired paints it.
+Like the Dired rule, the long form needs a `-' or a `d' in its
+first place."
+  (declare (side-effect-free t))
   (let ((modes (tired-entry-mode entry)))
     (cond
-     ((not (and modes (<= 10 (length modes))
-                (memq (aref modes 0) '(?- ?d))))
+     ((not (and (stringp modes) (<= 10 (length modes))))
       (or modes ""))
+     (tired-short-mode
+      (format "%o" (tired--mode-octal modes)))
+     ((not (memq (aref modes 0) '(?- ?d))) modes)
      (t
       (let ((cell (copy-sequence modes))
             (index 5))
@@ -2421,10 +2461,14 @@ current sort column flips the direction."
               'mouse-face 'header-line-highlight
               'help-echo "mouse-1: sort by this column"))
 
-(defconst tired--fixed-column-width 48
-  "Width of the columns that keep their size.
-This sum covers the size, modification time, elements and mode
-columns, the left padding and the space after the name column.")
+(defun tired--fixed-column-width ()
+  "Return the width of the columns that keep their size.
+The sum covers the size, modification time, elements and mode
+columns, the left padding and the space after the name column.
+The mode column takes ten places in the long form and six in the
+short form of `tired-short-mode'."
+  (declare (side-effect-free t))
+  (+ 38 (if tired-short-mode 6 10)))
 
 (defun tired--name-column-width (&optional window)
   "Return the width of the name column for WINDOW.
@@ -2433,7 +2477,7 @@ Grow the column to the longest visible name.  Clamp it to at least
 other columns."
   (let ((longest (string-width (tired--column-label "Name" 'name)))
         (available (- (window-width (or window (selected-window)))
-                      tired--fixed-column-width)))
+                      (tired--fixed-column-width))))
     (when tired--directory
       (dolist (row (tired--visible-rows))
         (setq longest
@@ -2454,7 +2498,10 @@ column from the current listing."
    (list (tired--column-label "Size" 'size) 9 nil :right-align t)
    (list (tired--column-label "Elements" 'elements) 10 nil :right-align t)
    (list (tired--column-label "Modified" 'modified) 17 nil)
-   (list (tired--column-label "Mode" 'mode) 10 nil)))
+   (list (tired--column-label "Mode" 'mode)
+         (if tired-short-mode 6 10)
+         nil
+         :right-align t)))
 
 (defun tired--escape-mode-line (text)
   "Return TEXT with every percent sign doubled.

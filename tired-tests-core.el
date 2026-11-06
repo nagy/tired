@@ -484,7 +484,7 @@ for its own header line."
     (tired root)
     (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 80)))
       (tired-refresh))
-    (should (= (- 80 tired--fixed-column-width)
+    (should (= (- 80 (tired--fixed-column-width))
                (nth 1 (aref tabulated-list-format 0))))))
 
 (ert-deftest tired-window-size-change-resizes-name-column ()
@@ -498,7 +498,7 @@ for its own header line."
         (should (= 60 (nth 1 (aref tabulated-list-format 0))))
         (setq width 80)
         (tired--window-size-changed (selected-frame))
-        (should (= (- 80 tired--fixed-column-width)
+        (should (= (- 80 (tired--fixed-column-width))
                    (nth 1 (aref tabulated-list-format 0))))))))
 
 (ert-deftest tired-window-size-change-skips-an-unchanged-width ()
@@ -1248,45 +1248,101 @@ key map alone."
 
 (ert-deftest tired-mode-cell-paints-group-and-world-write ()
   "A group- or world-writable mode paints its `w' alone."
-  (let ((group (tired--mode-cell
-                (tired--entry-create :name "a" :type 'file
-                                     :mode "-rw-rw-r--")))
-        (world (tired--mode-cell
-                (tired--entry-create :name "b" :type 'file
-                                     :mode "-rw-r--rw-"))))
-    (should (eq 'tired-perm-write-face
-                (get-text-property 5 'face group)))
-    (should (eq 'tired-perm-write-face
-                (get-text-property 5 'font-lock-face group)))
-    (should-not (get-text-property 2 'face group))
-    (should-not (get-text-property 8 'face group))
-    (should (eq 'tired-perm-write-face
-                (get-text-property 8 'face world)))
-    (should (eq 'tired-perm-write-face
-                (get-text-property 8 'font-lock-face world)))
-    (should-not (get-text-property 5 'face world))))
+  (let ((tired-short-mode nil))
+    (let ((group (tired--mode-cell
+                  (tired--entry-create :name "a" :type 'file
+                                       :mode "-rw-rw-r--")))
+          (world (tired--mode-cell
+                  (tired--entry-create :name "b" :type 'file
+                                       :mode "-rw-r--rw-"))))
+      (should (eq 'tired-perm-write-face
+                  (get-text-property 5 'face group)))
+      (should (eq 'tired-perm-write-face
+                  (get-text-property 5 'font-lock-face group)))
+      (should-not (get-text-property 2 'face group))
+      (should-not (get-text-property 8 'face group))
+      (should (eq 'tired-perm-write-face
+                  (get-text-property 8 'face world)))
+      (should (eq 'tired-perm-write-face
+                  (get-text-property 8 'font-lock-face world)))
+      (should-not (get-text-property 5 'face world)))))
 
 (ert-deftest tired-mode-cell-keeps-an-unwritable-mode-plain ()
   "Only a `-' or a `d' row paints a write bit, as the Dired rule does."
-  (should-not (get-text-property
-               5 'face
-               (tired--mode-cell
-                (tired--entry-create :name "a" :type 'file
-                                     :mode "-rw-r--r--"))))
-  (should-not (get-text-property
-               5 'face
-               (tired--mode-cell
-                (tired--entry-create :name "link" :type 'symlink
-                                     :mode "lrwxrwxrwx"))))
-  (should (eq 'tired-perm-write-face
-              (get-text-property
-               5 'face
-               (tired--mode-cell
-                (tired--entry-create :name "sub" :type 'directory
-                                     :dirp t
-                                     :mode "drwxrwxr-x")))))
+  (let ((tired-short-mode nil))
+    (should-not (get-text-property
+                 5 'face
+                 (tired--mode-cell
+                  (tired--entry-create :name "a" :type 'file
+                                       :mode "-rw-r--r--"))))
+    (should-not (get-text-property
+                 5 'face
+                 (tired--mode-cell
+                  (tired--entry-create :name "link" :type 'symlink
+                                       :mode "lrwxrwxrwx"))))
+    (should (eq 'tired-perm-write-face
+                (get-text-property
+                 5 'face
+                 (tired--mode-cell
+                  (tired--entry-create :name "sub" :type 'directory
+                                       :dirp t
+                                       :mode "drwxrwxr-x"))))))
   (should (equal "" (tired--mode-cell
                       (tired--entry-create :name "n" :type 'file)))))
+
+(ert-deftest tired-mode-octal-reads-the-permission-bits ()
+  "A mode string turns into its octal number."
+  (should (= #o755 (tired--mode-octal "-rwxr-xr-x")))
+  (should (= #o644 (tired--mode-octal "-rw-r--r--")))
+  (should (= #o777 (tired--mode-octal "lrwxrwxrwx")))
+  (should (= #o4755 (tired--mode-octal "-rwsr-xr-x")))
+  (should (= #o2755 (tired--mode-octal "-rwxr-sr-x")))
+  (should (= #o4644 (tired--mode-octal "-rwSr--r--")))
+  (should (= #o1777 (tired--mode-octal "drwxrwxrwt")))
+  (should (= #o1754 (tired--mode-octal "drwxr-xr-T")))
+  (should-not (tired--mode-octal nil))
+  (should-not (tired--mode-octal "drwx")))
+
+(ert-deftest tired-mode-cell-prints-octal-by-default ()
+  "The short form prints the octal number and paints nothing."
+  (let ((tired-short-mode t))
+    (let ((cell (tired--mode-cell
+                 (tired--entry-create :name "a" :type 'file
+                                      :mode "-rw-rw-r--"))))
+      (should (equal "664" cell))
+      (should-not (get-text-property 0 'face cell)))
+    (should (equal "777" (tired--mode-cell
+                           (tired--entry-create :name "link"
+                                                :type 'symlink
+                                                :mode "lrwxrwxrwx"))))
+    (should (equal "4755" (tired--mode-cell
+                            (tired--entry-create :name "s" :type 'file
+                                                 :mode "-rwsr-xr-x"))))
+    (should (equal "" (tired--mode-cell
+                        (tired--entry-create :name "n" :type 'file))))))
+
+(ert-deftest tired-mode-column-aligns-right-in-the-short-form ()
+  "The short form takes six places and aligns right."
+  (let ((tired-short-mode t))
+    (let ((column (aref (tired--format 20) 4)))
+      (should (= 6 (nth 1 column)))
+      (should (plist-get (nthcdr 3 column) :right-align)))
+    (should (= 44 (tired--fixed-column-width))))
+  (let ((tired-short-mode nil))
+    (should (= 10 (nth 1 (aref (tired--format 20) 4))))
+    (should (= 48 (tired--fixed-column-width)))))
+
+(ert-deftest tired-mode-sort-value-reads-the-permission-bits ()
+  "A mode sort compares the octal number, not the long string."
+  (let ((tired--sort-key 'mode))
+    (should (= #o755 (tired--sort-value
+                      (tired--entry-create :name "a" :type 'file
+                                           :mode "-rwxr-xr-x"))))
+    (should (= #o700 (tired--sort-value
+                      (tired--entry-create :name "b" :type 'file
+                                           :mode "-rwx------"))))
+    (should-not (tired--sort-value
+                 (tired--entry-create :name "c" :type 'file)))))
 
 (ert-deftest tired-size-cell-stays-empty-by-default ()
   "A directory shows no size unless `tired-directory-size' is on."
