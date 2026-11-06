@@ -116,6 +116,8 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
    to the first state forward and to the last state back.  The
    default list follows the column order, name then size then
    elements then modified, and leaves the mode column out.
+   `tired-sort-backward` wraps the same walk back one place, because
+   a user who overshot a state takes that move back with one key.
 3. `tired--display-rows` walks depth-first and returns `(ROW . DEPTH)`
    conses.  A `file-truename` set stops symlink cycles.
    `tired--directory-entry-p` decides whether a row takes children and
@@ -424,12 +426,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - A new key belongs in `tired-mode-map` and in `tired-evil-keys`, and in
   `tired-evil-visual-keys` when it reads the region.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
-  shadows it.  `tired-mode-map` puts the sort cycling on `>` alone,
-  and `tired-evil-keys` puts it on the down arrow character `↓`,
-  because evil binds the arrow keys and the two bracket keys to its
-  own commands.  `<` keeps the `beginning-of-buffer` of
-  `special-mode-map`, and a negative prefix of `tired-sort` moves
-  back.
+  shadows it.  `tired-mode-map` puts the sort cycling forward on `s`
+  and `>`, and the reverse step on `S`, and `tired-evil-keys` puts the
+  forward cycle on the down arrow character `↓`, because evil binds
+  the arrow keys and the two bracket keys to its own commands.  `<`
+  keeps the `beginning-of-buffer` of `special-mode-map`, and a
+  negative prefix of `tired-sort` moves back that many states.
 - The mode map remaps `csv-mode`, `text-mode` and `js-json-mode` to the
   three export commands.  The JSON mode reads `js-json-mode`; no
   `json-js-mode` exists.  A remap reaches a key that runs the major

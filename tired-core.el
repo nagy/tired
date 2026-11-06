@@ -3950,6 +3950,15 @@ position outside the list signals a user error."
           ((< step 0) (tired--sort-step step))
           (t (tired--sort-select step)))))
 
+(defun tired-sort-backward ()
+  "Cycle the listing through `tired-sort-states' in reverse.
+The command selects the state before the current one, so it takes
+back one move of `tired-sort'.  The walk wraps around at both
+ends, and a column that the list leaves out gives way to the last
+state."
+  (interactive)
+  (tired--sort-step -1))
+
 (defun tired--filter-cancel-timer ()
   "Cancel a pending filter redraw, if one waits."
   (when (timerp tired--filter-timer)
@@ -4377,6 +4386,7 @@ into `context-menu-functions' locally."
   "j" #'tired-find-file
   "J" #'tired-find-file-other-window
   "s" #'tired-sort
+  "S" #'tired-sort-backward
   ">" #'tired-sort
   "SPC" #'tired-select-toggle-next
   "M-SPC" #'tired-select-toggle
@@ -4479,7 +4489,9 @@ command that needs an entry stays insensitive on an empty row."
       :style radio :selected (eq tired--sort-key 'mode)]
      "--"
      ["Cycle sort state" tired-sort
-      :help "Move to the next state of `tired-sort-states'"])
+      :help "Move to the next state of `tired-sort-states'"]
+     ["Cycle sort state backward" tired-sort-backward
+      :help "Move to the previous state of `tired-sort-states'"])
     "--"
     ["Copy here" tired-copy
      :active (tired--selection-targets)]

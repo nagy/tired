@@ -267,6 +267,18 @@ default `tired-file-handlers' names a void section handler.
     (tired-sort -1)
     (should (eq (tired--sort-state) 'modified-desc))))
 
+(ert-deftest tired-sort-backward-walks-the-states ()
+  "`tired-sort-backward' walks `tired-sort-states' back."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (eq (tired--sort-state) 'name-asc))
+    (tired-sort-backward)
+    (should (eq (tired--sort-state) 'modified-desc))
+    (tired-sort-backward)
+    (should (eq (tired--sort-state) 'modified-asc))
+    (tired-sort-backward)
+    (should (eq (tired--sort-state) 'elements-desc))))
+
 (ert-deftest tired-sort-selects-a-state-by-position ()
   "A positive prefix selects a position in `tired-sort-states'."
   (tired-tests--with-fixture
@@ -297,7 +309,9 @@ default `tired-file-handlers' names a void section handler.
     (should (eq (tired--sort-state) 'modified-desc))))
 
 (ert-deftest tired-sort-key-cycles-the-states ()
-  "The mode map puts the sort cycling on `>' alone."
+  "The mode map puts the sort cycling on `s', `S' and `>'."
+  (should (eq (lookup-key tired-mode-map "s") #'tired-sort))
+  (should (eq (lookup-key tired-mode-map "S") #'tired-sort-backward))
   (should (eq (lookup-key tired-mode-map ">") #'tired-sort))
   ;; `<' falls back to the motion of `special-mode-map'.
   (should (eq (lookup-key tired-mode-map "<")

@@ -104,6 +104,7 @@
     ("<remap> <evil-next-line>" . tired-next-line)
     ("<remap> <evil-previous-line>" . tired-previous-line)
     ("s" . tired-sort)
+    ("S" . tired-sort-backward)
     ;; The down arrow character cycles the sort states.  Evil keeps
     ;; its line motion on the arrow keys themselves, so the buffer
     ;; takes the character and `j' and `k' stay motions too.

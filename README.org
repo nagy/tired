@@ -25,7 +25,7 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   interleaves directories and files
 - The name sort groups files by extension, as `ls -X` does, and
   `tired-sort-by-extension' turns the grouping off
-- `tired-sort-states' lists the sort states that `>` cycles, a numeric
+- `tired-sort-states' lists the sort states that `s` cycles, a numeric
   prefix selects one by position, and `mode-asc' joins the list on
   request
 - Insert subdirectories as nested, indented sections
@@ -224,7 +224,8 @@ nothing either.  A region reports the same size.
 `tired-sort-states' and wraps around at the end.  A numeric prefix
 selects a state by its position in the list, so =M-3 s= selects the
 third state.  A negative prefix moves back that many states, so
-=M-- s= selects the previous state.  The default list holds the name,
+=M-- s= selects the previous state.  The =S= key takes back one
+state, so it undoes one =s=.  The default list holds the name,
 size, elements and modification time states in both directions, and
 it leaves the mode column out:
 
@@ -335,7 +336,7 @@ motion on the arrow keys themselves, so =j= and =k= stay line
 motions.  Type the character with =C-x 8 RET 2193= for =DOWNWARDS
 ARROW=.  The =>= key keeps its evil shift command, and =M-- s=
 selects the previous state instead.  The plain listing carries the
-sort cycling on =>= alone.
+sort cycling on =s= and =>=, and =S= takes back one state.
 
 The key tables are =tired-evil-keys= for normal state and
 =tired-evil-visual-keys= for visual state.  =M-x describe-keymap RET

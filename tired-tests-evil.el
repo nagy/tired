@@ -105,6 +105,8 @@
           ;; arrow keys keep their evil line motion.
           (should (eq (key-binding (key-parse "↓"))
                       #'tired-sort))
+          (should (eq (key-binding (key-parse "S"))
+                      #'tired-sort-backward))
           (should-not (eq (key-binding (key-parse "↑"))
                           #'tired-sort))
           (should-not (eq (key-binding (key-parse "<down>"))
