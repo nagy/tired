@@ -503,6 +503,15 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   holds under the long form alone, because `tired-short-mode` starts
   on and the octal cell carries no face.
 
+- `tired-shorthand-rules` rewrites the target text of a symbolic link
+  for display, and `tired--shorthand-target` applies the first rule that
+  matches.  The sigil replaces the matched text and the rest of the
+  target stays.  `tired--symlink-suffix` reads the option, so it carries
+  no `(declare (pure t))`: the compiler would fold a call with a
+  constant target under a `let` that binds the rules.  The arrow text
+  stays display only, because `tired--name-text` strips the whole suffix
+  through the same function, so a rename, a copy and a name edit keep
+  the real target.
 - `tired-short-mode` prints the Mode column as the octal permission
   bits of `tired--mode-octal`, such as `755`, for every entry type.
   The column takes six places, aligns right, and the long form keeps

@@ -949,6 +949,30 @@ take =tired-sqlite-constraint-face=.  Each face inherits the matching
 =font-lock-= face, so a theme colors a column the way it colors a
 declaration.  A column without a type prints its name alone.
 
+* Symlink target shorthand
+
+The text after the arrow of a symbolic link can grow long, because a
+package manager or a build tool puts a long store path there.  Set
+=tired-shorthand-rules= to shorten that text.  Each rule pairs a
+regexp with a sigil string.  The sigil replaces the matched text of
+the target, and the rest of the target stays:
+
+#+begin_src elisp
+  (setq tired-shorthand-rules
+        '(("\\`/mnt/media/library/" . "lib/")
+          ("\\`/home/user/agent/"  . "~a/")))
+#+end_src
+
+A row then reads =lib/2025/build-bot= in place of the full target.
+The first rule that matches wins, and a rule that matches nothing
+leaves the target alone.  The sigil reads as you like it, so pick a
+short label of your own.
+
+The option changes the display alone.  Every command reads the real
+path, so open, rename, copy, move and export keep the true target.
+The name column measures the shortened text, so a listing with many
+links gains a narrow column.
+
 * Single-child collapse
 
 A chain of single-entry directories collapses into one row for its

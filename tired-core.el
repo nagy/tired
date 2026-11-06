@@ -347,6 +347,18 @@ rules cover.  The default is nil, so only the Dired faces colorize a
 name."
   :type '(alist :key-type regexp :value-type sexp))
 
+(defcustom tired-shorthand-rules nil
+  "Alist of rules that shorten the target text of a symbolic link.
+Each rule pairs a REGEXP with a SIGIL string.  The regexp matches the
+target text of one link.  The first rule that matches wins, the sigil
+replaces the matched text, and the rest of the target stays, so a
+rule that names a noisy path prefix keeps the readable tail.  A nil
+list prints the whole target.
+
+The option changes the display alone.  Every command reads the real
+path, so open, rename, copy, move and export keep the true target."
+  :type '(alist :key-type regexp :value-type string))
+
 (defcustom tired-file-handlers
   '(("\\.org\\'" . tired-file-sections-org)
     ("\\.el\\'" . tired-file-sections-elisp)
@@ -1810,12 +1822,22 @@ Paint SPANS over the result when SPANS holds entries."
         (tired--paint-name-spans string spans)
       string)))
 
+(defun tired--shorthand-target (target)
+  "Return TARGET with the first rule of `tired-shorthand-rules' applied.
+The sigil of a matching rule replaces the matched text, and the rest
+of TARGET stays.  A rule that matches nothing leaves TARGET alone."
+  (catch 'done
+    (dolist (rule tired-shorthand-rules target)
+      (when (string-match (car rule) target)
+        (throw 'done (replace-match (cdr rule) t t target))))))
+
 (defun tired--symlink-suffix (entry)
-  "Return the arrow and the target text for the symbolic link ENTRY."
-  (declare (pure t) (side-effect-free t))
+  "Return the arrow and the target text for the symbolic link ENTRY.
+`tired-shorthand-rules' shortens the target text for display."
   (concat " -> "
           (apply #'propertize
-                 (or (tired-entry-link entry) "?")
+                 (tired--shorthand-target
+                  (or (tired-entry-link entry) "?"))
                  (tired--face-properties
                   (if (tired-entry-broken entry)
                       'tired-broken-symlink-face

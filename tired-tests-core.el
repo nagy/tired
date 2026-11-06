@@ -1213,6 +1213,20 @@ The home directory of a path takes its abbreviation."
     (should (string-suffix-p "/"
                              (tired--name-cell (tired-tests--entry "sub"))))))
 
+(ert-deftest tired-name-cell-shows-a-shorthand-target ()
+  "`tired-shorthand-rules' shortens the target text of a symbolic link.
+The first rule that matches wins, and the rest of the target stays."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((tired-shorthand-rules '(("\\`alpha" . "@a/"))))
+      (should (string-match-p " -> @a/\\.txt\\'"
+                              (tired--name-cell (tired-tests--entry "link")))))
+    (let ((tired-shorthand-rules '(("\\`nomatch" . "@x/"))))
+      (should (string-match-p " -> alpha\\.txt\\'"
+                              (tired--name-cell (tired-tests--entry "link")))))
+    (should (string-match-p " -> alpha\\.txt\\'"
+                            (tired--name-cell (tired-tests--entry "link"))))))
+
 (ert-deftest tired-mode-map-offers-a-menu ()
   "The mode map holds a Tired menu bar entry.
 The menu names the file commands that a reader cannot find from the
