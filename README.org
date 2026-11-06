@@ -994,7 +994,7 @@ Eight handlers ship with the package:
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
 | Org (=.org=)  | Every heading, indented by its outline level, colored as =org-mode= colors the title |
-| Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source |
+| Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source.  A =declare-function= form stays out, because it speaks to the byte compiler alone |
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants, statics and macros, with the methods of an impl block nested under it.  The row repeats the source prefix, so a function reads =fn= or =async fn=, and each word carries the face of its source |
 | Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  The row repeats the source prefix, so a function reads =func=, and each word carries the face of its source |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
@@ -1077,6 +1077,11 @@ source text, so its rows stay plain.
 
 The Rust, Go, Markdown and Cargo handlers call =font-lock-ensure= once per
 parse, so the faces come from the same major mode that a visitor uses.
+
+The Emacs Lisp handler leaves a =declare-function= form out of the
+listing, because that form speaks to the byte compiler alone.  The form
+still holds its lines in the file, so the rows around it keep their
+own lines.
 
 A section is not selectable, because a section stands for its file.
 The path commands, delete and copy act on the file that owns the

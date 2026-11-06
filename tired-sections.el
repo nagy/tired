@@ -126,6 +126,12 @@ fontification gives the title.  Every section carries
 (defconst tired--elisp-read-error (make-symbol "tired--read-error")
   "Sentinel that marks a form which `read' rejected.")
 
+(defconst tired--elisp-hidden-heads '(declare-function)
+  "Head symbols that the Emacs Lisp handler leaves out of a listing.
+A form with one of these heads speaks to the byte compiler alone, so
+it earns no row.  The form still holds its lines in the file, so the
+rows above and below it keep their own lines.")
+
 (defun tired--elisp-label (form)
   "Return a short label for the top-level FORM, or nil.
 The label holds the head symbol plus its first argument when that
@@ -192,9 +198,10 @@ the source spans do not reproduce it."
   "Return the top-level forms of the current Emacs Lisp buffer.
 The buffer already holds the file, so the handler ignores PATH.
 Only top-level forms become sections, so a form inside `progn'
-stays out.  A form that `read' rejects ends the scan.  Each label
-carries the faces that `emacs-lisp-mode' fontification gives its
-source text."
+stays out.  A form whose head `tired--elisp-hidden-heads' names stays
+out too, because it speaks to the byte compiler alone.  A form that
+`read' rejects ends the scan.  Each label carries the faces that
+`emacs-lisp-mode' fontification gives its source text."
   (delay-mode-hooks (emacs-lisp-mode))
   (font-lock-ensure)
   (let (sections)
@@ -206,15 +213,18 @@ source text."
                     (error tired--elisp-read-error))))
         (if (eq form tired--elisp-read-error)
             (goto-char (point-max))
-          (when-let* ((label (tired--elisp-fontified-label form start)))
-            (push (list :label label
-                        :line (line-number-at-pos start)
-                        :level 0
-                        :kind (if (string-prefix-p "def"
-                                                   (symbol-name (car form)))
-                                  'definition
-                                'form))
-                  sections)))))
+          (let ((label (unless (memq (car-safe form)
+                                     tired--elisp-hidden-heads)
+                         (tired--elisp-fontified-label form start))))
+            (when label
+              (push (list :label label
+                          :line (line-number-at-pos start)
+                          :level 0
+                          :kind (if (string-prefix-p "def"
+                                                     (symbol-name (car form)))
+                                    'definition
+                                  'form))
+                    sections))))))
     (nreverse sections)))
 
 (defun tired--treesit-keyword-string (kind)

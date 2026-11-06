@@ -958,7 +958,12 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
   `tired--org-open-heading` reads it at open time and a change needs no
   re-parse.
 - The Emacs Lisp handler skips whitespace and comments with
-  `forward-comment` before it records a form start.
+  `forward-comment` before it records a form start.  It also drops a
+  form whose head `tired--elisp-hidden-heads` names, and that list holds
+  `declare-function`, because such a form speaks to the byte compiler
+  alone.  The dropped form keeps its lines, so the rows around it keep
+  their own lines, and the handler still reads every form, so a form
+  that a later one needs costs nothing.
 - The Go handler keeps a declaration that sits at the top level of the
   file alone, so a `var`, a `const` or a `type` inside a function body
   stays out of the listing.  A method indents one level under the type

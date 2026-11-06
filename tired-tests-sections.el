@@ -90,7 +90,7 @@
   "An Emacs Lisp file lists its top-level forms in document order."
   (tired-tests--with-fixture
     (tired-tests--write "code.el"
-                        ";;; code\n(defvar code-x 1)\n\n(defun code-foo (a) a)\n(provide 'code)\n")
+                        ";;; code\n(declare-function code-elsewhere \"other\")\n(defvar code-x 1)\n\n(defun code-foo (a) a)\n(provide 'code)\n")
     (tired root)
     (tired-tests--goto "code.el")
     (tired-toggle-subdir)
@@ -98,6 +98,25 @@
                    '(("defvar code-x" . 1)
                      ("defun code-foo" . 1)
                      ("provide code" . 1))))))
+
+(ert-deftest tired-elisp-declare-function-earns-no-row ()
+  "A byte-compiler declaration stays out, and its neighbours keep their lines."
+  (tired-tests--with-fixture
+    (tired-tests--write "code.el"
+                        (concat "(defvar code-x 1)\n\n"
+                                "(declare-function code-other \"other\")\n"
+                                "(declare-function code-third \"other\")\n\n"
+                                "(defun code-foo (a) a)\n"))
+    (let* ((path (expand-file-name "code.el" root))
+           (sections (tired-file-sections path)))
+      (should (equal (mapcar (lambda (section)
+                               (substring-no-properties
+                                (tired-section-label section)))
+                             sections)
+                     '("defvar code-x" "defun code-foo")))
+      ;; The skipped forms keep their lines, so a later form does not
+      ;; move up.
+      (should (equal (mapcar #'tired-section-line sections) '(1 6))))))
 
 (ert-deftest tired-elisp-section-labels-take-mode-faces ()
   "An Emacs Lisp section label carries the faces of its source text."
