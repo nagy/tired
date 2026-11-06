@@ -1357,13 +1357,13 @@ loses no byte."
                                      (abbreviate-file-name
                                       destination)))))))))
 
-(ert-deftest tired-redo-reaches-the-user-through-m-x-alone ()
-  "No key and no menu entry runs `tired-redo'.
-The command changes paths, so a stray key must not reach it.  `M-x'
-finds it through the autoload in `tired.el'."
+(ert-deftest tired-redo-reaches-the-user-through-a-key ()
+  "The redo keysym runs `tired-redo'.
+A keyboard that carries the key sends the event, so the command
+needs no `M-x' visit."
   (tired-tests--with-fixture
     (tired root)
-    (should-not (where-is-internal #'tired-redo tired-mode-map))
+    (should (eq (key-binding (kbd "<redo>")) #'tired-redo))
     (should (commandp #'tired-redo))))
 
 (ert-deftest tired-delete-keeps-no-shell-dependency ()
@@ -1511,13 +1511,13 @@ finds it through the autoload in `tired.el'."
     (tired root)
     (should (eq (key-binding (key-parse "!")) #'tired-do-shell-command))))
 
-(ert-deftest tired-undo-reaches-the-user-through-m-x-alone ()
-  "No key and no menu entry runs `tired-undo'.
-The command changes paths, so a stray key must not reach it.  `M-x'
-finds it through the autoload in `tired.el'."
+(ert-deftest tired-undo-reaches-the-user-through-a-key ()
+  "The undo keysym runs `tired-undo'.
+A keyboard that carries the key sends the event, so the command
+needs no `M-x' visit."
   (tired-tests--with-fixture
     (tired root)
-    (should-not (where-is-internal #'tired-undo tired-mode-map))
+    (should (eq (key-binding (kbd "<undo>")) #'tired-undo))
     (should (commandp #'tired-undo))))
 
 (ert-deftest tired-region-delete-acts-on-every-row ()

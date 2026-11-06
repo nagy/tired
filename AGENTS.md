@@ -550,19 +550,21 @@ as `tired-noselect`, stays in `tired.el` for that reason, and
 - File commands never ask a confirmation and never call a shell, except
   `tired-do-shell-command`.  Removal goes through `tired--trash-move`,
   never through `delete-file`, so undo can restore the path.
-- No key, no menu entry and no evil binding runs `tired-undo` or
-  `tired-redo`.  Each command changes paths, so the user reaches it
-  through `M-x` alone.
-  The autoload form in `tired.el` keeps that path, because
-  `tired-file-ops` carries no cookie.  A test in
-  `tired-tests-file-ops` fails when a binding returns.
+- The `<undo>` keysym runs `tired-undo` and `<redo>` runs
+  `tired-redo`.  Each command changes paths, so no printable key and
+  no menu entry reaches either one.  A keyboard without those keys
+  keeps the autoload path through `M-x`, because `tired-file-ops`
+  carries no cookie.  Evil binds neither keysym, so
+  `tired-evil-keys` holds no entry, and a test in
+  `tired-tests-file-ops` fails when the binding goes away.
 - No key and no evil binding runs `tired-expand-file` or
   `tired-collapse-file`.  `TAB` reaches both through
   `tired-toggle-subdir`, and the menu bar keeps the two entries, so
   `M-x` and the menu hold the only paths.  A test fails when a listing
   or an evil binding returns.
 - `tired-clear-caches` carries no key, no menu entry and no evil
-  binding: `M-x` alone reaches it, like `tired-undo`.  It empties all
+  binding: `M-x` alone reaches it, like the name edit commands.  It
+  empties all
   four caches, so a wrong `tired-persistent-directories` rule costs one
   command.  A test in `tired-tests-core` fails when a binding returns.
 - `tired-edit-names`, `tired-commit-edits` and `tired-abort-edits`

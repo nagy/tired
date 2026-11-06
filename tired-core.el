@@ -49,8 +49,10 @@
 (declare-function tired-do-shell-command "tired-file-ops" (command))
 (declare-function tired-mkdir "tired-file-ops" (directory))
 (declare-function tired-move "tired-file-ops" (destination))
+(declare-function tired-redo "tired-file-ops" nil)
 (declare-function tired-rename "tired-file-ops" (name))
 (declare-function tired-touch "tired-file-ops" (file))
+(declare-function tired-undo "tired-file-ops" nil)
 
 ;; The entry points live in `tired', which requires this library.  The
 ;; declarations keep the commands below free of a load-time dependency
@@ -4444,6 +4446,8 @@ into `context-menu-functions' locally."
   "m" #'tired-move
   "R" #'tired-rename
   "D" #'tired-delete
+  "<undo>" #'tired-undo
+  "<redo>" #'tired-redo
   "!" #'tired-do-shell-command
   "+" #'tired-mkdir
   "M-t" #'tired-touch

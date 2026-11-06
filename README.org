@@ -434,13 +434,16 @@ default value is nil, and nil means a directory under
 =temporary-file-directory= whose name carries the user id and the
 Emacs process id, so two Emacs sessions never share one trash.  The
 system removes it on reboot.  A copy or a move that replaces a path
-moves the old path there first, so no bytes get lost.  =M-x
-tired-undo= undoes the last operation.  The line names the action and
+moves the old path there first, so no bytes get lost.  The
+=<undo>= key runs =tired-undo= and the =<redo>= key runs
+=tired-redo=.  =tired-undo= undoes the last operation.  The line names
+the action and
 the number of paths that moved back.  A reversed delete, copy, move,
-mkdir or touch puts the paths back where they were.  =M-x tired-redo=
+mkdir or touch puts the paths back where they were.  =tired-redo=
 reverses that undo, and the next =tired-undo= reverses the redo.  A
 new file command drops the redo history, so a redo never overwrites a
-later change.  Set the option to keep the removed paths elsewhere:
+later change.  A keyboard without those keys reaches both commands
+through =M-x=.  Set the option to keep the removed paths elsewhere:
 
 #+begin_src elisp
   (setq tired-trash-directory "~/.local/state/tired/trash/")
