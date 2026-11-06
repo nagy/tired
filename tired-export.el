@@ -28,6 +28,20 @@
 ;; prints.  Each command reads the transient selection first, then the
 ;; active region, then every visible entry.  Section rows stay out,
 ;; because a section is not a file.
+;;
+;; Design notes for a change in this file:
+;;
+;; - A whole-view export reuses one buffer per format and directory, and
+;;   a partial export makes a new buffer, because another selection holds
+;;   other rows.  A command keeps the selection and the region and leaves
+;;   the buffer unmodified.
+;; - The buffer takes the listing directory as `default-directory', so a
+;;   later `C-x C-w' starts there.  Read a buffer-local variable before
+;;   `with-current-buffer', or the target buffer supplies its own value.
+;; - The JSON follows the `rclone lsjson' object, so a field name and a
+;;   directory size of -1 stay as rclone prints them.  The CSV export
+;;   reports 0 for a directory, because that total needs a walk.  Test a
+;;   new field against an rclone listing before you add it.
 
 ;;; Code:
 

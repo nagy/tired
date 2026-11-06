@@ -26,6 +26,202 @@
 ;; point restore, file notification watches, the redraw and
 ;; `tired-mode'.  `tired.el' is the entry point and requires this
 ;; library, so a user still loads `tired'.
+;;
+;; Design notes for a change in this file:
+;;
+;; - `tired--read-entries' builds one hash table per shown directory
+;;   from `directory-files-and-attributes', so a file costs one stat.
+;;   `tired--tables' holds the tables and `tired--inserted' the
+;;   directories whose children show.
+;; - The sort runs here and not in `tabulated-list', because the sorter
+;;   of that package reads a flat list at print time and a column
+;;   predicate cannot keep the tree.  `tired--sort-row' decorates one
+;;   entry with the value that the column prints, so one redraw parses
+;;   each extension once, and `tired--lessp' compares the decorations.
+;;   A sort key must read the value that the row prints, or the column
+;;   reads out of order.  See `docs/adr/0002-sort-in-elisp.md' and
+;;   `docs/adr/0014-sort-on-the-value-the-row-prints.md'.
+;; - `tired--display-rows' walks depth first and returns (ROW . DEPTH)
+;;   conses.  A `file-truename' set stops a symlink cycle, and
+;;   `tired--directory-entry-p' decides whether a row takes children,
+;;   so a symlink that resolves to a directory counts.
+;; - `tired--collapsed-display-entry' swaps a directory row for the
+;;   leaf of a single-entry chain before the sort.  It caches a
+;;   `tired--chain' with one (MTIME . SIZE) stamp per level, and a
+;;   refresh bumps `tired--collapse-generation', so the first redraw
+;;   after it checks a stamp instead of reading a directory.  It skips
+;;   a remote directory, because each read there costs a network round
+;;   trip.
+;; - `tired--redraw' walks the tree once into `tired--rows', sizes the
+;;   name column, prints vector rows, restores point by row key, the
+;;   mark and the window views, then repaints and syncs the watches.
+;;   It binds `tired--name-cells', so one row builds its cell once for
+;;   the width pass, the print and the mouse region, and it records the
+;;   window width in `tired--name-column-window-width', so a resize
+;;   check costs one `window-width' call.  `tired--rows' belongs to one
+;;   redraw alone: the filter, the insert set and the fold set change
+;;   without a refresh.
+;; - `tired-refresh' compares `tired--shown-stamps' with
+;;   `tired--listing-stamps' first, so a listing that keeps every stamp
+;;   reads, sorts and prints nothing.  A path whose change reaches a
+;;   printed row belongs in `tired--shown-stamps': the shown directory,
+;;   each inserted directory, each chain level and each expanded file.
+;; - The selection holds paths and `tired--selection-set' mirrors them.
+;;   `tired--targets' commits an active region into the selection and
+;;   then reads the selection, the region and the row at point, so
+;;   every command body reads that function.  `tired--selection-targets'
+;;   reads the same rows and changes nothing, so a menu :active form and
+;;   an interactive spec call it.  A region reads point and mark and
+;;   never `region-end', because a linewise evil range ends with the
+;;   newline of the row at point.
+;; - `tired--sync-watches' compares one hash set of wanted paths with
+;;   one table of live watches, so the pass stays linear: a collapsed
+;;   listing watches thousands of directories.  `tired--watches' stays
+;;   nil while no watch exists.
+;; - `tired-filter' reads the minibuffer and schedules a redraw through
+;;   `tired-filter-delay'.  The buffer-local `pre-command-hook' entry
+;;   clears a kept filter before a quit command runs, and it reads
+;;   `this-command' and never a key.  See
+;;   `docs/adr/0021-clear-the-filter-on-a-quit-command.md'.
+;; - `tired--queue-enqueue' holds the idle jobs of the process, one per
+;;   kind and key.  A pass takes the queue down, runs one step of every
+;;   job, and starts another round over the unfinished jobs until the
+;;   budget or pending input stops it.  A pass that leaves work
+;;   schedules its own successor, because an idle timer fires once for
+;;   one transition into the idle state.
+;; - Two tables answer a directory size: `tired--size-cache' and
+;;   `tired--size-cache-permanent', which `tired-persistent-directories'
+;;   fills.  `tired--directory-total' reads both and matches no rule,
+;;   because one match per row would cost one `expand-file-name' per
+;;   row.  A size path reads `tired--size-skip-p' alone, so the remote
+;;   test and the exclusion rule agree.  The same walk fills
+;;   `tired--child-cache', so a directory count costs no second read.
+;;   See `docs/adr/0018', `docs/adr/0019' and `docs/adr/0020'.
+;; - The size walk reads the size memo alone and never blocks a redraw.
+;;   Key that memo with `tired--size-key', never with `file-truename'.
+;;   Do not add a `post-gc-hook' clear: one walk triggers several
+;;   collections.
+;; - `tired--subtree-starts' is a vector of buffer positions that one
+;;   print filled, so `tired-subtree-bounds' costs one search and no
+;;   line read.  `tired-mode' registers `tired-subtree' in the two
+;;   thingatpt alists.
+;; - `tired-mode' sets no `font-lock-defaults': the printer built every
+;;   string, so color belongs in the entry data.  A name cell carries
+;;   `face' and `font-lock-face', and each face inherits its `dired-'
+;;   partner, so a Dired theme reaches a Tired row.
+;; - The name column start is the line start and its cell holds two
+;;   spaces per depth level.  `tired--beginning-of-name' skips those
+;;   spaces through `forward-line', which the byte compiler accepts
+;;   where it rejects `next-line'.
+;; - `tabulated-list-print' erases the buffer, and the erase collapses
+;;   every overlay that another library set on the text.  Such a
+;;   library paints again from `tired-after-redraw-hook' and runs no
+;;   view command there, or a redraw loops forever.  The erase also
+;;   moves the mark, point and the window start, so `tired--redraw'
+;;   restores all three through `set-marker' and clamps the line to the
+;;   last row.
+;; - `tired--pin-width-window' pins the window that renders the
+;;   listing, because `tabulated-list-format' is permanent-local and one
+;;   width serves every window.  Only a window that decides the width
+;;   repaints, so a second frame keeps the pinned column.
+;; - `tired-noselect' redraws before a window exists, so it queues no
+;;   size walk.  A `window-buffer-change-functions' entry schedules the
+;;   reprint through a timer, because redisplay runs that hook.
+;; - A printed row carries `mouse-face' on its name alone, and
+;;   `tabulated-list-mode' turns a click there into a link click unless
+;;   `follow-link' says no.  `tired-mode-map' binds `follow-link' to
+;;   `tired--click-selects-row', which returns nil.
+;; - `tired--column-label' propertizes a header label with a key map for
+;;   both header mouse buttons, because `follow-link' can turn a click
+;;   into the second one.  `tired--sort-indicator' reads the two
+;;   `tabulated-list' indicator options, so a text terminal shows the
+;;   tty partner that the package maps in `glyphless-char-display'.
+;; - `tired--elements-value-function', `tired--elements-queue-function'
+;;   and `tired--elements-prune-function' stay nil in this file, so core
+;;   redraws alone without `tired-elements'.  A redraw reads the element
+;;   cache alone and never calls a dissector.
+;; - A refresh forces a walk of every shown directory:
+;;   `tired--reload-tables' sets `tired--size-forced' and
+;;   `tired--size-queue' passes it on, so a young total cannot keep a
+;;   cell or a face that the refresh contradicted.
+;; - The header title and the cached mode-line part double the percent
+;;   sign, because both readers start a substitution at one sign.  Do not
+;;   escape `tired--header-base', which holds the substitutions that
+;;   `tabulated-list-init-header' wrote.
+;; - `minibuffer-contents' returns the current buffer text outside a
+;;   minibuffer, so read it before `with-current-buffer'.
+;; - `tired-file-sections' picks a handler through `tired-file-handlers',
+;;   runs it in a temporary buffer with VISIT set, so the buffer carries a
+;;   file name and no modified flag, and turns the plists into
+;;   `tired-section' structs.  The result caches by modification time.  A
+;;   section row takes its count from the `count' slot and never through
+;;   `tired-elements-functions', because a dissector reads the file again.
+;; - `tired--paint-row-help' runs after `tabulated-list-print' and gives
+;;   every printed line its `help-echo'.  `tired--click-row' reads the row
+;;   under a click from the buffer of the clicked window.  A menu click
+;;   leaves point alone, so each row command goes through
+;;   `tired--context-command' and moves to the clicked position first, and
+;;   the `context-menu-functions' guard reads
+;;   `(boundp 'context-menu-functions)', because `mouse.el' owns that
+;;   variable.
+;; - `tired--redraw' draws nothing while `tired--name-edit' holds, or a
+;;   reprint would erase the typed names.  `tired--start-name-edit'
+;;   empties `tired--subtree-starts', so a typed name moves no bounds, and
+;;   the abort and a commit that changes no name force a print through
+;;   `tired--listing-stamps'.
+;; - A hidden row drops before its sections read, even when VISIBLE-ONLY
+;;   holds nil, so the width pass and the selection never see a hidden
+;;   path.  A hidden name also ends a chain before that level.
+;; - A collapsed row takes the leaf of the chain, so
+;;   `tired-entry-path' names the leaf, and the leaf can be a directory:
+;;   `tired--display-rows' walks the children of `display' and not of
+;;   `entry'.  `tired--chain-paths' feeds the watch and
+;;   `tired--entry-for-path' reads a parent table by file name, so it
+;;   misses such a row.  Drop a chain result when its directory leaves the
+;;   tree, or the watch outlives the row.
+;; - A nil sort value lists last in both directions, and `tired--lessp'
+;;   breaks a two-nil tie by name, or the rows would keep the hash order.
+;;   The Elements header label with its arrow is ten characters wide, so
+;;   the column and its share of `tired--fixed-column-width' are ten.
+;; - `tired--entries-size' counts a directory by its subtree, adds nothing
+;;   for a remote directory or for a directory that
+;;   `tired-directory-size-exclude' names, and adds zero until the walk
+;;   lands.  The mode line rebuilds on a region change through
+;;   `post-command-hook'.
+;; - A walk that signals stores a zero total for its root, so a broken
+;;   tree costs one pass.  `tired--size-queue' queues the topmost visible
+;;   directory row of a chain alone and skips a remote directory, an
+;;   excluded one and one with a young total.
+;; - A path that `tired-persistent-directories' matches takes no watch, so
+;;   no event reports a new child there and a fresh total reaches the
+;;   listing through `tired-refresh' alone.
+;; - A signal inside a command hook removes that function from the hook of
+;;   the buffer, so `tired--filter-quit-on-command' guards its clear
+;;   against `quit' and `error'.  The guard covers the redraw alone, and a
+;;   command that follows still quits.
+;; - A view command keeps the row at point and the column of the name:
+;;   `tired--redraw-buffer' records `tired--at-name-p' before the print and
+;;   moves back through `tired--beginning-of-name' after it restores the
+;;   window views.
+;; - A row name is the `filename' thing through
+;;   `tired--filename-at-point' and `tired--name-bounds'.  A provider that
+;;   returns nil cannot veto the plain Emacs guess.
+;; - `tired--forward-subtree' reads the BACKWARD argument of
+;;   `forward-thing' and never N, because that function takes the smallest
+;;   non-zero move of the providers for one symbol.
+;; - `tired--entry-path' reads an entry struct, so test `tired-entry-p'
+;;   first, or a section row signals `wrong-type-argument'.  A
+;;   `tired-entry' row carries the network state that its directory read
+;;   in the `remote' slot, and `tired--entry-remote-p' answers it.
+;; - `tired-select-extension' keys a group with `file-name-extension' and
+;;   an empty fallback, adds to the selection instead of toggling, and
+;;   runs its body in `save-excursion'.  A narrow snapshot includes
+;;   `tired--flagged-deletion', so a pending row stays on screen.
+;; - `tired-copy-name' alternates between the name and the abbreviated
+;;   path through `tired--copy-name-absolute'.  `tired-next-line' and
+;;   `tired-previous-line' clear that value, but `tired--beginning-of-name'
+;;   must not, because a redraw calls that helper.
+;; - A row must be a vector: Emacs 31 calls `aref' on it.
 
 ;;; Code:
 
@@ -4587,6 +4783,9 @@ The directory contents come from `directory-files' and
 
 \\{tired-mode-map}"
   :group 'tired
+  ;; The mode runs before the directory is known, so it must not set
+  ;; `default-directory' or `list-buffers-directory':
+  ;; `tired-noselect' owns both.
   (setq-local tired--sort-key 'name)
   (setq-local tired--sort-flip nil)
   (setq-local tired--filter nil)

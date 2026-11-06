@@ -63,6 +63,34 @@
 ;; `evil-mouse-drag-region', which keeps the drag that makes a region,
 ;; and that command turns a double click into a text selection, so a
 ;; double click does not toggle a row here.  TAB toggles it.
+;;
+;; Design notes for a change in this file:
+;;
+;; - `evil-define-key' is a macro, so this file uses the function
+;;   `evil-define-minor-mode-key' with `key-parse'.  `define-key' reads
+;;   "RET" as three characters.  A remap entry reads
+;;   "<remap> <evil-replace>", because `key-parse' treats the bracket form
+;;   as literal characters.  The table of `tired-evil-keys' types the
+;;   sort cycling as the literal character `↓'.
+;; - The normal table remaps `evil-replace', `evil-goto-line',
+;;   `evil-next-line' and `evil-previous-line', so `r' renames and `j',
+;;   `k' and `G' stop on a row.  A remap reaches the visual state too, so
+;;   the three motion commands carry the `:keep-visual' property:
+;;   `evil-visual-pre-command' expands the region for every other
+;;   command, and an expanded region turns the line motion into no
+;;   motion.
+;; - Evil shadows `i' (text objects), `e' and `E' (word motion) and TAB
+;;   (jump forward) in visual state, so `tired-evil-visual-keys' holds no
+;;   insert, expand, collapse or toggle key.
+;; - `tired-evil-local-mode' puts its normal state map ahead of the name
+;;   edit key map, and that map binds every row key, so the edit would
+;;   never type a letter.  This file adds `tired-evil--name-edit' to
+;;   `tired-name-edit-mode-hook' in each buffer: the edit starts in the
+;;   insert state and its end returns to the normal state.  The edit mode
+;;   never calls an evil function, so a user without evil runs the same
+;;   code.
+;; - Evil binds `down-mouse-1' in its motion state map, so only `mouse-2'
+;;   needs a key here, and no mouse event goes in the visual table.
 
 ;;; Code:
 

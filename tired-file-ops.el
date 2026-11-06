@@ -21,10 +21,81 @@
 
 ;;; Commentary:
 
-;; The file commands that change the file system: copy, move, delete,
-;; mkdir and touch.  Each command pushes one undo action, and the
-;; session trash keeps every removed byte.  The shell command lives
-;; here too, because it is the one command that runs a shell.
+;; The file commands that change the file system: copy, move, rename,
+;; delete, mkdir and touch, plus the in-place name edit, undo and redo.
+;; Each command pushes one undo action, and the session trash keeps
+;; every removed byte.  The shell command lives here too, because it is
+;; the one command that runs a shell.
+;;
+;; Design notes for a change in this file:
+;;
+;; - `tired--apply-to-targets' runs one function over the paths deepest
+;;   first, then clears the selection, refreshes, repairs point and
+;;   reports one line.  A row that leaves the listing under point keeps
+;;   its line, and otherwise point takes the row below the nearest row
+;;   that stays above it.
+;; - A command prints exactly one line through `message` and no
+;;   `display-warning' beside it.  `tired--report-operation' builds it
+;;   for copy, move, delete and commit.
+;; - Removal goes through `tired--trash-move', never through
+;;   `delete-file', so undo restores the path.  The trash usually sits
+;;   on another file system, so a move is a copy and a delete, and a
+;;   reboot loses it.  Never empty the trash inside an undo function.
+;; - An action holds two steps that share one lexical state, and every
+;;   path parks under one trash name for the whole session through
+;;   `tired--parking-slot', so one undo and redo cycle leaves no dead
+;;   entry.  `tired-redo' signals a user error while
+;;   `tired-undo-push-functions' holds.
+;; - `tired-rename' reads the row at point alone and renames the buffer
+;;   that visits the path through `tired--rename-visiting-buffers'.  The
+;;   helper calls `set-visited-file-name', never `rename-buffer', so
+;;   `uniquify' shapes a taken name.  No other command reaches it.
+;; - `tired-copy' and `tired-move' read their destination from another
+;;   Tired window through `tired--other-tired-directory' when
+;;   `tired-dwim-target' holds.
+;; - `tired-edit-names' marks every character outside a name with a
+;;   `read-only' text property and keeps the two ends in
+;;   `tired--name-edit-regions' as markers, because the printed column is
+;;   stale after an edit.  A `read-only' property alone keeps no name
+;;   from growing: mark the character before a name `rear-nonsticky', and
+;;   mark the first character of a read-only line `front-sticky'.
+;; - Do not guard the edit with `before-change-functions': a signal there
+;;   clears that buffer-local hook, so the first refused key would leave
+;;   every later key unguarded.
+;; - `special-mode-map' remaps `self-insert-command' to `undefined', and
+;;   `tired-mode-map' inherits that remap, so the edit mode needs its own
+;;   `<remap> <self-insert-command>' and one explicit binding per
+;;   printable character.
+;; - `tired-commit-edits' checks every name before it touches the disk:
+;;   blank, a directory part, a control character, a repeated name, a
+;;   name that the same commit moves away, a destination that names a
+;;   directory, and a row that left the disk.  It keeps display order, so
+;;   a renamed parent runs before a renamed child.  A rename that fails
+;;   keeps its row editable and turns the rows that succeeded read only.
+;; - Build every new path with `tired--name-target', never with
+;;   `expand-file-name', which reads a name of `~' as the home
+;;   directory.
+;; - `tired--same-name-entry-p' drops the trash step when the source and
+;;   the destination differ in case alone, because the file system
+;;   resolves them to one entry, and `tired-undo' cannot move such a path
+;;   back.  `tired--rename-region' narrows a collapsed chain row to its
+;;   leaf, so a rename moves the leaf alone.
+;; - Changing a text property sets the modified flag, and
+;;   `tired--paint-row-help' adds properties after every print, so a
+;;   listing buffer counts as modified.  Do not read that flag as a sign
+;;   of an unsaved name edit.
+;; - `tired-delete' waits through a flag set when `tired-delete-delay'
+;;   holds a positive number.  `tired--flagged-deletion' stays disjoint
+;;   from the selection, because the countdown owns the path.  The
+;;   countdown runs in the buffer that scheduled it, so
+;;   `tired--delete-flagged' takes the buffer as its argument and checks
+;;   `buffer-live-p'.  A flag set to nil or zero leaves the pending flags
+;;   alone, because the option governs the next `tired-delete'.
+;;   `tired--prune-flags' drops a flag by `file-exists-p' and
+;;   `file-symlink-p', never by the listing, or a hidden row would
+;;   silently cancel a deletion.  A countdown that ends while a
+;;   minibuffer prompt is active retries after
+;;   `tired--delete-retry-delay'.
 
 ;;; Code:
 

@@ -22,9 +22,68 @@
 ;;; Commentary:
 
 ;; The section handlers that turn one file into `tired-section'
-;; structs: Org, Emacs Lisp, Rust, Go, Markdown, Cargo and SQLite.  The
-;; framework that calls a handler stays in `tired-core', so a new
+;; structs: Org, Emacs Lisp, Rust, Go, Markdown, Cargo, SQLite and tar.
+;; The framework that calls a handler stays in `tired-core', so a new
 ;; handler costs one rule in `tired-file-handlers'.
+;;
+;; A handler receives the file name, runs in a temporary buffer, selects
+;; its own major mode, calls `font-lock-ensure' and returns plists.  It
+;; takes no hard dependency: a grammar loads at run time and the handler
+;; returns nil without it.  `tired-section-file-size-limit' guards every
+;; handler, because a handler reads the whole file, and a skipped file
+;; writes no cache entry.
+;;
+;; Design notes for a change in this file:
+;;
+;; - A label takes its faces from the fontified buffer, so a handler
+;;   calls `font-lock-ensure' after it selects its mode.  Without that
+;;   call a tree-sitter buffer holds no face and every row falls back to
+;;   the section face.
+;; - `treesit-node-text' keeps the buffer text properties unless the
+;;   second argument is non-nil.  Leave the argument out for a label and
+;;   pass t for a key that a comparison or a column measurement reads.
+;; - A source span may carry more than a face: an org link brings a
+;;   `keymap', a `mouse-face' and an `invisible' property, and the last
+;;   one hides half a row.  `tired--face-only-string' rebuilds the label
+;;   with `face' alone, and `tired--paint-missing-face' drops every other
+;;   property.
+;; - A fenced Markdown block names another language, and its grammar may
+;;   be absent, so the parse binds `treesit-auto-install-grammar' to nil.
+;; - Section depth subtracts the level of the first section, or an Org
+;;   file whose first heading is `**' indents from a phantom parent.  A
+;;   fold hides descendants until a section of equal or lower level
+;;   appears.
+;; - The Org label span comes from the title text, not from the stars.
+;;   Org 31 gives `:title' as a string and an older Org gives a list, so
+;;   only a string reaches `search-forward' and a miss falls back to
+;;   `:raw-value'.
+;; - The org narrow option stays out of the parsed section, so
+;;   `tired--org-open-heading' reads it at open time and a change needs no
+;;   re-parse.
+;; - A handler with no real line gives each section a distinct synthetic
+;;   `:line' and an `:action', because fold state and the point restore
+;;   key on (PATH . LINE).
+;; - A Rust or Go row repeats the prefix of its source line.
+;;   `tired--treesit-keyword-text' copies that prefix and paints each
+;;   part that the major mode left plain, so a buffer that fontifies
+;;   nothing still shows a keyword.  `tired--rust-prefix-start' skips a
+;;   visibility modifier, so `pub' never widens a row.
+;; - The Go handler keeps a declaration that sits at the top level
+;;   alone.  A method indents under the type that the file declares above
+;;   it, through `tired--go-type-starts', which fills on first use.  A
+;;   method declared before its type stays at level zero, because an
+;;   indent with no parent row above it reads as a child of the row
+;;   before it.
+;; - The Emacs Lisp handler skips whitespace and comments with
+;;   `forward-comment' and drops a form that
+;;   `tired--elisp-hidden-heads' names.  The dropped form keeps its
+;;   lines, so the rows around it keep their own lines.
+;; - The tar handler reads raw bytes, so it sets the buffer unibyte before
+;;   the walk, or a NUL byte in a header moves every block offset.
+;;   `jka-compr' decompresses the archive during that read, so one parser
+;;   serves every suffix.  A pax record and a GNU long-name record change
+;;   the name and the size of the member that follows them, so the walk
+;;   clears both after it emits a member.
 
 ;;; Code:
 

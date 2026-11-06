@@ -24,6 +24,48 @@
 ;; runs one dissector per path in small steps, and
 ;; `tired-elements-functions' holds the dissectors, so a user extends
 ;; the column with `add-hook'.
+;;
+;; Design notes for a change in this file:
+;;
+;; - A cached count keys on the path, the modification time, the size and
+;;   the hook value, and `tired-elements-cache-ttl' drops an entry that
+;;   no buffer read inside that window.  A cached nil count is a hit,
+;;   not a miss: an unreadable file and a file without a dissector both
+;;   store nil.
+;; - A dissector returns nil, an integer or a job, and the library wraps
+;;   a job in the `elements' kind of the shared queue, so one queue
+;;   serves sizes and counts.  A dissector that hands its own job over
+;;   costs one extra step, because the next pass advances the new one.
+;; - The prune drops a count that another hook value produced and
+;;   returns non-nil, so a refresh queues those rows again.  A path that
+;;   `tired-persistent-directories' matches keeps its count in
+;;   `tired--elements-cache-permanent'.
+;; - A listing that no window shows queues nothing and sets
+;;   `tired--elements-deferred', so the next display walks the counts.
+;; - One option bounds every dissector that holds a whole file in one
+;;   step: `tired-elements-sync-limit'.  The JSON parser, the Parquet
+;;   footer and the section fallback all read it.
+;; - The JSON dissector parses with `json-parse-buffer' in one C call.
+;;   Do not write a byte-at-a-time JSON scanner: one 21 MB index file
+;;   cost 20 s of Elisp scanning.
+;; - `tired--csv-scan' feeds one byte back to itself when a closing quote
+;;   ends a field, so it drops its index only on `:consumed'.  A quote
+;;   opens a field at a record start or after a comma alone, and a
+;;   comment record ignores every quote up to its newline.
+;; - `tired--markdown-scan' keeps the partial last line in its state, and
+;;   a fence, a string and an escape all carry over a chunk boundary.  It
+;;   copies `(match-end 0)' into its own binding before it calls a
+;;   function, because that function runs its own regexp match.
+;; - The Parquet footer holds `num_rows' before `row_groups', so
+;;   `tired--parquet-count' stops at field 3.  A footer larger than one
+;;   chunk grows its buffer and parses again from the start, so the Thrift
+;;   reader needs no resumable state.  The tail magic `PARE' marks an
+;;   encrypted footer that the dissector refuses.
+;; - A range read passes BEG first and END second.
+;;   `tired--elements-read-range' wraps the call.
+;; - The count follows the section tree: the first section or heading
+;;   sets the top level, so the number equals the rows that print at
+;;   depth zero.
 
 ;;; Code:
 
