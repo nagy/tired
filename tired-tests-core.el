@@ -1147,6 +1147,32 @@ The home directory of a path takes its abbreviation."
     (should-not tired--selection)
     (should-not (member "beta.txt" (tired-tests--names)))))
 
+(ert-deftest tired-refresh-survives-a-vanished-directory ()
+  "A shown directory that left the disk leaves an empty listing.
+An external move takes the whole directory away, and the
+`tired--auto-revert-now' timer must print no error then.  A later
+refresh of the directory that came back fills the rows again."
+  (tired-tests--with-fixture
+    (let* ((buffer (tired root))
+           (moved (concat (directory-file-name root) "-moved")))
+      (should (= 5 (length (tired-tests--names))))
+      (unwind-protect
+          (progn
+            (rename-file (directory-file-name root) moved)
+            (let ((tired-auto-revert t))
+              (with-current-buffer buffer
+                (tired--auto-revert-now buffer)))
+            (with-current-buffer buffer
+              (should-not (tired-tests--names))
+              (should (equal (list (cons root nil))
+                             (tired--shown-stamps)))))
+        (when (file-directory-p moved)
+          (rename-file moved (directory-file-name root))))
+      (with-current-buffer buffer
+        (tired-refresh)
+        (should (= 5 (length (tired-tests--names)))))
+      (kill-buffer buffer))))
+
 (ert-deftest tired-refresh-keeps-an-unchanged-listing ()
   "A refresh of a directory that did not change prints no row again.
 The read still runs, because a write to a file inside the directory

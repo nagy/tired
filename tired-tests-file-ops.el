@@ -265,6 +265,18 @@ The buffer keeps the modified flag that the user set."
       (should-error (tired-rename "..") :type 'user-error)
       (should (file-regular-p (expand-file-name "alpha.txt" root))))))
 
+(ert-deftest tired-rename-rejects-a-vanished-path ()
+  "A row whose path left the disk signals a user error.
+An external move removes the path between two refreshes, so the
+command reaches a row that the disk no longer holds."
+  (tired-tests--with-fixture
+    (tired-tests--with-trash
+      (tired root)
+      (tired-tests--goto "alpha.txt")
+      (delete-file (expand-file-name "alpha.txt" root))
+      (should-error (tired-rename "renamed.txt") :type 'user-error)
+      (should-not (file-exists-p (expand-file-name "renamed.txt" root))))))
+
 (ert-deftest tired-rename-rejects-a-section ()
   "A section row names no file of its own."
   (tired-tests--with-fixture

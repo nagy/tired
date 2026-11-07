@@ -71,6 +71,11 @@
 ;;   keeps every stamp then reads `tired--read-tables' and compares it
 ;;   with `tired--tables', and it prints no row while the entries
 ;;   match.  The read costs alone; the sort and the print stay away.
+;; - A shown directory that a move took away holds no entry table, so
+;;   a refresh prints an empty listing and the timer prints no error.
+;;   `tired--shown-stamps' keeps its `(PATH . nil)' stamp, so a
+;;   directory that comes back changes the stamps and reaches the
+;;   rows again.
 ;; - The selection holds paths and `tired--selection-set' mirrors them.
 ;;   `tired--targets' commits an active region into the selection and
 ;;   then reads the selection, the region and the row at point, so
@@ -3631,12 +3636,16 @@ watch."
 The table maps a directory to the entry table of `tired--read-entries',
 and it names the shown directory and every inserted directory that
 still exists.  Nothing changes in the buffer, so a refresh compares
-the value with `tired--tables' before it commits a read."
+the value with `tired--tables' before it commits a read.
+A shown directory that a move or a removal took away keeps no entry
+here, so the refresh prints an empty listing instead of raising
+`file-missing' from a timer."
   (declare (side-effect-free t))
   (let ((tables (make-hash-table :test #'equal)))
-    (puthash (directory-file-name tired--directory)
-             (tired--read-entries tired--directory)
-             tables)
+    (when (file-directory-p tired--directory)
+      (puthash (directory-file-name tired--directory)
+               (tired--read-entries tired--directory)
+               tables))
     (when (hash-table-p tired--inserted)
       (maphash (lambda (directory _ignore)
                  (when (file-directory-p directory)

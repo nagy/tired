@@ -673,9 +673,10 @@ error, so no subtree leaves the listing by accident.  The command
 reads the row at point alone and ignores the selection and the
 region.  A later `tired-undo' returns the old name.  Point follows
 the renamed row.  A buffer that visits the path takes the new name
-too when `tired-rename-visiting-buffer' holds.  The command never
-calls a shell, and it signals a user error while a name edit holds
-the buffer text."
+too when `tired-rename-visiting-buffer' holds.  A row whose path
+left the disk signals a user error and keeps the listing.  The
+command never calls a shell, and it signals a user error while a
+name edit holds the buffer text."
   (interactive
    (if tired--name-edit
        (user-error "Commit or abort the name edit first")
@@ -697,6 +698,8 @@ the buffer text."
     (let* ((path (tired-entry-path row))
            (old (file-name-nondirectory (directory-file-name path)))
            (target (tired--name-target path name)))
+      (unless (tired--path-exists-p path)
+        (user-error "%s left the disk" (abbreviate-file-name path)))
       (when (or (string-empty-p (string-trim name))
                 (member name '("." "..")))
         (user-error "Invalid name %s" name))

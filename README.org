@@ -1040,6 +1040,10 @@ chain, so that watch matters.  Emacs lock files do not trigger a
 refresh, and an open minibuffer postpones the refresh.  =A= toggles
 the feature for the current buffer.
 
+A move or a removal that takes the shown directory away empties the
+listing.  The timer then prints no error, and the buffer keeps its
+name, so =g= fills the rows again once the directory comes back.
+
 Remote directories stay unwatched by default.  Every remote
 notification costs a network round trip, and some TRAMP methods
 refuse a watch.  The buffer therefore needs both

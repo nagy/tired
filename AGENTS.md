@@ -150,6 +150,11 @@ carries no cookie at all: `tired-noselect` runs the mode.
 - A file command signals a user error while `tired--name-edit` holds:
   `tired--apply-to-targets` refreshes, `tired--redraw` draws nothing
   then, and the listing would disagree with the disk.
+- A shown directory that left the disk keeps no entry table, so a
+  refresh and a timer print an empty listing and never a
+  `file-missing`.  A command that acts on one path, such as
+  `tired-rename`, signals a `user-error` for a path that left the disk,
+  and `tired--apply-to-targets` counts that path as a failure.
 - A file command never asks a confirmation and never calls a shell,
   except `tired-do-shell-command`.  Removal goes through
   `tired--trash-move`, never through `delete-file`, so undo restores the
