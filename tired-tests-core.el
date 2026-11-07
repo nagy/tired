@@ -1326,6 +1326,59 @@ key map alone."
                 (tired--name-face
                  (tired--entry-create :name "fifo" :type 'special))))))
 
+(ert-deftest tired-mode-cell-dims-the-expected-bits ()
+  "A cell that holds the bits of its type takes `tired-ignored-face'."
+  (let ((tired-short-mode nil))
+    (dolist (case '((file "-rw-r--r--")
+                    (directory "drwxr-xr-x")
+                    (symlink "lrwxrwxrwx")))
+      (let ((cell (tired--mode-cell
+                   (tired--entry-create :name "x"
+                                        :type (car case)
+                                        :mode (cadr case)))))
+        (should (equal (cadr case) cell))
+        (should (eq 'tired-ignored-face (get-text-property 0 'face cell)))
+        (should (eq 'tired-ignored-face
+                    (get-text-property 0 'font-lock-face cell)))
+        (should (eq 'tired-ignored-face (get-text-property 9 'face cell)))
+        (should (eq 'tired-ignored-face (get-text-property 5 'face cell))))))
+  (let ((tired-short-mode t))
+    (dolist (case '((file "-rw-r--r--")
+                    (directory "drwxr-xr-x")
+                    (symlink "lrwxrwxrwx")))
+      (let ((cell (tired--mode-cell
+                   (tired--entry-create :name "x"
+                                        :type (car case)
+                                        :mode (cadr case)))))
+        (should (= 3 (length cell)))
+        (should (eq 'tired-ignored-face (get-text-property 0 'face cell)))))))
+
+(ert-deftest tired-mode-cell-keeps-a-deviating-mode-plain ()
+  "A mode that departs from the expectation of its type stays plain."
+  (let ((tired-short-mode nil))
+    (dolist (case '((file "-rwxr-xr-x")
+                    (file "-rw-rw-r--")
+                    (directory "drwxrwxr-x")
+                    (symlink "lrwxr-xr-x")
+                    (special "prw-r--r--")
+                    (file "-rwsr-xr-x")))
+      (let ((cell (tired--mode-cell
+                   (tired--entry-create :name "x"
+                                        :type (car case)
+                                        :mode (cadr case)))))
+        (should-not (get-text-property 0 'face cell)))))
+  (let ((tired-short-mode t))
+    (dolist (case '((file "-rwxr-xr-x")
+                    (file "-rw-rw-r--")
+                    (directory "drwxrwxr-x")
+                    (symlink "lrwxr-xr-x")
+                    (special "prw-r--r--")))
+      (let ((cell (tired--mode-cell
+                   (tired--entry-create :name "x"
+                                        :type (car case)
+                                        :mode (cadr case)))))
+        (should-not (get-text-property 0 'face cell))))))
+
 (ert-deftest tired-mode-cell-paints-group-and-world-write ()
   "A group- or world-writable mode paints its `w' alone."
   (let ((tired-short-mode nil))
@@ -1353,13 +1406,13 @@ key map alone."
     (should-not (get-text-property
                  5 'face
                  (tired--mode-cell
-                  (tired--entry-create :name "a" :type 'file
-                                       :mode "-rw-r--r--"))))
+                  (tired--entry-create :name "link" :type 'symlink
+                                       :mode "lrwxr-xr-x"))))
     (should-not (get-text-property
                  5 'face
                  (tired--mode-cell
-                  (tired--entry-create :name "link" :type 'symlink
-                                       :mode "lrwxrwxrwx"))))
+                  (tired--entry-create :name "fifo" :type 'special
+                                       :mode "prw-rw-rw-"))))
     (should (eq 'tired-perm-write-face
                 (get-text-property
                  5 'face

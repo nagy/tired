@@ -10,7 +10,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 
 - Column listing with name, size, modification time and permission mode
 - Mode column in octal, such as =755=, aligned right, or the long
-  =drwxr-xr-x= form on request
+  =drwxr-xr-x= form on request, dimmed when the bits match the entry
+  type
 - Modification time column colored by `tired-date', which inherits
   `org-date'
 - Size column colored by `tired-file-size', which inherits `default'
@@ -856,6 +857,13 @@ set-group-ID or the sticky bit adds a fourth digit.
 A symbolic link prints the same way, so =lrwxrwxrwx= reads =777=.
 The name face and the arrow tell a link apart from a file.
 
+A cell that holds the bits its entry type expects dims in
+`tired-ignored-face': =644= for a regular file, =755= for a
+directory and =777= for a symbolic link.  Any other permission set
+keeps the plain face, so a group write bit, an executable file or a
+set-user-ID file stands out from the rest of the column.  The dim
+holds in both forms, and a dimmed cell paints no write bit.
+
 Set the option to nil for the long form:
 
 #+begin_src elisp
@@ -939,10 +947,14 @@ The mode column takes =tired-perm-write-face=, which inherits
 =dired-perm-write=, on the =w= of a file or directory that its group
 or the world can write.  Only that character takes the face, as in a
 Dired buffer, so the rest of the mode string stays plain.  A symbolic
-link keeps its mode plain, because the Dired rule reads a =-= or a
-=d= in the first place.  The face needs the long form, so
-=tired-short-mode= nil; the octal cell of the short form carries no
-face.
+link takes no write face, because the Dired rule reads a =-= or a
+=d= in the first place.  This face needs the long form, so
+=tired-short-mode= nil.
+
+The mode column dims in `tired-ignored-face' when the bits match the
+expectation of the entry type, so the unusual rows keep the plain
+face.  The dim holds in both forms.  It covers the whole cell, so a
+matching row paints no write face.
 
 A directory row ends with a slash.  That slash takes the
 =tired-directory-suffix-face= face, which inherits =parenthesis=, so a

@@ -114,6 +114,11 @@
 ;;   string, so color belongs in the entry data.  A name cell carries
 ;;   `face' and `font-lock-face', and each face inherits its `dired-'
 ;;   partner, so a Dired theme reaches a Tired row.
+;; - The Mode cell dims in `tired-ignored-face' when its bits match
+;;   `tired--mode-expected' for the entry type.  A dimmed run paints no
+;;   write face, because `777' covers a symbolic link whole.  The sort
+;;   keeps reading `tired--mode-octal' alone, so a new expectation
+;;   belongs in that one function.
 ;; - The name column start is the line start and its cell holds two
 ;;   spaces per depth level.  `tired--beginning-of-name' skips those
 ;;   spaces through `forward-line', which the byte compiler accepts
@@ -334,7 +339,10 @@ sticky bit adds a fourth digit, so `4755' and `1777' hold a place
 too.  Every entry type prints the same way, so a symbolic link
 shows `777' as well.  Set the option to nil for the long form,
 where the group and the world write bits take
-`tired-perm-write-face', the way Dired paints them."
+`tired-perm-write-face', the way Dired paints them.  Either form
+dims a cell that holds the bits its entry type expects, so `644'
+for a file, `755' for a directory and `777' for a link take
+`tired-ignored-face' and an unusual mode stands out."
   :type 'boolean)
 
 (defcustom tired-refresh-keeps-an-unchanged-listing t
@@ -633,7 +641,8 @@ The slash stays a separate run of text, so a theme colors it alone.")
   '((t :inherit dired-ignored))
   "Face for names that match `completion-ignored-extensions'.
 An empty directory takes the face too, so a row that holds no byte
-dims as one run.")
+dims as one run.  The Mode column takes the face for a permission
+set that the entry type expects.")
 
 (defface tired-perm-write-face
   '((t :inherit dired-perm-write))
@@ -2590,6 +2599,26 @@ nothing until the idle queue fills it."
   (let ((count (tired--elements-show row)))
     (if (integerp count) (number-to-string count) "")))
 
+(defun tired--mode-expected (entry)
+  "Return the permission bits that the type of ENTRY expects.
+A regular file expects 644, a directory 755 and a symbolic link
+777.  Any other type expects nothing, so its cell keeps the plain
+face."
+  (declare (pure t) (side-effect-free t))
+  (pcase (tired-entry-type entry)
+    ('file #o644)
+    ('directory #o755)
+    ('symlink #o777)))
+
+(defun tired--mode-expected-p (entry modes)
+  "Return non-nil when MODES holds exactly the bits ENTRY expects.
+MODES is the mode string that `file-attributes' returns.  An entry
+type without an expectation matches nothing."
+  (declare (pure t) (side-effect-free t))
+  (and (stringp modes)
+       (let ((expected (tired--mode-expected entry)))
+         (and expected (= expected (tired--mode-octal modes))))))
+
 (defun tired--mode-cell (entry)
   "Return the Mode column string for ENTRY.
 With `tired-short-mode' set, the cell holds the permission bits in
@@ -2597,12 +2626,23 @@ octal, such as `755', and every entry type prints that form.  The
 option nil keeps the long string, where a `w' in the group or the
 world part takes `tired-perm-write-face', the way Dired paints it.
 Like the Dired rule, the long form needs a `-' or a `d' in its
-first place."
+first place.
+
+A cell whose bits match the expectation of its entry type dims as
+one run in `tired-ignored-face', so an unusual permission set stands
+out in the plain face.  That run paints no write bit, because a
+matching symlink holds `777' and the whole cell already dims."
   (declare (side-effect-free t))
   (let ((modes (tired-entry-mode entry)))
     (cond
      ((not (and (stringp modes) (<= 10 (length modes))))
       (or modes ""))
+     ((tired--mode-expected-p entry modes)
+      (apply #'propertize
+             (if tired-short-mode
+                 (format "%o" (tired--mode-octal modes))
+               modes)
+             (tired--face-properties 'tired-ignored-face)))
      (tired-short-mode
       (format "%o" (tired--mode-octal modes)))
      ((not (memq (aref modes 0) '(?- ?d))) modes)
