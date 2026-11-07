@@ -2269,6 +2269,32 @@ forced walk waits for the display that follows."
       (should (derived-mode-p 'tired-mode))
       (should (equal tired--directory root)))))
 
+(ert-deftest tired-project-opens-the-project-root ()
+  "The command shows the root that the project reports."
+  (tired-tests--with-fixture
+    (require 'project)
+    (let ((project-root (file-name-as-directory
+                         (expand-file-name "sub" root))))
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (&rest _) (cons 'transient project-root))))
+        (tired-project))
+      (should (derived-mode-p 'tired-mode))
+      (should (equal tired--directory project-root)))))
+
+(ert-deftest tired-project-asks-for-a-project ()
+  "A directory outside a project makes the command prompt."
+  (tired-tests--with-fixture
+    (require 'project)
+    (let (asked
+          (project-root (file-name-as-directory
+                         (expand-file-name "sub" root))))
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (maybe-prompt &optional _directory)
+                   (setq asked maybe-prompt)
+                   (cons 'transient project-root))))
+        (tired-project))
+      (should asked))))
+
 (ert-deftest tired-bookmark-round-trip ()
   "A Tired bookmark records the directory and restores the buffer."
   (tired-tests--with-fixture

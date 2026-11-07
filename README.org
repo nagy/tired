@@ -122,6 +122,11 @@ directory that was shown.  From a buffer without a visited file it uses
 middle of the window, so the jump lands on it and not near an edge.  The mode map remaps =dired-jump=, so =C-x C-j=
 reaches =tired-jump= in a Tired buffer and =dired-jump= elsewhere.
 
+=M-x tired-project= opens the root of the current project, the way
+=M-x project-dired= opens it in Dired.  When the current directory
+belongs to no project, the command asks for one, so it opens a listing
+either way.
+
 =tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=
 records a directory buffer and =M-x bookmark-jump= restores it.
 

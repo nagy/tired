@@ -77,7 +77,8 @@
 ;;
 ;; Related commands:
 ;;
-;;   M-x tired-jump  visit the directory of the current buffer
+;;   M-x tired-jump     visit the directory of the current buffer
+;;   M-x tired-project  show the root of the current project
 ;;
 ;; Export commands:
 ;;
@@ -237,6 +238,18 @@ the split runs horizontally or vertically."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
   (switch-to-buffer-other-window (tired-noselect directory)))
+
+(declare-function project-current "project" (&optional maybe-prompt directory))
+
+;;;###autoload
+(defun tired-project ()
+  "Show the root directory of the current project in a Tired buffer.
+The command mirrors `project-dired'.  It asks for a project when the
+current directory belongs to none, so `M-x tired-project' still opens
+a listing outside a project.  The buffer goes through
+`tired-display-buffer-action', as `tired' does."
+  (interactive)
+  (tired (project-root (project-current t))))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)
