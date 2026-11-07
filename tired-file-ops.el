@@ -1086,10 +1086,16 @@ countdown again, `tired-select-none' drops every flag, and
 the countdown ends, the command removes exactly the flagged paths,
 and the rest of the selection stays.  A nil or zero delay deletes at
 once, as before.  The command asks no question and never calls a
-shell.  A later `tired-undo' moves the paths back."
+shell.  A later `tired-undo' moves the paths back.
+
+After the flag, point moves down one row, the way
+`tired-select-toggle-next' does, so a run of rows takes one key per
+row.  A delete at once leaves the move to `tired--apply-to-targets'."
   (interactive)
   (if (and (numberp tired-delete-delay) (> tired-delete-delay 0))
-      (tired--flag-deletion (mapcar #'tired-entry-path (tired--targets)))
+      (progn
+        (tired--flag-deletion (mapcar #'tired-entry-path (tired--targets)))
+        (forward-line 1))
     (let ((trashed nil))
       (tired--apply-to-targets
        "Deleted" "trash"

@@ -397,7 +397,9 @@ positive value moves the targets out of the selection into the
 deletion flag set, paints each row with `tired-flagged-deletion',
 which inherits `dired-flagged', and starts a countdown of that many
 seconds.  Every change of the selection starts the countdown again
-from zero, so a user who keeps working pushes the removal back.  =U=
+from zero, so a user who keeps working pushes the removal back.  After
+a flag, point moves down one row, the way =SPC= does, so a run of rows
+takes one key per row.  =U=
 (=tired-select-none=) drops every flag and stops the countdown, =u=
 (=tired-select-none-at-point=) on a flagged row drops that flag
 alone, and =SPC= on a flagged row drops it too.  A region and every

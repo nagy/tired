@@ -1622,6 +1622,32 @@ needs no `M-x' visit."
           (should (= 2 (length (tired-tests--delete-countdowns
                                 scheduled)))))))))
 
+(ert-deftest tired-delete-flag-moves-point-to-the-next-entry ()
+  "A flag moves point down one row, so a run takes one key per row."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should (equal (tired-entry-name (tired--row-at-point))
+                       "beta.txt"))))))
+
+(ert-deftest tired-delete-flag-moves-point-after-a-selection ()
+  "A flag of a selection moves point down one row too."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "alpha.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "beta.txt")
+        (tired-select-toggle)
+        (tired-tests--goto "alpha.txt")
+        (tired-delete)
+        (should (equal (tired-entry-name (tired--row-at-point))
+                       "beta.txt"))))))
+
 (ert-deftest tired-delete-flagged-removes-exactly-the-flagged-paths ()
   "The countdown removes the flagged rows and no other selected row."
   (tired-tests--with-fixture
