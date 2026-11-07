@@ -190,7 +190,10 @@ _Avoid_: Version, checksum, mtime
 The stamps of every path whose change can reach a printed row: the
 shown directory, the inserted directories, the levels of every chain
 and the expanded files.  `tired-refresh` compares it, and a listing
-that keeps every stamp reprints nothing.
+that keeps every stamp reads no directory.  A directory stamp moves
+only with a child that arrives or leaves, so a refresh that keeps
+every stamp still compares its entry tables, and a listing whose
+entries match reprints nothing.
 _Avoid_: Refresh stamp, snapshot stamp
 
 **Empty directory**:

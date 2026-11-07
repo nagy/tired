@@ -1148,17 +1148,58 @@ The home directory of a path takes its abbreviation."
     (should-not (member "beta.txt" (tired-tests--names)))))
 
 (ert-deftest tired-refresh-keeps-an-unchanged-listing ()
-  "A refresh of a directory that did not change reads no entry again."
+  "A refresh of a directory that did not change prints no row again.
+The read still runs, because a write to a file inside the directory
+leaves the stamp of the directory alone."
   (tired-tests--with-fixture
     (tired root)
-    (let ((reads 0)
-          (original (symbol-function 'directory-files-and-attributes)))
-      (cl-letf (((symbol-function 'directory-files-and-attributes)
+    (let ((prints 0)
+          (reads 0)
+          (tabulated (symbol-function 'tabulated-list-print))
+          (attributes (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'tabulated-list-print)
+                 (lambda (&rest args)
+                   (setq prints (1+ prints))
+                   (apply tabulated args)))
+                ((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
                    (setq reads (1+ reads))
-                   (apply original args))))
+                   (apply attributes args))))
         (tired-refresh))
-      (should (= 0 reads)))))
+      (should (= 0 prints))
+      (should (= 1 reads)))))
+
+(ert-deftest tired-refresh-carries-a-written-file-size ()
+  "A write to an existing file reaches its row on a refresh.
+The write changes no stamp of the directory that holds the file, so
+a refresh that trusts the stamps alone keeps the old size."
+  (tired-tests--with-fixture
+    (tired-tests--write "log.txt" "")
+    (tired root)
+    (should (= 0 (tired-entry-size (tired-tests--entry "log.txt"))))
+    (tired-tests--write "log.txt" "0123456789")
+    (tired-refresh)
+    (should (= 10 (tired-entry-size (tired-tests--entry "log.txt"))))
+    (should (string-match-p
+             "log.txt +10 "
+             (save-excursion
+               (goto-char (point-min))
+               (search-forward "log.txt")
+               (buffer-substring-no-properties
+                (line-beginning-position) (line-end-position)))))))
+
+(ert-deftest tired-revert-carries-a-written-file-size ()
+  "A revert carries a write to a file that the listing still shows."
+  (tired-tests--with-fixture
+    (tired-tests--write "log.txt" "")
+    (let ((buffer (tired-noselect root)))
+      (with-current-buffer buffer
+        (tired-tests--write "log.txt" "0123456789")
+        (revert-buffer-quick)
+        (should (= 10 (tired-entry-size (tired-tests--entry "log.txt"))))
+        (tired-tests--write "log.txt" "0123456789abcde")
+        (revert-buffer)
+        (should (= 15 (tired-entry-size (tired-tests--entry "log.txt"))))))))
 
 (ert-deftest tired-refresh-re-reads-a-changed-listing ()
   "A child that arrived reaches the listing through a refresh."

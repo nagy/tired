@@ -63,9 +63,14 @@
 ;;   without a refresh.
 ;; - `tired-refresh' compares `tired--shown-stamps' with
 ;;   `tired--listing-stamps' first, so a listing that keeps every stamp
-;;   reads, sorts and prints nothing.  A path whose change reaches a
-;;   printed row belongs in `tired--shown-stamps': the shown directory,
-;;   each inserted directory, each chain level and each expanded file.
+;;   reads no directory.  A path whose change reaches a printed row
+;;   belongs in `tired--shown-stamps': the shown directory, each
+;;   inserted directory, each chain level and each expanded file.  A
+;;   stamp of a directory moves alone with a child that arrives or
+;;   leaves, so a write to an existing file keeps it.  A refresh that
+;;   keeps every stamp then reads `tired--read-tables' and compares it
+;;   with `tired--tables', and it prints no row while the entries
+;;   match.  The read costs alone; the sort and the print stay away.
 ;; - The selection holds paths and `tired--selection-set' mirrors them.
 ;;   `tired--targets' commits an active region into the selection and
 ;;   then reads the selection, the region and the row at point, so
@@ -336,11 +341,15 @@ where the group and the world write bits take
   "When non-nil, a refresh keeps the rows that the disk did not change.
 `tired-refresh' compares the modification time and the size of every
 directory that the listing reads and of every expanded file, and a
-listing whose stamps all match reads no directory, sorts no row and
-prints nothing again.  The size walks still run, so a total that the
-disk changed below an unchanged directory lands through the idle
-reprint.  Set the option to nil to re-read and reprint on every
-refresh."
+listing whose stamps all match reads no directory.  A stamp of a
+directory moves alone with a child that arrives or leaves, so such a
+refresh still reads the entry tables and compares them, because a
+write to an existing file changes its own size and time and keeps
+the stamp of its directory.  A listing whose entries match then
+sorts no row and prints nothing again.  The size walks still run, so
+a total that the disk changed below an unchanged directory lands
+through the idle reprint.  Set the option to nil to sort and reprint
+on every refresh."
   :type 'boolean
   :group 'tired)
 
@@ -3577,14 +3586,67 @@ watch."
       (dolist (key stale)
         (remhash key tired--collapse-cache)))))
 
-(defun tired--reload-tables ()
+(defun tired--read-tables ()
+  "Return a hash table of the entries of every directory the listing reads.
+The table maps a directory to the entry table of `tired--read-entries',
+and it names the shown directory and every inserted directory that
+still exists.  Nothing changes in the buffer, so a refresh compares
+the value with `tired--tables' before it commits a read."
+  (declare (side-effect-free t))
+  (let ((tables (make-hash-table :test #'equal)))
+    (puthash (directory-file-name tired--directory)
+             (tired--read-entries tired--directory)
+             tables)
+    (when (hash-table-p tired--inserted)
+      (maphash (lambda (directory _ignore)
+                 (when (file-directory-p directory)
+                   (puthash directory (tired--read-entries directory)
+                            tables)))
+               tired--inserted))
+    tables))
+
+(defun tired--tables-equal-p (first second)
+  "Return non-nil when FIRST and SECOND hold the same entries.
+Both values come from `tired--read-tables'.  An entry compares by
+`equal', so a changed size or modification time of one file makes
+the two tables differ.  `equal' compares two hash tables by identity,
+so each entry table needs a key-by-key pass."
+  (declare (side-effect-free t))
+  (and (hash-table-p first)
+       (hash-table-p second)
+       (= (hash-table-count first) (hash-table-count second))
+       (catch 'different
+         (maphash (lambda (directory table)
+                    (unless (tired--entry-table-equal-p
+                             table (gethash directory second))
+                      (throw 'different nil)))
+                  first)
+         t)))
+
+(defun tired--entry-table-equal-p (first second)
+  "Return non-nil when the entry tables FIRST and SECOND agree.
+A nil FIRST or SECOND counts as different."
+  (declare (side-effect-free t))
+  (and (hash-table-p first)
+       (hash-table-p second)
+       (= (hash-table-count first) (hash-table-count second))
+       (catch 'different
+         (maphash (lambda (name entry)
+                    (unless (equal entry (gethash name second))
+                      (throw 'different nil)))
+                  first)
+         t)))
+
+(defun tired--reload-tables (&optional tables)
   "Read the root directory and every inserted directory.
-Drop inserted directories that no longer exist.  Drop expanded
-files that vanished.  Drop the directory size walks that a refresh
-or a directory change made stale, and keep `tired--size-cache', so a
-refresh inside one `tired-size-cache-ttl' window reads no directory
-twice."
-  (setq tired--tables (make-hash-table :test #'equal))
+TABLES carries a value that `tired--read-tables' already returned,
+so a refresh that compared the disk commits that read instead of
+reading twice.  Drop inserted directories that no longer exist.
+Drop expanded files that vanished.  Drop the directory size walks
+that a refresh or a directory change made stale, and keep
+`tired--size-cache', so a refresh inside one
+`tired-size-cache-ttl' window reads no directory twice."
+  (setq tired--tables (or tables (tired--read-tables)))
   ;; The chain results stay, and the new generation makes the next
   ;; redraw check the stamp of every directory that they walked.  A
   ;; refresh of a static directory then costs one attributes read per
@@ -3599,14 +3661,9 @@ twice."
   (setq tired--size-forced (float-time))
   (when tired--elements-prune-function
     (funcall tired--elements-prune-function))
-  (puthash (directory-file-name tired--directory)
-           (tired--read-entries tired--directory)
-           tired--tables)
   (let (gone)
     (maphash (lambda (directory _ignore)
-               (if (file-directory-p directory)
-                   (puthash directory (tired--read-entries directory)
-                            tired--tables)
+               (unless (gethash directory tired--tables)
                  (push directory gone)))
              tired--inserted)
     (dolist (directory gone)
@@ -3624,8 +3681,10 @@ twice."
 (defun tired-refresh ()
   "Reload the listing from disk and redraw the buffer.
 With `tired-refresh-keeps-an-unchanged-listing', a listing whose
-directories and expanded files keep the stamp of the last read keeps
-its printed rows, and the size walks alone run again."
+directories and expanded files keep the stamp of the last read reads
+no directory again, and a listing whose fresh read holds the entries
+that it already shows sorts no row and prints nothing again.  The
+size walks alone run then."
   (interactive)
   (unless tired--directory
     (user-error "Not in a Tired buffer"))
@@ -3633,27 +3692,45 @@ its printed rows, and the size walks alone run again."
    ((or (not tired-refresh-keeps-an-unchanged-listing)
         (tired--listing-changed-p))
     (tired--reload-tables)
-    (tired--set-selection (tired--prune-selection tired--selection))
-    (tired--set-narrowed (tired--prune-selection tired--narrowed))
-    (tired--prune-flags)
-    (tired--redraw)
-    (setq tired--listing-stamps (tired--shown-stamps)))
+    (tired--refresh-redraw))
    (t
-    ;; No row changed, so keep the printed rows and let the idle
-    ;; reprint show the totals that the walks store.  A changed
-    ;; `tired-elements-functions' invalidates a count without a change
-    ;; on the disk, and queueing the shown rows again notices that.
-    (setq tired--size-forced (float-time))
-    (when (and tired--elements-prune-function
-               (funcall tired--elements-prune-function))
-      ;; A cached count left the table, so queue the rows that show
-      ;; one and let the idle reprint fill the cells.
-      (when tired--elements-queue-function
-        (funcall tired--elements-queue-function)))
-    (tired--size-queue)
-    (if (tired--width-changed-p (tired--width-window))
-        (tired--redraw)
-      (tired--update-mode-line)))))
+    ;; A stamp of a directory or of an expanded file still matches, so
+    ;; the rows that a new child would touch cannot differ.  The size
+    ;; and the modification time of a file inside an unchanged
+    ;; directory can differ, because a write to an existing file
+    ;; leaves the stamp of its directory alone.  Read the entries alone
+    ;; and compare, so such a write still reaches its row.
+    (let ((tables (tired--read-tables)))
+      (if (tired--tables-equal-p tables tired--tables)
+          (tired--refresh-keep)
+        (tired--reload-tables tables)
+        (tired--refresh-redraw))))))
+
+(defun tired--refresh-redraw ()
+  "Commit a read of the disk to the buffer and print the rows again."
+  (tired--set-selection (tired--prune-selection tired--selection))
+  (tired--set-narrowed (tired--prune-selection tired--narrowed))
+  (tired--prune-flags)
+  (tired--redraw)
+  (setq tired--listing-stamps (tired--shown-stamps)))
+
+(defun tired--refresh-keep ()
+  "Keep the printed rows of a listing that the disk did not change."
+  ;; No row changed, so keep the printed rows and let the idle
+  ;; reprint show the totals that the walks store.  A changed
+  ;; `tired-elements-functions' invalidates a count without a change
+  ;; on the disk, and queueing the shown rows again notices that.
+  (setq tired--size-forced (float-time))
+  (when (and tired--elements-prune-function
+             (funcall tired--elements-prune-function))
+    ;; A cached count left the table, so queue the rows that show
+    ;; one and let the idle reprint fill the cells.
+    (when tired--elements-queue-function
+      (funcall tired--elements-queue-function)))
+  (tired--size-queue)
+  (if (tired--width-changed-p (tired--width-window))
+      (tired--redraw)
+    (tired--update-mode-line)))
 
 (defun tired--revert (_ignore-auto _noconfirm)
   "Revert the buffer by refreshing the listing.

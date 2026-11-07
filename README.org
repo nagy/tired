@@ -427,7 +427,7 @@ nothing.  =M-x tired-undo= undoes a copy and a move.  Set
 a move or a deletion refreshes every Tired buffer, so the destination
 window of a dwim copy shows the new entry at once and no wait for the
 file notification follows.  A listing that the command did not change
-keeps its printed rows, because the stamps still match.
+keeps its printed rows, because the entries still match.
 
 Every command prints one line that names the verb, the count and the
 destination.  A failed target joins that line with its path, and the
@@ -798,12 +798,14 @@ M-x tired-refresh re-reads a listing, and M-x tired-clear-caches
 empties every cache, the windowed ones and the permanent ones.
 A refresh first compares the modification time and the size of every
 directory that the listing reads, of every level of a single-child
-chain and of every expanded file.  A listing whose stamps all match
-keeps its printed rows: it reads no directory, sorts no row and prints
-nothing again, and the size walks alone run, so a total that the disk
-changed below an unchanged directory still lands.  Set
-=tired-refresh-keeps-an-unchanged-listing= to =nil= to re-read and
-reprint on every =g=:
+chain and of every expanded file.  A directory stamp moves only when
+a child arrives or leaves, so a listing whose stamps all match still
+reads its entry tables, because a write to an existing file changes
+its own size and time alone.  A listing whose entries also match
+sorts no row and prints nothing again, and the size walks alone run,
+so a total that the disk changed below an unchanged directory still
+lands.  Set =tired-refresh-keeps-an-unchanged-listing= to =nil= to
+sort and reprint on every =g=:
 
 #+begin_src elisp
   (setq tired-refresh-keeps-an-unchanged-listing t)
