@@ -178,7 +178,7 @@ The active region is the second way to make a selection.  Move with
 point becomes a target, and both of those rows join, so one =n= adds
 one row to the run.  A run costs one motion instead of one =SPC= per
 row.  A command turns the region into a selection before it acts, so
-=D=, =c=, =m=, =y=, =w=, =!=, =i=, =M-i= and =TAB= read
+=D=, =c=, =m=, =y=, =w=, =!=, =M-i= and =TAB= read
 the same rows that =SPC= on each row would select.  The mode line
 reports the region count and size, as it does for a selection.  =U=
 clears both sources.  A non-empty selection wins over the region.  A
@@ -1054,11 +1054,13 @@ reaches.  Without a working backend, the watches fail silently and
 
 * Inserted directories
 
-Press =i= or =TAB= on a directory to show its children as a section.
+Press =TAB= on a directory to show its children as a section.
 Children follow the parent row and indent by two spaces per level.
 Press =TAB= again or =M-i= to remove the section, including any
-sections nested inside it.  Every insert is explicit: =i= adds one
-level, and =i= inside a section goes deeper.
+sections nested inside it.  =TAB= on a child directory adds its own
+level, so a second press goes deeper.  =M-x tired-insert-subdir= and
+the =Insert subdirectory= menu entry insert the children of every
+target row.
 
 Sorting applies inside each directory, so sections never interleave.
 Directories still sort before files.  A symbolic link to a directory
@@ -1290,7 +1292,7 @@ the cursor sits.  Two habits of =focus-mode= need care in a listing.
 =focus-read-only-mode= binds =n=, =SPC=, =p=, =i= and =q=, and its key
 map wins over =tired-mode-map=, so that mode shadows
 =tired-next-line=, =tired-select-toggle-next=,
-=tired-previous-line=, =tired-insert-subdir= and =quit-window=.
+=tired-previous-line= and =quit-window=.
 
 A name edit answers no bounds, because a typed name moves the line
 starts that the region reads.  The commit and the abort reprint the

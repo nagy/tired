@@ -119,7 +119,6 @@
     ("M-f" . tired-find-file-literally)
     ("q" . quit-window)
     ;; Tree and sections.
-    ("i" . tired-insert-subdir)
     ("M-i" . tired-remove-subdir)
     ("C" . tired-toggle-collapse)
     ;; View.

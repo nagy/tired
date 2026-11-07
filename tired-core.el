@@ -4750,7 +4750,6 @@ into `context-menu-functions' locally."
   "n" #'tired-next-line
   "p" #'tired-previous-line
   "g" #'tired-refresh
-  "i" #'tired-insert-subdir
   "M-i" #'tired-remove-subdir
   "TAB" #'tired-toggle-subdir
   "j" #'tired-find-file
