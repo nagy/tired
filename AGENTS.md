@@ -22,7 +22,7 @@ reasons.
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, the size caches, `tired-mode`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Python, Go,
-  Markdown, Cargo, SQLite and tar handlers
+  Markdown, Cargo, KiCad schematic, SQLite and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the
   global count caches and the idle queue
 - `tired-file-ops.el` — copy, move, rename, delete, undo and redo, mkdir,

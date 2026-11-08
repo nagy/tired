@@ -91,6 +91,13 @@
 ;;   serves every suffix.  A pax record and a GNU long-name record change
 ;;   the name and the size of the member that follows them, so the walk
 ;;   clears both after it emits a member.
+;; - The KiCad schematic handler scans one token at a time and never reads
+;;   a whole form, so the library symbol block passes in linear time.  The
+;;   tokenizer honours a quoted string with its backslash escapes and a
+;;   bar-delimited atom, so a parenthesis inside a value or an embedded
+;;   file never moves the depth count.  A placed unit takes its own row,
+;;   because KiCad writes one symbol node per unit, and a virtual symbol
+;;   whose reference starts with `#' stands for a net and stays out.
 
 ;;; Code:
 
@@ -1350,6 +1357,167 @@ bytes, because a tar header holds NUL bytes.  Return nil when the
 buffer holds no tar member."
   (set-buffer-multibyte nil)
   (tired--tar-sections))
+
+(defconst tired--kicad-token-regexp
+  "\"\\(?:\\\\\"\\|[^\"]\\)*\"\\||[^|]*|\\|[()]\\|[^()\"|[:space:]]+"
+  "Regexp that matches one token of a KiCad s-expression file.
+The alternatives match a quoted string with its backslash escapes, a
+bar-delimited atom, a parenthesis, and a bare atom.  A scan that
+reads tokens therefore never sees a parenthesis inside a string or a
+bar, and the depth count stays right.")
+
+(defun tired--kicad-next-token ()
+  "Move past the next token of the current KiCad buffer and return it.
+Return nil at the end of the buffer."
+  (when (re-search-forward tired--kicad-token-regexp nil t)
+    (match-string-no-properties 0)))
+
+(defun tired--kicad-unquote (token)
+  "Return the text of the quoted KiCad TOKEN.
+Read the backslash escapes through `read', and return a bare TOKEN as
+it stands."
+  (declare (pure t) (side-effect-free t))
+  (if (not (string-prefix-p "\"" token))
+      token
+    (condition-case nil (read token) (error (substring token 1 -1)))))
+
+(defun tired--kicad-skip-list ()
+  "Move past the rest of the KiCad list at point.
+Point sits after the head token of the list, so the scan reads to the
+closing parenthesis that balances the list."
+  (let ((depth 0)
+        (done nil))
+    (while (and (not done) (tired--kicad-next-token))
+      (let ((token (match-string-no-properties 0)))
+        (cond ((string= token "(") (setq depth (1+ depth)))
+              ((string= token ")")
+               (if (zerop depth)
+                   (setq done t)
+                 (setq depth (1- depth)))))))))
+
+(defun tired--kicad-plist-set (plist head first value)
+  "Return PLIST of one KiCad symbol with the field HEAD FIRST VALUE added.
+HEAD names the child list and FIRST its first atom, so a property
+needs its name there.  Add the reference, the value, the footprint or
+the library id, and ignore every other field."
+  (declare (pure t) (side-effect-free t))
+  (let* ((name (and (string= head "property") (tired--kicad-unquote first)))
+         (key (cond ((string= head "lib_id") :lib-id)
+                    ((string= head "lib_name") :lib-name)
+                    ((equal name "Reference") :reference)
+                    ((equal name "Value") :value)
+                    ((equal name "Footprint") :footprint))))
+    (if key (plist-put plist key (tired--kicad-unquote value)) plist)))
+
+(defun tired--kicad-symbol-plist ()
+  "Read one placed KiCad symbol and return the fields of its row.
+Point sits after the `symbol' token.  Read the atoms at the level of
+the symbol alone, so the properties, the pins and the instance block
+pass.  Return a plist with the keys `:reference', `:value',
+`:footprint', `:lib-id', `:lib-name' and `:line', or nil when the
+symbol names no reference."
+  (let ((line (line-number-at-pos))
+        (depth 0)
+        (head nil)
+        (args 0)
+        (first nil)
+        (plist nil)
+        (done nil))
+    (while (not done)
+      (let ((token (tired--kicad-next-token)))
+        (cond
+         ((or (null token) (and (string= token ")") (zerop depth)))
+          (setq done t))
+         ((string= token "(")
+          (setq depth (1+ depth)
+                head nil
+                args 0))
+         ((string= token ")")
+          (setq depth (1- depth)))
+         ((/= depth 1))
+         ((null head)
+          (setq head token))
+         ((zerop args)
+          (setq first token
+                args 1))
+         (t
+          (setq args (1+ args))
+          (when (= args 2)
+            (setq plist (tired--kicad-plist-set plist head first token)))))))
+    (when (plist-get plist :reference)
+      (plist-put plist :line line))))
+
+(defun tired--kicad-symbol-plists ()
+  "Return one plist per placed symbol of the current KiCad buffer.
+Scan the top level of the root list alone, so the library symbol block
+and every other section pass without a read.  Return nil when the
+buffer holds no schematic."
+  (let ((plists nil)
+        (done nil)
+        (found nil))
+    (goto-char (point-min))
+    ;; A byte order mark sits before the root list, so scan to the first
+    ;; parenthesis instead of reading one token alone.
+    (while (and (not found) (tired--kicad-next-token))
+      (setq found (string= (match-string-no-properties 0) "(")))
+    (when (and found (equal (tired--kicad-next-token) "kicad_sch"))
+      (while (not done)
+        (let ((token (tired--kicad-next-token)))
+          (cond
+           ((or (null token) (string= token ")")) (setq done t))
+           ((string= token "(")
+            (let ((head (tired--kicad-next-token)))
+              (if (equal head "symbol")
+                  (let ((plist (tired--kicad-symbol-plist)))
+                    (when plist (push plist plists)))
+                (tired--kicad-skip-list))))))))
+    (nreverse plists)))
+
+(defun tired--kicad-component-p (plist)
+  "Return non-nil when the KiCad symbol PLIST holds a real part.
+Drop a virtual symbol, whose reference starts with `#' and whose
+library sits in a `power' library, because such a symbol names a net
+and never a part."
+  (declare (pure t) (side-effect-free t))
+  (let ((reference (plist-get plist :reference)))
+    (and reference
+         (not (string-empty-p reference))
+         (not (string-prefix-p "#" reference))
+         (not (string-prefix-p "power:" (or (plist-get plist :lib-id) "")))
+         (not (string-prefix-p "power:" (or (plist-get plist :lib-name) ""))))))
+
+(defun tired--kicad-width (plists key)
+  "Return the widest text that PLISTS holds under KEY, or zero."
+  (declare (pure t) (side-effect-free t))
+  (apply #'max 0 (mapcar (lambda (plist)
+                           (length (or (plist-get plist key) "")))
+                         plists)))
+
+(defun tired-file-sections-kicad-sch (_path)
+  "Return the placed symbols of the current KiCad schematic as sections.
+The buffer already holds the file, so the handler ignores PATH.  A
+symbol section stands for one placed unit, so a multi-unit part takes
+one row per unit.  A virtual symbol, whose reference starts with `#'
+and whose library sits in `power', stays out, because it stands for a
+net.  The label holds the reference, the value and the footprint, and
+the section points at the line of its symbol."
+  (let ((symbols (seq-filter #'tired--kicad-component-p
+                             (tired--kicad-symbol-plists))))
+    (when symbols
+      (let ((format-string (format "%%-%ds %%-%ds %%s"
+                                   (tired--kicad-width symbols :reference)
+                                   (tired--kicad-width symbols :value))))
+        (mapcar (lambda (plist)
+                  (list :label
+                        (string-trim-right
+                         (format format-string
+                                 (plist-get plist :reference)
+                                 (or (plist-get plist :value) "")
+                                 (or (plist-get plist :footprint) "")))
+                        :line (plist-get plist :line)
+                        :level 0
+                        :kind 'symbol))
+                symbols)))))
 
 (provide 'tired-sections)
 

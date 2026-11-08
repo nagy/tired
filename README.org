@@ -32,8 +32,9 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Insert subdirectories as nested, indented sections
 - Expand a file into sections: org headings, Emacs Lisp top-level
   forms, Rust items, Python defs and classes, and Markdown headings
-  through tree-sitter, and SQLite tables and columns through the
-  built-in sqlite support
+  through tree-sitter, SQLite tables and columns through the
+  built-in sqlite support, and the placed symbols of a KiCad
+  schematic
 - Expand a Cargo manifest into its =features=, =dependencies=,
   =dev-dependencies= and =build-dependencies= tables
 - Name completion over the whole subtree, including directories
@@ -1086,7 +1087,7 @@ extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
 on =TAB=.
 
-Nine handlers ship with the package:
+Ten handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
@@ -1098,6 +1099,7 @@ Nine handlers ship with the package:
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column, and a column row paints its name, its type and its constraints |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
+| KiCad schematic (=.kicad_sch=) | Every placed symbol, one row per unit, with its reference, value and footprint in one column each.  A virtual symbol, whose reference starts with =#=, stays out |
 | Tar (=.tar=, =.tar.gz=, =.tar.zst=) | Every member, indented by the depth of its path.  A directory keeps a trailing slash and a link names its target.  =RET= extracts the member to a temporary file and visits it |
 
 =RET= on a section row visits the file at the section line.  A section

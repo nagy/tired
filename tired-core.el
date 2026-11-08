@@ -601,6 +601,7 @@ path, so open, rename, copy, move and export keep the true target."
     ("\\.pyi?\\'" . tired-file-sections-python)
     ("\\.\\(?:md\\|markdown\\)\\'" . tired-file-sections-markdown)
     ("/Cargo\\.toml\\'" . tired-file-sections-cargo)
+    ("\\.kicad_sch\\'" . tired-file-sections-kicad-sch)
     ("\\.tar\\'" . tired-file-sections-tar)
     ("\\.tar\\.\\(?:gz\\|zst\\)\\'" . tired-file-sections-tar)
     ("\\.\\(?:db\\|sqlite\\|sqlite3\\)\\'" . tired-file-sections-sqlite))

@@ -995,6 +995,79 @@ mirrors each face into `font-lock-face'."
       (let ((tired-section-file-size-limit nil))
         (should (tired-file-sections path))))))
 
+(ert-deftest tired-sections-of-a-kicad-schematic ()
+  "A KiCad schematic lists one row per placed unit and skips a virtual symbol."
+  (tired-tests--with-fixture
+    (tired-tests--write
+     "board.kicad_sch"
+     (concat "(kicad_sch\n"
+             "\t(version 20260306)\n"
+             "\t(generator \"eeschema\")\n"
+             "\t(lib_symbols\n"
+             "\t\t(symbol \"Device:R\"\n"
+             "\t\t\t(property \"Reference\" \"R\" (at 2.54 0 0))\n"
+             "\t\t\t(property \"Value\" \"R\" (at 0 0 0))\n"
+             "\t\t)\n"
+             "\t)\n"
+             "\t(symbol\n"
+             "\t\t(lib_id \"Device:R\")\n"
+             "\t\t(at 100 100 0)\n"
+             "\t\t(unit 1)\n"
+             "\t\t(property \"Reference\" \"R1\" (at 0 0 0))\n"
+             "\t\t(property \"Value\" \"10k\" (at 0 0 0))\n"
+             "\t\t(property \"Footprint\" \"Resistor_SMD:R_0603\" (at 0 0 0))\n"
+             "\t\t(instances (project \"demo\" (path \"/root\" (reference \"R1\") (unit 1))))\n"
+             "\t)\n"
+             "\t(symbol\n"
+             "\t\t(lib_id \"power:GND\")\n"
+             "\t\t(property \"Reference\" \"#PWR01\" (at 0 0 0))\n"
+             "\t\t(property \"Value\" \"GND\" (at 0 0 0))\n"
+             "\t)\n"
+             "\t(symbol\n"
+             "\t\t(lib_id \"Amplifier_Operational:LM324\")\n"
+             "\t\t(unit 1)\n"
+             "\t\t(property \"Reference\" \"U1\" (at 0 0 0))\n"
+             "\t\t(property \"Value\" \"LM324\" (at 0 0 0))\n"
+             "\t)\n"
+             "\t(symbol\n"
+             "\t\t(lib_id \"Amplifier_Operational:LM324\")\n"
+             "\t\t(unit 2)\n"
+             "\t\t(property \"Reference\" \"U1\" (at 0 0 0))\n"
+             "\t\t(property \"Value\" \"LM324\" (at 0 0 0))\n"
+             "\t)\n"
+             ")\n"))
+    (tired root)
+    (tired-tests--goto "board.kicad_sch")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("R1 10k   Resistor_SMD:R_0603" . 1)
+                     ("U1 LM324" . 1)
+                     ("U1 LM324" . 1))))
+    (should (eq (tired-section-kind
+                 (car (tired-file-sections
+                       (expand-file-name "board.kicad_sch" root))))
+                'symbol))))
+
+(ert-deftest tired-kicad-scan-keeps-a-paren-inside-a-value ()
+  "A parenthesis in a string or a bar leaves the depth of the scan alone."
+  (tired-tests--with-fixture
+    (tired-tests--write
+     "divider.kicad_sch"
+     (concat "(kicad_sch\n"
+             "\t(version 20260306)\n"
+             "\t(embedded_files (file (name \"notes.txt\") (data |(raw \" text|)))\n"
+             "\t(symbol\n"
+             "\t\t(lib_id \"Device:R\")\n"
+             "\t\t(property \"Reference\" \"R1\" (at 0 0 0))\n"
+             "\t\t(property \"Value\" \"divider (1/2)\" (at 0 0 0))\n"
+             "\t)\n"
+             ")\n"))
+    (tired root)
+    (tired-tests--goto "divider.kicad_sch")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("R1 divider (1/2)" . 1))))))
+
 (provide 'tired-tests-sections)
 
 ;;; tired-tests-sections.el ends here
