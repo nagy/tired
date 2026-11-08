@@ -225,9 +225,11 @@
 ;;   against `quit' and `error'.  The guard covers the redraw alone, and a
 ;;   command that follows still quits.
 ;; - A view command keeps the row at point and the column of the name:
-;;   `tired--redraw-buffer' records `tired--at-name-p' before the print and
-;;   moves back through `tired--beginning-of-name' after it restores the
-;;   window views.
+;;   `tired--redraw-buffer' records the distance from the name start to
+;;   point before the print, and `tired--restore-window-views' puts every
+;;   window back on that column after it.  The distance stops at the line
+;;   end, so a point in the middle of a name survives a reprint that a
+;;   size walk or an idle reprint runs.
 ;; - A row name is the `filename' thing through
 ;;   `tired--filename-at-point' and `tired--name-bounds'.  A provider that
 ;;   returns nil cannot veto the plain Emacs guess.
@@ -3482,14 +3484,26 @@ Return nil when the listing no longer shows ROW."
     (when (tired--goto-row row)
       (point))))
 
+(defun tired--row-name-position (row offset)
+  "Return the buffer position OFFSET characters into the name of ROW.
+Return nil when the listing no longer shows ROW.  A point past the
+end of the line stops there, so a name that a reprint shortened
+still holds point on its row."
+  (save-excursion
+    (when (tired--goto-row row)
+      (tired--goto-name-offset offset)
+      (point))))
+
 (defun tired--window-views ()
   "Return one view per window that shows the listing.
-A view is a list of the window, the row at its point and the row at
-its display start.  Either row is nil when its line holds no row."
+A view is a list of the window, the row at its point, the distance
+from the name start of that row to its point, and the row at its
+display start.  Either row is nil when its line holds no row."
   (let (views)
     (dolist (window (get-buffer-window-list nil t))
       (push (list window
                   (tired--row-at (window-point window))
+                  (tired--name-offset (window-point window))
                   (tired--row-at (window-start window)))
             views))
     (nreverse views)))
@@ -3501,14 +3515,19 @@ the point marker and the display start marker of each window that
 shows the listing.  Point would then sit at the bottom of a window
 that starts at the first line.  Set the window point first, then the
 window start, so point keeps its place inside the window.  A window
-whose point vanished keeps its own point."
+whose point vanished keeps its own point.  The name offset of the
+view puts point back on the column that it held inside the name,
+and not on the line start."
   (dolist (view views)
     (let ((window (car view))
           (point-row (nth 1 view))
-          (start-row (nth 2 view)))
+          (point-offset (nth 2 view))
+          (start-row (nth 3 view)))
       (when (and (window-live-p window)
                  (eq (window-buffer window) (current-buffer)))
-        (let ((point-position (and point-row (tired--row-position point-row)))
+        (let ((point-position (and point-row
+                                   (tired--row-name-position point-row
+                                                             point-offset)))
               (start-position (and start-row (tired--row-position start-row))))
           (when point-position
             (set-window-point window point-position)
@@ -3529,9 +3548,10 @@ nothing."
 WINDOW is the window that shows the buffer, or nil for the pin in
 `tired--width-window'.  Its width limits the name column.  The
 redraw keeps the point and the scroll position of every window that
-shows the listing, and it keeps the name column of point: a caller
-that leaves point at the first character of a name finds it there
-again, so no redraw moves the cursor into the indent of a row.
+shows the listing, and it keeps the column of point inside the name
+cell: a caller that leaves point in the middle of a name finds it
+there again, so no redraw moves the cursor into the indent of a row
+or back to its first character.
 The redraw reads the directory size memo table alone, so it blocks
 on no subtree.  `tired--size-queue' then queues the visible
 directory rows and the idle queue fills the size cells."
@@ -3541,7 +3561,7 @@ directory rows and the idle queue fills the size cells."
                   (window-width window)))
          (point-entry (tired--point-row window))
          (point-line (line-number-at-pos))
-         (at-name (tired--at-name-p))
+         (point-offset (tired--name-offset))
          (mark-entry (tired--row-at (mark t)))
          (views (tired--window-views)))
     (setq tired--hidden-total (tired--count-hidden))
@@ -3569,17 +3589,15 @@ directory rows and the idle queue fills the size cells."
             (funcall tired--elements-queue-function))
           (tired--size-queue))
         (setq tired--rows nil)))
-    (unless (tired--goto-entry point-entry)
+    (if (tired--goto-entry point-entry)
+        (tired--goto-name-offset point-offset)
       ;; The printed row is gone, and the print left point on the first
       ;; line.  Hold the line instead, so a removal of the last row
       ;; stops on the row that remains above it.
       (when point-entry
-        (tired--goto-line point-line)))
+        (tired--goto-line point-line)
+        (tired--goto-name-offset point-offset)))
     (tired--restore-window-views views)
-    ;; The view restore sets the window point to the line start of its
-    ;; row, and the selected window shares its point with the buffer.
-    (when at-name
-      (tired--beginning-of-name))
     (tired--restore-mark mark-entry)
     (tired--apply-selection-overlays)
     (tired--apply-flag-overlays)
@@ -3815,10 +3833,28 @@ character of the name."
   (skip-chars-forward " ")
   (point))
 
+(defun tired--name-offset (&optional position)
+  "Return the distance from the start of the name to POSITION.
+POSITION defaults to point.  The distance counts from the first
+character of the name, so it skips the indent of a nested row, and
+a point before that character gives a negative distance."
+  (save-excursion
+    (when position
+      (goto-char position))
+    (- (point) (tired--beginning-of-name))))
+
+(defun tired--goto-name-offset (offset)
+  "Move point OFFSET characters past the first character of the name.
+Stop at the name start for a negative OFFSET, and at the line end
+for an OFFSET past the line, so point never leaves its row."
+  (let ((start (tired--beginning-of-name)))
+    (goto-char (max start
+                    (min (+ start (or offset 0))
+                         (line-end-position))))))
+
 (defun tired--at-name-p ()
   "Return non-nil when point sits on the first character of a name."
-  (save-excursion
-    (eq (point) (tired--beginning-of-name))))
+  (zerop (tired--name-offset)))
 
 (defun tired--redraw-at-name ()
   "Redraw the listing and put point at the start of the name it shows.

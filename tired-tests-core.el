@@ -2455,6 +2455,44 @@ put the cursor inside the indent a moment after the toggle."
       (should (equal "deep" (tired-entry-name (tired--row-at-point))))
       (should (= 2 (current-column))))))
 
+(ert-deftest tired-redraw-keeps-the-point-column-inside-a-name ()
+  "A reprint keeps point in the middle of a name.
+The idle size pass repaints the listing while point sits inside a
+name, and `tired--goto-row' leaves point at the line start.  The
+redraw once put the cursor back on the first character of the name,
+and on a nested row it put it inside the indent."
+  (tired-tests--with-fixture
+    (let ((tired-collapse-single-child nil))
+      (tired root)
+      (tired-tests--goto "sub")
+      (tired--beginning-of-name)
+      (forward-char 2)
+      (should (= 2 (current-column)))
+      (tired-tests--flush-sizes)
+      (should (equal "sub" (tired-entry-name (tired--row-at-point))))
+      (should (= 2 (current-column)))
+      (tired-tests--goto "sub")
+      (tired-insert-subdir)
+      (tired-tests--goto "deep")
+      (tired--beginning-of-name)
+      (forward-char 1)
+      (should (= 3 (current-column)))
+      (tired-tests--flush-sizes)
+      (should (equal "deep" (tired-entry-name (tired--row-at-point))))
+      (should (= 3 (current-column))))))
+
+(ert-deftest tired-goto-name-offset-stops-at-the-line ()
+  "A name offset stays between the name start and the line end."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (tired--goto-name-offset 1000)
+    (should (= (line-end-position) (point)))
+    (tired--goto-name-offset -5)
+    (should (= (tired--beginning-of-name) (point)))
+    (tired--goto-name-offset 2)
+    (should (= 2 (tired--name-offset)))))
+
 (ert-deftest tired-remove-subdir-drops-descendants ()
   "Removing a section drops nested inserted sections as well."
   (tired-tests--with-fixture
