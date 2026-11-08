@@ -37,6 +37,12 @@ countdown that ends while a minibuffer prompt is active retries after
 `tired--delete-retry-delay`, so a pending deletion never erases files
 while the user types a destination.
 
+After the flag, `tired-delete` moves point through
+`tired--forward-past-flags` to the next row that the flag set does
+not hold.  One `forward-line` would stop on the second flagged row of
+a selection, so a run of rows would cost a key per row and leave
+point on a row that the countdown removes.
+
 Rejected alternatives: a timer per row, because a selection of many
 rows would schedule many deletions and one clear would have to cancel
 each; a flag that mirrors the selection, because selecting a row for a

@@ -95,7 +95,10 @@
 ;;   `file-symlink-p', never by the listing, or a hidden row would
 ;;   silently cancel a deletion.  A countdown that ends while a
 ;;   minibuffer prompt is active retries after
-;;   `tired--delete-retry-delay'.
+;;   `tired--delete-retry-delay'.  A flag moves point through
+;;   `tired--forward-past-flags', never through one `forward-line',
+;;   because a flag of a selection would otherwise leave point on the
+;;   second flagged row.
 
 ;;; Code:
 
@@ -1088,14 +1091,15 @@ and the rest of the selection stays.  A nil or zero delay deletes at
 once, as before.  The command asks no question and never calls a
 shell.  A later `tired-undo' moves the paths back.
 
-After the flag, point moves down one row, the way
-`tired-select-toggle-next' does, so a run of rows takes one key per
-row.  A delete at once leaves the move to `tired--apply-to-targets'."
+After the flag, point moves down to the next row that waits for no
+deletion, so a run of flagged rows takes one key per row and point
+never rests on a row that the countdown removes.  A delete at once
+leaves the move to `tired--apply-to-targets'."
   (interactive)
   (if (and (numberp tired-delete-delay) (> tired-delete-delay 0))
       (progn
         (tired--flag-deletion (mapcar #'tired-entry-path (tired--targets)))
-        (forward-line 1))
+        (tired--forward-past-flags))
     (let ((trashed nil))
       (tired--apply-to-targets
        "Deleted" "trash"

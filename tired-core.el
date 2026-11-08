@@ -3248,6 +3248,21 @@ stops when no flag remains."
       (unless kept
         (tired--stop-delete-timer)))))
 
+(defun tired--forward-past-flags ()
+  "Move point to the next row that waits for no delayed deletion.
+Start below point, so a run of flagged rows takes one `tired-delete'
+per row and point never stops on a row that the countdown removes.
+Clamp point to the last row when every row below waits, so point
+never leaves the listing."
+  (forward-line 1)
+  (while (and (not (eobp))
+              (let ((row (tired--row-at-point)))
+                (and (tired-entry-p row)
+                     (tired--flagged-deletion-p (tired-entry-path row)))))
+    (forward-line 1))
+  (when (eobp)
+    (goto-char (or (tired--last-row-position) (point-min)))))
+
 (defun tired--clear-selection ()
   "Clear the transient selection and the active region.
 Keep the deletion flags, because a file command clears the selection

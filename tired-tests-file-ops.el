@@ -1633,17 +1633,49 @@ needs no `M-x' visit."
         (should (equal (tired-entry-name (tired--row-at-point))
                        "beta.txt"))))))
 
-(ert-deftest tired-delete-flag-moves-point-after-a-selection ()
-  "A flag of a selection moves point down one row too."
+(ert-deftest tired-delete-flag-moves-point-past-the-flagged-rows ()
+  "A flag of a selection leaves point below every flagged row."
   (tired-tests--with-fixture
     (let ((tired-delete-delay 3))
       (tired-tests--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-tests--goto ".hidden")
         (tired-select-toggle)
+        (tired-tests--goto "link")
+        (tired-select-toggle)
+        (tired-tests--goto ".hidden")
+        (tired-delete)
+        (should (equal (tired-entry-name (tired--row-at-point))
+                       "alpha.txt"))
+        (should (equal (mapcar #'file-name-nondirectory
+                               tired--flagged-deletion)
+                       '(".hidden" "link")))))))
+
+(ert-deftest tired-delete-flag-skips-an-earlier-flag ()
+  "A flag below point skips a row that an earlier flag holds."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
+        (tired-tests--goto "link")
+        (tired-delete)
+        (should (equal (tired-entry-name (tired--row-at-point))
+                       "alpha.txt"))
+        (tired-tests--goto ".hidden")
+        (tired-delete)
+        (should (equal (tired-entry-name (tired--row-at-point))
+                       "alpha.txt"))
+        (should (equal (mapcar #'file-name-nondirectory
+                               tired--flagged-deletion)
+                       '("link" ".hidden")))))))
+
+(ert-deftest tired-delete-flag-clamps-point-to-the-last-row ()
+  "A flag of every row below point stops on the last row."
+  (tired-tests--with-fixture
+    (let ((tired-delete-delay 3))
+      (tired-tests--with-delete-timers
+        (tired root)
         (tired-tests--goto "beta.txt")
-        (tired-select-toggle)
-        (tired-tests--goto "alpha.txt")
         (tired-delete)
         (should (equal (tired-entry-name (tired--row-at-point))
                        "beta.txt"))))))
