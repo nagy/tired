@@ -106,8 +106,9 @@
 ;; function.  The function reads the file in a temporary buffer and
 ;; returns a list of plists with `:label', `:line', `:level' and
 ;; `:kind'.  Org files yield headings, Emacs Lisp files yield top-level
-;; forms, Rust and Markdown files yield items through tree-sitter,
-;; Cargo manifests yield the four dependency and feature tables, and
+;; forms, Rust, Python and Markdown files yield items through
+;; tree-sitter, Cargo manifests yield the four dependency and feature
+;; tables, and
 ;; SQLite databases yield tables and columns through the built-in
 ;; `sqlite' support.  TAB expands a file row, and TAB on a section row
 ;; folds that section.

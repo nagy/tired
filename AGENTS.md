@@ -21,8 +21,8 @@ reasons.
   evil hook
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, the size caches, `tired-mode`
-- `tired-sections.el` — the Org, Emacs Lisp, Rust, Go, Markdown,
-  Cargo, SQLite and tar handlers
+- `tired-sections.el` — the Org, Emacs Lisp, Rust, Python, Go,
+  Markdown, Cargo, SQLite and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the
   global count caches and the idle queue
 - `tired-file-ops.el` — copy, move, rename, delete, undo and redo, mkdir,
@@ -63,7 +63,7 @@ first, because the flake sources take git-tracked files alone.
   every dependency.  `melpaBuild` closes over the Emacs of its package
   set, so an `emacs` argument on the build does nothing.
   `packageRequires` stays empty, so the metadata names no elisp
-  dependency.  `checkInputs` holds the tree-sitter Rust, Go, Markdown
+  dependency.  `checkInputs` holds the tree-sitter Rust, Python, Go, Markdown
   and TOML grammars, and `checkPhase` exports
   `TREESIT_EXTRA_LOAD_PATH` and puts `zstd` on the path for the archive
   fixtures.  A missing grammar skips its test instead of failing.

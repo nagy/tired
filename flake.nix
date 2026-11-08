@@ -136,6 +136,7 @@
                 p.tree-sitter-go
                 p.tree-sitter-markdown
                 p.tree-sitter-markdown-inline
+                p.tree-sitter-python
                 p.tree-sitter-toml
               ]),
               # Evil reaches the build Emacs only.  tired-evil.el needs the

@@ -31,8 +31,9 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   request
 - Insert subdirectories as nested, indented sections
 - Expand a file into sections: org headings, Emacs Lisp top-level
-  forms, Rust items and Markdown headings through tree-sitter, and
-  SQLite tables and columns through the built-in sqlite support
+  forms, Rust items, Python defs and classes, and Markdown headings
+  through tree-sitter, and SQLite tables and columns through the
+  built-in sqlite support
 - Expand a Cargo manifest into its =features=, =dependencies=,
   =dev-dependencies= and =build-dependencies= tables
 - Name completion over the whole subtree, including directories
@@ -657,7 +658,8 @@ and stops at the row count.  It reads no data page, so a page codec
 such as ZSTD never reaches the number, and two range reads fill the
 cell.  Every other file with a handler counts through that
 handler: Org top-level headings, Emacs Lisp top-level forms, Rust
-items, Cargo tables, and SQLite tables and views.  A file without a
+and Python items, Cargo tables, and SQLite tables and views.  A file
+without a
 handler keeps an empty cell, and so does a remote path, because every
 read there costs a network round trip.
 
@@ -1084,7 +1086,7 @@ extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
 on =TAB=.
 
-Eight handlers ship with the package:
+Nine handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
@@ -1092,6 +1094,7 @@ Eight handlers ship with the package:
 | Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source.  A =declare-function= form stays out, because it speaks to the byte compiler alone |
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants, statics and macros, with the methods of an impl block nested under it.  The row repeats the source prefix, so a function reads =fn= or =async fn=, and each word carries the face of its source |
 | Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  The row repeats the source prefix, so a function reads =func=, and each word carries the face of its source |
+| Python (=.py=, =.pyi=) | Classes and defs, indented by the class or def that holds them.  Nested defs and inner classes show at their own depth.  A module-level assignment becomes a variable row.  A decorated def shows its decorators and =RET= visits the first decorator.  A class attribute and a local variable stay out.  The row repeats the source prefix, so a function reads =def= or =async def= |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column, and a column row paints its name, its type and its constraints |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
@@ -1108,11 +1111,19 @@ subtree, so only the heading and its children show.  Use =C-x n w=
 to widen it again.  Set =tired-org-narrow-on-open= to =nil= to keep
 the whole file visible.
 
-The Rust, Go, Markdown and Cargo handlers share one tree-sitter walker.  A
-language contributes a spec of node types and fields, so a new grammar
-costs one entry.  A spec may also name a filter, a label function and
-a level function, so the Go handler keeps a declaration inside a
-function body out and indents a method under its own type.
+The Rust, Python, Go, Markdown and Cargo handlers share one tree-sitter
+walker.  A language contributes a spec of node types and fields, so a
+new grammar costs one entry.  A spec may also name a filter, a label
+function, a level function, a line function and a depth cap, so the Go
+handler keeps a declaration inside a function body out and indents a
+method under its own type, and the Python handler starts a decorated
+def at its first decorator.
+
+Set =tired-python-section-depth= to a nesting level to shorten the
+Python outline.  A top-level class or def sits at level zero.  A
+member of a class, or a def inside a def, sits at level one, and a def
+inside a method sits at level two.  A cap drops every definition below
+it, so =0= shows the top level alone and =nil= shows every level.
 
 The Cargo handler reads only the manifest it parses.  Its table rows
 count their entries.  A dependency row holds
@@ -1158,20 +1169,22 @@ buffer returns a propertized label, and Tired keeps the faces of it and
 drops every other property, so a key map or an =invisible= flag of the
 source never disturbs a row.  A part of the label without a source face
 takes the face of its section kind, so the padding of a Cargo row still
-shows the section color.  A Rust or Go row takes its prefix from the
-source text, so an async function reads =async fn fetch= and a method
-reads =func (c *Config) Label=, and each prefix keeps the face that the
-major mode gave its keyword.  A visibility modifier of Rust stays out,
+shows the section color.  A Rust, Go or Python row takes its prefix
+from the source text, so an async function reads =async fn fetch=, a
+Python row reads =async def fetch= or =@property def prop=, and a Go
+method reads =func (c *Config) Label=, and each prefix keeps the face
+that the major mode gave its keyword.  A visibility modifier of Rust stays out,
 so =pub= never widens a row.  A prefix with no source face at all takes
 =font-lock-keyword-face=, and a kind word that the source does not hold,
 such as the =type= of a Go type spec, carries that face too.  Every
 handler that reads source text fontifies its buffer for this
 reason: =emacs-lisp-mode= for a =defun= row, =org-mode= for a heading,
-and a tree-sitter mode for Rust, Go, Markdown and Cargo.  A database has no
-source text, so its rows stay plain.
+and a tree-sitter mode for Rust, Python, Go, Markdown and Cargo.  A
+database has no source text, so its rows stay plain.
 
-The Rust, Go, Markdown and Cargo handlers call =font-lock-ensure= once per
-parse, so the faces come from the same major mode that a visitor uses.
+The Rust, Python, Go, Markdown and Cargo handlers call
+=font-lock-ensure= once per parse, so the faces come from the same major
+mode that a visitor uses.
 
 The Emacs Lisp handler leaves a =declare-function= form out of the
 listing, because that form speaks to the byte compiler alone.  The form
@@ -1188,9 +1201,10 @@ The sections of an expanded file re-read when the file changes.  The
 listing watches every expanded file, because a directory watch does
 not report an edit to a file inside that directory.
 
-The Rust handler needs the tree-sitter grammar for Rust, and the Go
-handler needs the grammar for Go.  Without the grammar the handler
-returns no sections and the file row stays plain.
+The Rust handler needs the tree-sitter grammar for Rust, the Python
+handler needs the grammar for Python, and the Go handler needs the
+grammar for Go.  Without the grammar the handler returns no sections
+and the file row stays plain.
 
 The tar handler reads the 512-byte headers itself, so it needs no
 external tool.  It follows the ustar prefix, a GNU long-name record
@@ -1347,9 +1361,10 @@ skip themselves without it.  The devShell provides an Emacs with evil
 installed, and the Nix check puts evil on the load path of its build
 Emacs.
 
-The Rust and Go section tests skip themselves when no grammar is
-present.  Point =TREESIT_EXTRA_LOAD_PATH= at the directory that holds
-=libtree-sitter-rust.so= and =libtree-sitter-go.so= to run them.  The
+The Rust, Python and Go section tests skip themselves when no grammar
+is present.  Point =TREESIT_EXTRA_LOAD_PATH= at the directory that
+holds =libtree-sitter-rust.so=, =libtree-sitter-python.so= and
+=libtree-sitter-go.so= to run them.  The
 compressed archive tests skip themselves when =gzip= or =zstd= is
 absent, and the Nix check supplies =zstd=.
 

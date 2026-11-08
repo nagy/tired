@@ -598,6 +598,7 @@ path, so open, rename, copy, move and export keep the true target."
     ("\\.el\\'" . tired-file-sections-elisp)
     ("\\.rs\\'" . tired-file-sections-rust)
     ("\\.go\\'" . tired-file-sections-go)
+    ("\\.pyi?\\'" . tired-file-sections-python)
     ("\\.\\(?:md\\|markdown\\)\\'" . tired-file-sections-markdown)
     ("/Cargo\\.toml\\'" . tired-file-sections-cargo)
     ("\\.tar\\'" . tired-file-sections-tar)

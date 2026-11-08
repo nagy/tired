@@ -259,6 +259,101 @@
       (should second)
       (should-not (equal first second)))))
 
+(ert-deftest tired-sections-of-a-python-file ()
+  "A Python file lists defs, classes and module constants in depth."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "demo.py"
+                        (concat "import os\n\n"
+                                "LIMIT: int = 10\n\n"
+                                "@app.route(\"/\")\n"
+                                "def top(a):\n"
+                                "    def inner():\n"
+                                "        return a\n"
+                                "    x = 1\n"
+                                "    return inner()\n\n"
+                                "async def fetch(url):\n"
+                                "    pass\n\n"
+                                "class Config(Base):\n"
+                                "    limit = 10\n\n"
+                                "    @property\n"
+                                "    def prop(self):\n"
+                                "        return 1\n\n"
+                                "    class Inner:\n"
+                                "        def deep(self):\n"
+                                "            pass\n"))
+    (tired root)
+    (tired-tests--goto "demo.py")
+    (tired-toggle-subdir)
+    (should (equal (tired-tests--sections)
+                   '(("LIMIT: int" . 1)
+                     ("@app.route(\"/\") def top" . 1)
+                     ("def inner" . 2)
+                     ("async def fetch" . 1)
+                     ("class Config" . 1)
+                     ("@property def prop" . 2)
+                     ("class Inner" . 2)
+                     ("def deep" . 3))))))
+
+(ert-deftest tired-python-section-depth-caps-the-walk ()
+  "A depth cap drops every nested definition below it."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "demo.py"
+                        (concat "def top():\n"
+                                "    def inner():\n"
+                                "        pass\n\n"
+                                "class Config:\n"
+                                "    def prop(self):\n"
+                                "        pass\n\n"
+                                "    class Inner:\n"
+                                "        def deep(self):\n"
+                                "            pass\n"))
+    (let* ((path (expand-file-name "demo.py" root))
+           (tired-python-section-depth 0)
+           (labels (mapcar (lambda (section)
+                             (substring-no-properties
+                              (tired-section-label section)))
+                           (tired-file-sections path t))))
+      (should (equal labels '("def top" "class Config"))))))
+
+(ert-deftest tired-python-decorated-row-starts-at-its-decorator ()
+  "A decorated row reads its decorator and visits the decorator line."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "demo.py"
+                        "@app.route(\"/\")\ndef index():\n    pass\n")
+    (let* ((path (expand-file-name "demo.py" root))
+           (section (car (tired-file-sections path))))
+      (should (equal (substring-no-properties (tired-section-label section))
+                     "@app.route(\"/\") def index"))
+      (should (equal (tired-section-line section) 1)))))
+
+(ert-deftest tired-python-section-labels-take-mode-faces ()
+  "A Python def row and class row keep the faces of their names."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
+  (tired-tests--with-fixture
+    (tired-tests--write "demo.py"
+                        "class Config:\n    pass\n\ndef top():\n    pass\n")
+    (let* ((path (expand-file-name "demo.py" root))
+           (sections (tired-file-sections path))
+           (class (tired-section-label (car sections)))
+           (function (tired-section-label (cadr sections))))
+      (should (equal class "class Config"))
+      (should (eq (get-text-property 0 'face class) 'font-lock-keyword-face))
+      (should (eq (get-text-property 6 'face class) 'font-lock-type-face))
+      (should (equal function "def top"))
+      (should (eq (get-text-property 0 'face function)
+                  'font-lock-keyword-face))
+      (should (eq (get-text-property 4 'face function)
+                  'font-lock-function-name-face)))))
+
+(ert-deftest tired-python-handler-claims-stub-files ()
+  "A .pyi file reaches the Python handler too."
+  (tired-tests--with-fixture
+    (should (eq (tired-file-handler (expand-file-name "demo.pyi" root))
+                #'tired-file-sections-python))))
+
 (ert-deftest tired-cargo-section-labels-take-mode-faces ()
   "A Cargo row keeps the face of its key and of its version."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))

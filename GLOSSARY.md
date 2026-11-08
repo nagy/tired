@@ -263,9 +263,10 @@ A function in `tired-file-handlers' that turns one file into sections.
 _Avoid_: Parser, provider, extractor
 
 **Section spec**:
-A plist that names the tree-sitter language, mode, node types, container
-types and label fields that `tired--treesit-sections` uses to build the
-sections of one language.
+A plist that names the tree-sitter language, mode, node types and
+container types that `tired--treesit-sections` uses to build the
+sections of one language.  It may also name a filter, a label, level
+or line function, and a depth cap.
 _Avoid_: Config, node table, grammar rule
 
 **Synthetic line**:

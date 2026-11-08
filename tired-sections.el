@@ -22,9 +22,9 @@
 ;;; Commentary:
 
 ;; The section handlers that turn one file into `tired-section'
-;; structs: Org, Emacs Lisp, Rust, Go, Markdown, Cargo, SQLite and tar.
-;; The framework that calls a handler stays in `tired-core', so a new
-;; handler costs one rule in `tired-file-handlers'.
+;; structs: Org, Emacs Lisp, Rust, Python, Go, Markdown, Cargo, SQLite
+;; and tar.  The framework that calls a handler stays in `tired-core',
+;; so a new handler costs one rule in `tired-file-handlers'.
 ;;
 ;; A handler receives the file name, runs in a temporary buffer, selects
 ;; its own major mode, calls `font-lock-ensure' and returns plists.  It
@@ -63,11 +63,18 @@
 ;; - A handler with no real line gives each section a distinct synthetic
 ;;   `:line' and an `:action', because fold state and the point restore
 ;;   key on (PATH . LINE).
-;; - A Rust or Go row repeats the prefix of its source line.
+;; - A Rust, Go or Python row repeats the prefix of its source line.
 ;;   `tired--treesit-keyword-text' copies that prefix and paints each
 ;;   part that the major mode left plain, so a buffer that fontifies
 ;;   nothing still shows a keyword.  `tired--rust-prefix-start' skips a
 ;;   visibility modifier, so `pub' never widens a row.
+;; - A decorated Python definition starts at its first decorator, both
+;;   in the label and in the line that RET visits, through the `:line'
+;;   key of a tree-sitter spec.  A Python walk caps at
+;;   `tired-python-section-depth' through the `:max-depth' key, which
+;;   drops a deeper subtree instead of a single row.  A module-level
+;;   assignment is the only Python row that is not a definition, so a
+;;   local variable and a class attribute stay out.
 ;; - The Go handler keeps a declaration that sits at the top level
 ;;   alone.  A method indents under the type that the file declares above
 ;;   it, through `tired--go-type-starts', which fills on first use.  A
@@ -437,6 +444,14 @@ in a marker node does not rely on the tree depth."
       (funcall function node)
     depth))
 
+(defun tired--treesit-line (node spec)
+  "Return the line that NODE starts on under SPEC.
+SPEC may name a `:line' function, so a grammar that hides a prefix
+above NODE, such as a decorator, can move the line upward."
+  (if-let* ((function (plist-get spec :line)))
+      (funcall function node)
+    (line-number-at-pos (treesit-node-start node))))
+
 (defun tired--treesit-shown-p (node spec)
   "Return non-nil when SPEC shows NODE as a section.
 SPEC may name a `:filter' function, which receives NODE and decides
@@ -449,30 +464,33 @@ appears."
   "Return the section plists of NODE and its children under SPEC.
 DEPTH is the current nesting depth.  A node type listed in
 `:containers' raises the depth of its children by one.  A node that
-`:filter' rejects yields no section, and its children still walk."
-  (let* ((kind (tired--treesit-kind node spec))
-         (here (when (and kind (tired--treesit-shown-p node spec))
-                 (list (list :label (tired--treesit-label node kind spec)
-                             :line (line-number-at-pos
-                                    (treesit-node-start node))
-                             :level (tired--treesit-level node spec depth)
-                             :kind kind))))
-         (next-depth (if (member (treesit-node-type node)
-                                 (plist-get spec :containers))
-                         (1+ depth)
-                       depth)))
-    (append here
-            (mapcan (lambda (child)
-                      (tired--treesit-walk child spec next-depth))
-                    (treesit-node-children node t)))))
+`:filter' rejects yields no section, and its children still walk.
+A `:max-depth' number drops NODE and its whole subtree when DEPTH
+exceeds it."
+  (let ((max-depth (plist-get spec :max-depth)))
+    (when (or (null max-depth) (<= depth max-depth))
+      (let* ((kind (tired--treesit-kind node spec))
+             (here (when (and kind (tired--treesit-shown-p node spec))
+                     (list (list :label (tired--treesit-label node kind spec)
+                                 :line (tired--treesit-line node spec)
+                                 :level (tired--treesit-level node spec depth)
+                                 :kind kind))))
+             (next-depth (if (member (treesit-node-type node)
+                                     (plist-get spec :containers))
+                             (1+ depth)
+                           depth)))
+        (append here
+                (mapcan (lambda (child)
+                          (tired--treesit-walk child spec next-depth))
+                        (treesit-node-children node t)))))))
 
 (defun tired--treesit-sections (spec)
   "Return the section plists of the current buffer according to SPEC.
 SPEC is a plist with `:language', an optional `:mode', an optional
 `:require', `:kinds', optional `:containers', optional `:fields',
-optional `:filter', optional `:label' and optional `:level'.  Return
-nil when the grammar is missing, so the caller keeps a plain file
-row."
+optional `:filter', optional `:label', optional `:level', optional
+`:line' and optional `:max-depth'.  Return nil when the grammar is
+missing, so the caller keeps a plain file row."
   (require 'treesit)
   (let ((language (plist-get spec :language))
         ;; A fenced Markdown code block names another language, and a
@@ -526,6 +544,99 @@ Read ATX and setext headings through tree-sitter, so a heading
 inside a fenced code block stays out of the listing.  Return nil
 when the Markdown grammar is missing."
   (tired--treesit-sections tired--markdown-section-spec))
+
+(defcustom tired-python-section-depth nil
+  "Largest Python section nesting level that the handler emits.
+A top-level class or def sits at level zero.  A member of a class,
+or a def inside a def, sits at level one, and a def inside a method
+sits at level two.  Nil emits every level.  A cap drops a deeper
+subtree whole, so a def below the cap never appears.  The handler
+caches its sections with the file, so a new value shows on the next
+redraw."
+  :type '(choice (const :tag "Every level" nil) integer)
+  :group 'tired)
+
+(defun tired--python-definition-start (node)
+  "Return the start of NODE, or of the decorators above it.
+A `decorated_definition' holds its decorators and the definition, so
+a decorated def starts at its first decorator."
+  (let ((parent (treesit-node-parent node)))
+    (if (and parent
+             (equal (treesit-node-type parent) "decorated_definition"))
+        (treesit-node-start parent)
+      (treesit-node-start node))))
+
+(defun tired--python-section-line (node)
+  "Return the line that the Python section NODE starts on.
+A decorated definition takes the line of its first decorator."
+  (line-number-at-pos (tired--python-definition-start node)))
+
+(defun tired--python-assignment-label (node kind)
+  "Return the label for the Python assignment NODE of KIND.
+Show the target and its annotation without the `=' sign.  Fall back
+to KIND alone when the source holds no `right' field."
+  (if-let* ((right (treesit-node-child-by-field-name node "right"))
+            (prefix (tired--treesit-keyword-text (treesit-node-start node)
+                                                 (treesit-node-start right)))
+            (target (string-trim (string-remove-suffix "="
+                                                       (string-trim prefix)))))
+      (if (string-empty-p target)
+          (tired--treesit-keyword-string kind)
+        target)
+    (tired--treesit-keyword-string kind)))
+
+(defun tired--python-section-label (node kind)
+  "Return the label for the Python NODE of KIND.
+A class or def repeats the prefix of its source line, so a function
+reads `def fetch' or `async def fetch', and a decorated definition
+keeps its decorators.  Each part keeps the face that
+`python-ts-mode' gave it."
+  (if (equal (treesit-node-type node) "assignment")
+      (tired--python-assignment-label node kind)
+    (if-let* ((name (treesit-node-child-by-field-name node "name")))
+        (tired--treesit-prefixed-label
+         (tired--treesit-keyword-text (tired--python-definition-start node)
+                                      (treesit-node-start name))
+         (treesit-node-text name))
+      (tired--treesit-keyword-string kind))))
+
+(defun tired--python-node-shown-p (node)
+  "Return non-nil when NODE belongs in a Python listing.
+Keep every class and def.  Keep an assignment only at the top level
+of the file, so a local variable and a class attribute stay out."
+  (if (equal (treesit-node-type node) "assignment")
+      (let* ((statement (treesit-node-parent node))
+             (root (and statement
+                        (equal (treesit-node-type statement)
+                               "expression_statement")
+                        (treesit-node-parent statement))))
+        (and root (equal (treesit-node-type root) "module")))
+    t))
+
+(defconst tired--python-section-spec
+  '(:language python
+    :mode python-ts-mode
+    :kinds (("function_definition" . function)
+            ("class_definition" . class)
+            ("assignment" . variable))
+    :containers ("class_definition" "function_definition")
+    :filter tired--python-node-shown-p
+    :label tired--python-section-label
+    :line tired--python-section-line)
+  "Tree-sitter section spec for a Python file.")
+
+(defun tired-file-sections-python (_path)
+  "Return the classes, defs and constants of the current Python buffer.
+The buffer already holds the file, so the handler ignores PATH.
+Read every class and def through tree-sitter and indent a member by
+the class or def that holds it.  A module-level assignment becomes a
+variable row, and a decorated definition starts at its first
+decorator.  Read the depth cap from `tired-python-section-depth'.
+Return nil when the Python grammar is missing."
+  (let ((spec tired--python-section-spec))
+    (when tired-python-section-depth
+      (setq spec (append spec (list :max-depth tired-python-section-depth))))
+    (tired--treesit-sections spec)))
 
 (defvar tired--go-type-starts nil
   "Hash table of every Go type name of the current buffer.
