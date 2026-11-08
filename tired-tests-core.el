@@ -1481,15 +1481,22 @@ key map alone."
                         (tired--entry-create :name "n" :type 'file))))))
 
 (ert-deftest tired-mode-column-aligns-right-in-the-short-form ()
-  "The short form takes six places and aligns right."
+  "The short form takes four places and aligns right.
+The fourth digit of a set-user-ID file stays inside the column, so
+the last digit of `4755' lines up with `755'."
   (let ((tired-short-mode t))
     (let ((column (aref (tired--format 20) 4)))
-      (should (= 6 (nth 1 column)))
+      (should (= 4 (nth 1 column)))
       (should (plist-get (nthcdr 3 column) :right-align)))
-    (should (= 44 (tired--fixed-column-width))))
+    (should (= 41 (tired--fixed-column-width)))
+    (should (<= (string-width
+                 (tired--mode-cell
+                  (tired--entry-create :name "s" :type 'file
+                                       :mode "-rwsr-xr-x")))
+                4)))
   (let ((tired-short-mode nil))
     (should (= 10 (nth 1 (aref (tired--format 20) 4))))
-    (should (= 48 (tired--fixed-column-width)))))
+    (should (= 47 (tired--fixed-column-width)))))
 
 (ert-deftest tired-mode-sort-value-reads-the-permission-bits ()
   "A mode sort compares the octal number, not the long string."

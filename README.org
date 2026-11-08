@@ -857,7 +857,7 @@ the hidden entries and to hide them again.  The mode line then reads
 
 =tired-short-mode= starts on, so the Mode column prints the permission
 bits in octal.  A row then reads =755= instead of =drwxr-xr-x=, and
-the column agrees with =chmod=.  It takes six places and aligns
+the column agrees with =chmod=.  It takes four places and aligns
 right, so =644= ends at the same edge as =4755=.  A set-user-ID, a
 set-group-ID or the sticky bit adds a fourth digit.
 

@@ -124,6 +124,16 @@
 ;;   write face, because `777' covers a symbolic link whole.  The sort
 ;;   keeps reading `tired--mode-octal' alone, so a new expectation
 ;;   belongs in that one function.
+;; - `tabulated-list-print-col' pads a right-aligned cell with a
+;;   `display' property of `(space :align-to COLUMN)', so a text
+;;   terminal stretches that run to an absolute column.  The raw space
+;;   count of a row therefore does not measure the rendered layout,
+;;   and the pad of one row costs no room in another.  The Mode column
+;;   takes four places, one more than the three digits of `755', so
+;;   `755' and `4755' end at the same column and the shorter cell holds
+;;   the pad.  The Modified column takes the sixteen places of
+;;   `tired-date-format', and its pad-right space alone keeps one space
+;;   before the Mode cell.
 ;; - The name column start is the line start and its cell holds two
 ;;   spaces per depth level.  `tired--beginning-of-name' skips those
 ;;   spaces through `forward-line', which the byte compiler accepts
@@ -339,10 +349,11 @@ See `format-time-string' for the available conversions."
 (defcustom tired-short-mode t
   "When non-nil, print the Mode column in octal.
 A row then prints `755' instead of `drwxr-xr-x', and the column
-aligns right and takes six places.  A set-user-ID, set-group-ID or
-sticky bit adds a fourth digit, so `4755' and `1777' hold a place
-too.  Every entry type prints the same way, so a symbolic link
-shows `777' as well.  Set the option to nil for the long form,
+aligns right and takes four places.  A set-user-ID, set-group-ID
+or sticky bit adds a fourth digit, so `4755' and `1777' sit under
+the three-digit form and the last digit lines up.  Every entry
+type prints the same way, so a symbolic link shows `777' as well.
+Set the option to nil for the long form,
 where the group and the world write bits take
 `tired-perm-write-face', the way Dired paints them.  Either form
 dims a cell that holds the bits its entry type expects, so `644'
@@ -2739,10 +2750,12 @@ current sort column flips the direction."
   "Return the width of the columns that keep their size.
 The sum covers the size, modification time, elements and mode
 columns, the left padding and the space after the name column.
-The mode column takes ten places in the long form and six in the
-short form of `tired-short-mode'."
+The mode column takes ten places in the long form and four in the
+short form of `tired-short-mode', so its four digits align right.
+The modified column takes the sixteen places of
+`tired-date-format'."
   (declare (side-effect-free t))
-  (+ 38 (if tired-short-mode 6 10)))
+  (+ 37 (if tired-short-mode 4 10)))
 
 (defun tired--name-column-width (&optional window)
   "Return the width of the name column for WINDOW.
@@ -2771,9 +2784,9 @@ column from the current listing."
          nil)
    (list (tired--column-label "Size" 'size) 9 nil :right-align t)
    (list (tired--column-label "Elements" 'elements) 10 nil :right-align t)
-   (list (tired--column-label "Modified" 'modified) 17 nil)
+   (list (tired--column-label "Modified" 'modified) 16 nil)
    (list (tired--column-label "Mode" 'mode)
-         (if tired-short-mode 6 10)
+         (if tired-short-mode 4 10)
          nil
          :right-align t)))
 
