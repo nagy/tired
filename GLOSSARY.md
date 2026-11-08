@@ -179,6 +179,13 @@ sibling re-walks and one that did not costs one attributes read per
 level.
 _Avoid_: Collapse record, chain memo
 
+**Chain component**:
+One slash-separated part of a collapsed row name.  `chain/a/b/leaf.txt`
+holds four components, and each component names one directory of the
+chain, except the last one, which names the leaf.  The `filename` thing
+answers the path of the component under point.
+_Avoid_: Chain level, path segment, row part
+
 **Stamp**:
 The pair of a modification time and a size that describes one path at
 one moment.  A directory stamp changes when a child arrives or leaves,

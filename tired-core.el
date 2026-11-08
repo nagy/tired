@@ -232,7 +232,10 @@
 ;;   size walk or an idle reprint runs.
 ;; - A row name is the `filename' thing through
 ;;   `tired--filename-at-point' and `tired--name-bounds'.  A provider that
-;;   returns nil cannot veto the plain Emacs guess.
+;;   returns nil cannot veto the plain Emacs guess.  A collapsed row
+;;   answers the chain component under point, so point on `a' in
+;;   `a/b/c' names the directory `a', and point on a slash names the
+;;   component that the slash closes.
 ;; - `tired--forward-subtree' reads the BACKWARD argument of
 ;;   `forward-thing' and never N, because that function takes the smallest
 ;;   non-zero move of the providers for one symbol.
@@ -2953,24 +2956,83 @@ Return nil when the line holds no row."
                    (<= start end))
           (cons start end))))))
 
+(defun tired--name-component-regions (row region)
+  "Return (START . END) conses for the name components of ROW in REGION.
+A component ends at a slash, so the list keeps the order that a
+collapsed chain prints and the first cons names the topmost
+directory."
+  (let ((text (tired--name-text row))
+        (start (car region))
+        (offset 0)
+        (regions nil))
+    (while (< offset (length text))
+      (let* ((slash (string-search "/" text offset))
+             (end (or slash (length text))))
+        (when (< offset end)
+          (push (cons (+ start offset) (+ start end)) regions))
+        (setq offset (if slash (1+ slash) (length text)))))
+    (nreverse regions)))
+
+(defun tired--component-path (row index)
+  "Return the absolute name of chain component INDEX of ROW.
+Index 0 names the component just below the listed directory, and
+the last index names the leaf of the chain."
+  (declare (pure t) (side-effect-free t))
+  (let* ((name (tired-entry-name row))
+         (count (1+ (seq-count (lambda (char) (eq char ?/)) name)))
+         (path (tired-entry-path row)))
+    (dotimes (_ (- count 1 index))
+      (setq path (directory-file-name (file-name-directory path))))
+    path))
+
+(defun tired--chain-name-at-point ()
+  "Return (BOUNDS . PATH) for the chain component at point, or nil.
+The BOUNDS cover the component text alone, and PATH names the
+directory or the file that the component stands for.  Point on a
+slash answers the component to its left."
+  (declare (side-effect-free t))
+  (when-let* ((row (tired--row-at-point))
+              ((tired-entry-p row))
+              ((tired-entry-collapsed row))
+              (region (tired--name-region))
+              (components (tired--name-component-regions row region)))
+    (let ((index 0)
+          (found nil))
+      (dolist (component components)
+        (when (and (null found)
+                   (<= (car component) (point))
+                   (<= (point) (cdr component)))
+          (setq found index))
+        (setq index (1+ index)))
+      (when found
+        (cons (nth found components)
+              (tired--component-path row found))))))
+
 (defun tired--name-bounds ()
   "Return the buffer region that shows the name of the row at point.
 Return nil when the line holds no row, or when point leaves the
 name for the size, date or mode column.  The region stops before
-the arrow that shows a symbolic link target."
-  (let ((region (tired--name-region)))
-    (when (and region
-               (<= (car region) (point))
-               (<= (point) (cdr region)))
-      region)))
+the arrow that shows a symbolic link target.  A collapsed row
+answers the chain component under point alone, because each
+component of the chain names one directory."
+  (if-let* ((chain (tired--chain-name-at-point)))
+      (car chain)
+    (let ((region (tired--name-region)))
+      (when (and region
+                 (<= (car region) (point))
+                 (<= (point) (cdr region)))
+        region))))
 
 (defun tired--filename-at-point ()
   "Return the absolute name of the row at point, or nil.
 The provider reads the name column alone, so point on the size,
 date or mode column yields no name here.  `thing-at-point' then
-falls back to its own guess.  A section row names its file."
-  (when (tired--name-bounds)
-    (tired--row-path (tired--row-at-point))))
+falls back to its own guess.  A section row names its file, and a
+collapsed row names the chain component under point."
+  (if-let* ((chain (tired--chain-name-at-point)))
+      (cdr chain)
+    (when (tired--name-bounds)
+      (tired--row-path (tired--row-at-point)))))
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."

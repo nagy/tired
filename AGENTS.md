@@ -141,6 +141,17 @@ carries no cookie at all: `tired-noselect` runs the mode.
   flagged row writes `:extend t`, because its overlay covers the line
   and the newline.  A handler face writes `:group 'tired`, because
   `tired-sections` holds no `defgroup`.
+- A collapsed row answers the `filename` thing one chain component at
+  a time: `tired--filename-at-point` and `tired--name-bounds` split the
+  name at the slashes, and point on a slash names the component that
+  the slash closes.  `tired--name-region` keeps the whole name, because
+  the mouse face and the in-place name edit read that region.
+- `embark` reads the `filename` thing for its file target, so
+  `tired.el` gives `embark-target-finders` a buffer-local Tired finder
+  and drops the two built-in file finders.  The swap runs from
+  `tired-mode-hook` and from `after-load-functions`, so both load
+  orders work, and it checks `boundp` because Embark stays optional.
+  One finder per row keeps `embark-act` unambiguous.
 - A library that paints overlays on the printed rows uses
   `tired-after-redraw-hook` and no call from `tired-core`.  A body of the
   hook never runs a view command, because the redraw calls the hook.

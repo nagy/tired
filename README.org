@@ -64,7 +64,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Native Elisp listing, no external process
 - A `thing-at-point' provider for `filename' and `existing-filename',
   confined to the name column, so `embark' and any tool that reads
-  the thing gets the exact path
+  the thing gets the exact path, with one chain component at a time on
+  a collapsed row
 
 * Usage
 
@@ -1260,6 +1261,26 @@ object per line:
 {"Path":"sub/inner.txt","Name":"inner.txt","Size":5,"MimeType":"text/plain","ModTime":"2026-10-31T19:08:14.947845220Z","IsDir":false}
 ]
 #+end_src
+
+* Name bounds and Embark
+
+=bounds-of-thing-at-point 'filename= answers the name text alone, so a
+reader stays inside the name column.  A plain row answers its whole
+name.  A collapsed row answers one chain component: point on =a= in
+=chain/a/b/leaf.txt= names the directory =chain/a=, and point on a
+slash names the component that the slash closes.  A section row
+answers its label while =thing-at-point= names the file that holds the
+section.
+
+=embark= reads the thing at point for its file target.  Its own
+finders ask =ffap-file-at-point=, which resolves the printed text
+against the shown directory.  A row inside an inserted directory names
+a file below that directory, so ffap answers nothing there.  Tired
+therefore gives =embark-target-finders= a buffer-local Tired finder
+and drops the two built-in file finders.  =embark-act= on a row then
+reaches the path that =thing-at-point= answers, and its highlight
+covers the component under point.  A buffer that started before
+=embark= loaded takes the finder when the library arrives.
 
 * Subtree bounds and focus
 

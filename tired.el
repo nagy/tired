@@ -321,6 +321,59 @@ through the evil map machinery, which puts them back."
 ;; loads Tired first waits for the evil library to arrive.
 (add-hook 'after-load-functions #'tired--enable-evil-bindings)
 
+;;; Embark integration
+
+;; Embark reads the thing at point for its file target, but its two
+;; built-in finders ask `ffap-file-at-point' and that function resolves
+;; the printed text against `default-directory'.  A row inside an
+;; inserted directory names a file below that directory, so ffap answers
+;; nil there, and a chain component names a path that ffap never reads.
+;; The finder below answers the thing at point and its bounds alone, so
+;; Embark agrees with `thing-at-point'.
+
+(defvar embark-target-finders)
+
+(defun tired--embark-file-target ()
+  "Return the Embark file target for the row at point, or nil.
+The target carries the bounds of the name, so Embark highlights the
+component that names the file."
+  (when-let* ((path (tired--filename-at-point))
+              (bounds (tired--name-bounds)))
+    (list 'file path (car bounds) (cdr bounds))))
+
+(defun tired--install-embark-targets ()
+  "Point `embark-target-finders' at the Tired file target.
+The two built-in file finders go away, because each one answers a
+path of its own for a Tired row.  The function does nothing while
+Embark stays unloaded, and a second call changes nothing."
+  (when (boundp 'embark-target-finders)
+    (setq-local embark-target-finders
+                (cons #'tired--embark-file-target
+                      (delq #'tired--embark-file-target
+                            (remq 'embark-target-guess-file-at-point
+                                  (remq 'embark-target-file-at-point
+                                        embark-target-finders)))))))
+
+(defun tired--enable-embark-targets (&rest _)
+  "Install the Tired finder in every Tired buffer.
+The arguments are ignored, so the function fits
+`after-load-functions'.  Embark keeps the finder list in a buffer
+local variable, and a listing that started before Embark loaded
+never saw it."
+  (when (featurep 'embark)
+    (remove-hook 'after-load-functions #'tired--enable-embark-targets)
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (derived-mode-p 'tired-mode)
+          (tired--install-embark-targets))))))
+
+(add-hook 'tired-mode-hook #'tired--install-embark-targets)
+
+;; The hook below runs at the end of this very load too, so a user with
+;; Embark already loaded takes the finder at once, and a user who loads
+;; Tired first waits for the Embark library to arrive.
+(add-hook 'after-load-functions #'tired--enable-embark-targets)
+
 (provide 'tired)
 
 ;;; tired.el ends here

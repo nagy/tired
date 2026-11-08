@@ -38,6 +38,11 @@
 
 (defvar recentf-mode)
 
+;; The Embark variable stays unloaded here, so a `let' binding of it
+;; needs a declaration.  Without one the compiler makes the binding
+;; lexical, and the installer reads the global value instead.
+(defvar embark-target-finders)
+
 (ert-deftest tired-mode-is-derived-from-tabulated-list-mode ()
   "The major mode must inherit from `tabulated-list-mode'."
   (tired-tests--with-fixture
@@ -3480,12 +3485,21 @@ again under the stub."
     (tired-next-line)
     (should (equal (tired-entry-name (tired--row-at-point))
                    "deep/leaf.txt"))
+    ;; The row starts at the depth indent, so point there names the
+    ;; first chain component.
     (should (equal (thing-at-point 'filename t)
-                   (expand-file-name "sub/deep/leaf.txt" root)))
+                   (expand-file-name "sub/deep" root)))
     (let ((bounds (bounds-of-thing-at-point 'filename)))
       (should (= 2 (- (car bounds) (line-beginning-position))))
       (should (equal (buffer-substring (car bounds) (cdr bounds))
-                     "deep/leaf.txt")))))
+                     "deep")))
+    (search-forward "leaf.txt")
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "sub/deep/leaf.txt" root)))
+    (let ((bounds (bounds-of-thing-at-point 'filename)))
+      (should (> (- (car bounds) (line-beginning-position)) 2))
+      (should (equal (buffer-substring (car bounds) (cdr bounds))
+                     "leaf.txt")))))
 
 (ert-deftest tired-thing-at-point-reads-the-file-of-a-section ()
   "A section row names the file that holds it."
@@ -3501,6 +3515,88 @@ again under the stub."
     (let ((bounds (bounds-of-thing-at-point 'filename)))
       (should (equal (buffer-substring (car bounds) (cdr bounds))
                      "defun code-foo")))))
+
+(ert-deftest tired-thing-at-point-reads-a-chain-component ()
+  "A collapsed row names the chain component under point."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/leaf.txt" root)
+      (insert "leaf"))
+    (tired root)
+    ;; The offsets count from the start of the name text.
+    (dolist (part '((0 "chain" "chain")
+                    (6 "a" "chain/a")
+                    (8 "b" "chain/a/b")
+                    (10 "leaf.txt" "chain/a/b/leaf.txt")))
+      (tired-tests--goto "chain/a/b/leaf.txt")
+      (goto-char (+ (car (tired--name-region)) (nth 0 part)))
+      (should (equal (thing-at-point 'filename t)
+                     (expand-file-name (nth 2 part) root)))
+      (let ((bounds (bounds-of-thing-at-point 'filename)))
+        (should (equal (buffer-substring (car bounds) (cdr bounds))
+                       (nth 1 part)))))))
+
+(ert-deftest tired-thing-at-point-answers-the-left-component-on-a-slash ()
+  "Point on a slash answers the component that the slash closes."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/leaf.txt" root)
+      (insert "leaf"))
+    (tired root)
+    (tired-tests--goto "chain/a/b/leaf.txt")
+    (search-forward "chain")
+    (should (eq (char-after) ?/))
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "chain" root)))
+    (search-forward "/a")
+    (should (eq (char-after) ?/))
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "chain/a" root)))))
+
+(ert-deftest tired-embark-file-target-reads-the-name-of-the-row ()
+  "The Embark target carries the thing value and the name bounds."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/leaf.txt" root)
+      (insert "leaf"))
+    (tired root)
+    (tired-tests--goto "chain/a/b/leaf.txt")
+    (goto-char (+ (car (tired--name-region)) 6))
+    (let ((target (tired--embark-file-target)))
+      (should (eq (car target) 'file))
+      (should (equal (cadr target) (expand-file-name "chain/a" root)))
+      (should (equal (buffer-substring-no-properties
+                      (nth 2 target) (nth 3 target))
+                     "a")))))
+
+(ert-deftest tired-embark-target-installer-replaces-the-file-finders ()
+  "The installer drops both built-in file finders and stays once."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((embark-target-finders '(embark-target-file-at-point
+                                   embark-target-buffer-at-point
+                                   embark-target-guess-file-at-point)))
+      (tired--install-embark-targets)
+      (tired--install-embark-targets)
+      (should (eq (car embark-target-finders) #'tired--embark-file-target))
+      (should (equal (cdr embark-target-finders)
+                     '(embark-target-buffer-at-point))))))
+
+(ert-deftest tired-embark-targets-wait-for-a-late-embark-load ()
+  "A listing that started before Embark takes the finder later."
+  (tired-tests--with-fixture
+    (tired root)
+    (should-not (local-variable-p 'embark-target-finders))
+    (setq-local embark-target-finders '(embark-target-file-at-point
+                                        embark-target-buffer-at-point))
+    (cl-letf (((symbol-function 'featurep)
+               (lambda (feature &optional _subfeature)
+                 (eq feature 'embark)))
+              ((symbol-function 'remove-hook) #'ignore))
+      (tired--enable-embark-targets))
+    (should (eq (car embark-target-finders) #'tired--embark-file-target))
+    (should (equal (cdr embark-target-finders)
+                   '(embark-target-buffer-at-point)))))
 
 (ert-deftest tired-subtree-bounds-covers-a-nested-row ()
   "A deep row answers the bounds of its depth-zero entry."
