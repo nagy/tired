@@ -146,6 +146,12 @@ carries no cookie at all: `tired-noselect` runs the mode.
   name at the slashes, and point on a slash names the component that
   the slash closes.  `tired--name-region` keeps the whole name, because
   the mouse face and the in-place name edit read that region.
+- Point on the target text of a symbolic link names the link target:
+  `tired--filename-at-point` and `tired--filename-bounds` fall back to
+  `tired--link-region` and `tired--link-path`.  The region covers the
+  printed target text alone, so a `tired-shorthand-rules` sigil never
+  reaches a path answer.  `bounds-of-thing-at-point-provider-alist`
+  names `tired--filename-bounds`, never `tired--name-bounds`.
 - `embark` reads the `filename` thing for its file target, so
   `tired.el` gives `embark-target-finders` a buffer-local Tired finder
   and drops the two built-in file finders.  The swap runs from

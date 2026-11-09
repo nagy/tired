@@ -231,11 +231,16 @@
 ;;   end, so a point in the middle of a name survives a reprint that a
 ;;   size walk or an idle reprint runs.
 ;; - A row name is the `filename' thing through
-;;   `tired--filename-at-point' and `tired--name-bounds'.  A provider that
-;;   returns nil cannot veto the plain Emacs guess.  A collapsed row
+;;   `tired--filename-at-point' and `tired--filename-bounds'.  A provider
+;;   that returns nil cannot veto the plain Emacs guess.  A collapsed row
 ;;   answers the chain component under point, so point on `a' in
 ;;   `a/b/c' names the directory `a', and point on a slash names the
 ;;   component that the slash closes.
+;; - Point on the target text of a symbolic link names the link target,
+;;   through `tired--link-region' and `tired--link-path'.  The region
+;;   comes from the printed suffix length, so a `tired-shorthand-rules'
+;;   sigil never reaches a path answer, and the arrow belongs to neither
+;;   region.
 ;; - `tired--forward-subtree' reads the BACKWARD argument of
 ;;   `forward-thing' and never N, because that function takes the smallest
 ;;   non-zero move of the providers for one symbol.
@@ -2068,10 +2073,13 @@ of TARGET stays.  A rule that matches nothing leaves TARGET alone."
       (when (string-match (car rule) target)
         (throw 'done (replace-match (cdr rule) t t target))))))
 
+(defconst tired--link-arrow " -> "
+  "Text that separates the name of a symbolic link from its target.")
+
 (defun tired--symlink-suffix (entry)
   "Return the arrow and the target text for the symbolic link ENTRY.
 `tired-shorthand-rules' shortens the target text for display."
-  (concat " -> "
+  (concat tired--link-arrow
           (apply #'propertize
                  (tired--shorthand-target
                   (or (tired-entry-link entry) "?"))
@@ -3025,16 +3033,59 @@ component of the chain names one directory."
                  (<= (point) (cdr region)))
         region))))
 
+(defun tired--link-region ()
+  "Return the buffer region that shows the target of the link on this line.
+The region covers the printed target text alone, so it starts after
+the arrow and stops before the padding of the name column.  Return
+nil when the line holds no entry, when the entry is no symbolic
+link, or when the line prints no name cell."
+  (when-let* ((row (tired--row-at-point))
+              ((tired-entry-p row))
+              ((eq (tired-entry-type row) 'symlink))
+              (name (tired--name-region)))
+    (let* ((printed (- (length (tired--symlink-suffix row))
+                       (length tired--link-arrow)))
+           (start (+ (cdr name) (length tired--link-arrow))))
+      (cons start (min (+ start printed) (line-end-position))))))
+
+(defun tired--link-bounds ()
+  "Return the buffer region of the link target under point, or nil.
+The region answers the printed target text, which a shorthand rule
+may shorten, and never the name of the row."
+  (when-let* ((region (tired--link-region)))
+    (when (and (<= (car region) (point))
+               (<= (point) (cdr region)))
+      region)))
+
+(defun tired--link-path (entry)
+  "Return the absolute target path of the symbolic link ENTRY, or nil.
+The recorded target stays as the link names it, so a relative
+target expands against the directory that holds the link."
+  (declare (pure t) (side-effect-free t))
+  (when-let* ((link (tired-entry-link entry)))
+    (expand-file-name link (file-name-directory (tired-entry-path entry)))))
+
+(defun tired--filename-bounds ()
+  "Return the buffer region that shows the file name at point, or nil.
+A row answers the region of its name, or the region of the target
+text that the arrow prints after the name of a symbolic link."
+  (or (tired--name-bounds) (tired--link-bounds)))
+
 (defun tired--filename-at-point ()
   "Return the absolute name of the row at point, or nil.
 The provider reads the name column alone, so point on the size,
 date or mode column yields no name here.  `thing-at-point' then
 falls back to its own guess.  A section row names its file, and a
-collapsed row names the chain component under point."
+collapsed row names the chain component under point.  Point on the
+target text of a symbolic link names the link target, whatever a
+shorthand rule prints there."
   (if-let* ((chain (tired--chain-name-at-point)))
       (cdr chain)
-    (when (tired--name-bounds)
-      (tired--row-path (tired--row-at-point)))))
+    (when-let* ((row (tired--row-at-point)))
+      (if (tired--link-bounds)
+          (tired--link-path row)
+        (when (tired--name-bounds)
+          (tired--row-path row))))))
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
@@ -5073,7 +5124,7 @@ The directory contents come from `directory-files' and
               (cons '(filename . tired--filename-at-point)
                     thing-at-point-provider-alist))
   (setq-local bounds-of-thing-at-point-provider-alist
-              (append '((filename . tired--name-bounds)
+              (append '((filename . tired--filename-bounds)
                         (tired-subtree . tired-subtree-bounds))
                       bounds-of-thing-at-point-provider-alist))
   ;; A depth-zero row with the rows that it prints forms one subtree,

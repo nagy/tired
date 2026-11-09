@@ -3469,12 +3469,72 @@ again under the stub."
     (let ((bounds (bounds-of-thing-at-point 'filename)))
       (should (equal (buffer-substring (car bounds) (cdr bounds))
                      "link")))
-    ;; The target text after the arrow holds no name.
+    ;; The target text after the arrow names the link target, and the
+    ;; padding before the size column names nothing.
     (search-forward "alpha.txt")
+    (should (equal (tired--filename-at-point)
+                   (expand-file-name "alpha.txt" root)))
+    (forward-char 1)
     (should-not (tired--filename-at-point))
     ;; Neither does the mode column at the end of the line.
     (goto-char (line-end-position))
     (should-not (tired--filename-at-point))))
+
+(ert-deftest tired-thing-at-point-reads-a-link-target ()
+  "The target text after the arrow names the file that the link points at.
+The bounds cover the printed target alone, so an Embark target
+highlights the target text."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "link")
+    (search-forward "alpha.txt")
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "alpha.txt" root)))
+    (let ((bounds (bounds-of-thing-at-point 'filename)))
+      (should (equal (buffer-substring (car bounds) (cdr bounds))
+                     "alpha.txt"))
+      (should (eq (char-before (car bounds)) ?\s)))
+    (let ((target (tired--embark-file-target)))
+      (should (eq (car target) 'file))
+      (should (equal (cadr target) (expand-file-name "alpha.txt" root)))
+      (should (equal (buffer-substring-no-properties
+                      (nth 2 target) (nth 3 target))
+                     "alpha.txt")))))
+
+(ert-deftest tired-thing-at-point-reads-a-shortened-link-target ()
+  "A shorthand sigil shortens the printed target alone.
+The thing answers the recorded target, and its bounds cover the
+printed text that holds the sigil."
+  (tired-tests--with-fixture
+    (let ((tired-shorthand-rules '(("\\`alpha" . "@a/"))))
+      (tired root)
+      (tired-tests--goto "link")
+      (search-forward "@a/.txt")
+      (should (equal (thing-at-point 'filename t)
+                     (expand-file-name "alpha.txt" root)))
+      (let ((bounds (bounds-of-thing-at-point 'filename)))
+        (should (equal (buffer-substring (car bounds) (cdr bounds))
+                       "@a/.txt"))))))
+
+(ert-deftest tired-thing-at-point-expands-a-relative-link-target ()
+  "A relative target expands from the directory that holds the link."
+  (tired-tests--with-fixture
+    (make-symbolic-link "../alpha.txt" (expand-file-name "sub/up"))
+    (tired (expand-file-name "sub" root))
+    (tired-tests--goto "up")
+    (search-forward "../alpha.txt")
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "alpha.txt" root)))))
+
+(ert-deftest tired-thing-at-point-reads-a-broken-link-target ()
+  "A broken link still names the target that it records."
+  (tired-tests--with-fixture
+    (make-symbolic-link "gone.txt" (expand-file-name "dangling"))
+    (tired root)
+    (tired-tests--goto "dangling")
+    (search-forward "gone.txt")
+    (should (equal (thing-at-point 'filename t)
+                   (expand-file-name "gone.txt" root)))))
 
 (ert-deftest tired-thing-at-point-follows-the-depth-indent ()
   "A nested row gives its name from the start of the name column."
