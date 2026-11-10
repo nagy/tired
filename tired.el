@@ -79,6 +79,7 @@
 ;;
 ;;   M-x tired-jump     visit the directory of the current buffer
 ;;   M-x tired-project  show the root of the current project
+;;   M-x tired-magit-status  show Magit status for the row at point
 ;;
 ;; Export commands:
 ;;
@@ -251,6 +252,23 @@ a listing outside a project.  The buffer goes through
 `tired-display-buffer-action', as `tired' does."
   (interactive)
   (tired (project-root (project-current t))))
+
+(declare-function magit-status "magit-status" (&optional directory))
+
+;;;###autoload
+(defun tired-magit-status ()
+  "Show Magit status for the directory at point.
+A directory row runs `magit-status' in that directory, so a repository
+inside it wins over one that holds it.  A file row runs it in the
+directory that holds the file, and a collapsed row in the chain
+component under point.  Point on no row runs it in the listed
+directory.  Magit itself walks up to the repository root, so a
+directory without a repository shows the one around it.  The mode
+menu and the context menu reach the command, and no key does."
+  (interactive)
+  (unless (fboundp 'magit-status)
+    (user-error "Magit is not installed"))
+  (magit-status (tired--point-directory)))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)

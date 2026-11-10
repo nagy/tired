@@ -290,6 +290,7 @@
 ;; on the file above this one.
 (declare-function tired "tired" (directory))
 (declare-function tired-jump "tired" (&optional other-window))
+(declare-function tired-magit-status "tired" nil)
 (declare-function tired-other-window "tired" (directory))
 
 (defgroup tired nil
@@ -3087,6 +3088,23 @@ shorthand rule prints there."
         (when (tired--name-bounds)
           (tired--row-path row))))))
 
+(defun tired--point-directory ()
+  "Return the directory that the row at point stands for.
+A directory row names itself, so a repository inside it wins over one
+that holds it.  A file row names the directory that holds the file,
+and a section row names the directory of its file.  A collapsed row
+names the chain component under point.  Point on no row names the
+directory that the buffer lists.  The answer ends with a slash, and a
+row whose path left the disk answers the directory that holds it."
+  (let ((path (if-let* ((chain (tired--chain-name-at-point)))
+                  (cdr chain)
+                (when-let* ((row (tired--row-at-point)))
+                  (tired--row-path row)))))
+    (cond
+     ((null path) (or tired--directory default-directory))
+     ((file-directory-p path) (file-name-as-directory path))
+     (t (file-name-directory path)))))
+
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
   (and (tired-entry-p entry)
@@ -4891,6 +4909,9 @@ into `context-menu-functions' locally."
         (define-key-after menu [tired-visit-other-window]
           (list 'menu-item "Visit in Other Window"
                 (funcall command #'tired-find-file-other-window)))
+        (define-key-after menu [tired-magit-status]
+          (list 'menu-item "Magit Status"
+                (funcall command #'tired-magit-status)))
         (define-key-after menu [tired-separator] menu-bar-separator)
         (when (tired--directory-entry-p row)
           (define-key-after menu [tired-insert-subdir]
@@ -4991,6 +5012,8 @@ command that needs an entry stays insensitive on an empty row."
      :help "Visit the entry at point, or every selected file"]
     ["Visit in other window" tired-find-file-other-window
      :active (tired--row-at-point)]
+    ["Magit status" tired-magit-status
+     :help "Show the Magit status of the directory at point"]
     ["Up" tired-up-directory]
     "--"
     ["Insert subdirectory" tired-insert-subdir

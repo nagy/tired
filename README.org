@@ -130,6 +130,17 @@ reaches =tired-jump= in a Tired buffer and =dired-jump= elsewhere.
 belongs to no project, the command asks for one, so it opens a listing
 either way.
 
+=M-x tired-magit-status= shows the Magit status of the row at point.
+A directory row opens the status of that directory, so a repository
+inside it wins over one that holds it.  A file row opens the status of
+the directory that holds the file, and a collapsed row opens the
+status of the chain component under point.  Point on no row uses the
+listed directory.  Magit walks up to the repository root itself, so a
+directory without a repository shows the one around it.  The command
+takes the context menu and the =Tired= menu, and no key.  Magit stays
+optional: the command signals a user error while =magit-status= is
+unbound.
+
 =tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=
 records a directory buffer and =M-x bookmark-jump= restores it.
 

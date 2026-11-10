@@ -17,7 +17,7 @@ reasons.
 - `tired.el` — entry point: commentary, the five requires, the public
   commands (`tired`, `tired-other-window`, `tired-noselect`,
   `tired-find-file-mode`, `tired-jump`, `tired-project`,
-  `tired-clear-caches`), the
+  `tired-magit-status`, `tired-clear-caches`), the
   evil hook
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, the size caches, `tired-mode`
@@ -118,8 +118,9 @@ carries no cookie at all: `tired-noselect` runs the mode.
   that table never names a subdir, expand, collapse or toggle command.
 - Some commands carry no binding on purpose: `tired-clear-caches`,
   `tired-edit-names`, `tired-commit-edits`, `tired-abort-edits`,
-  `tired-insert-subdir`, `tired-expand-file`, `tired-collapse-file` and
-  `tired-project` take `M-x` and the menu alone.  `tired-undo` and
+  `tired-insert-subdir`, `tired-expand-file`, `tired-collapse-file`,
+  `tired-project` and `tired-magit-status` take `M-x` and the menu
+  alone.  `tired-undo` and
   `tired-redo` take the `<undo>` and `<redo>` keysyms alone, so no
   printable key and no menu entry reaches them.  `tired-tests-core` and
   `tired-tests-file-ops` fail when a binding returns.

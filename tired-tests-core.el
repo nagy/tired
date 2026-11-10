@@ -2333,6 +2333,74 @@ forced walk waits for the display that follows."
         (tired-project))
       (should asked))))
 
+(ert-deftest tired-point-directory-names-the-directory-row ()
+  "Point on a directory row names that directory."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (should (equal (tired--point-directory)
+                   (file-name-as-directory (expand-file-name "sub" root))))))
+
+(ert-deftest tired-point-directory-names-the-file-parent ()
+  "Point on a file row or a section row names its directory."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (should (equal (tired--point-directory) root))
+    (tired-tests--goto "beta.txt")
+    (should (equal (tired--point-directory) root))))
+
+(ert-deftest tired-point-directory-names-the-chain-component ()
+  "Point on a collapsed chain names the component under point."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "chain/a" root) t)
+    (with-temp-file (expand-file-name "chain/a/leaf.txt" root)
+      (insert "leaf"))
+    (tired root)
+    (goto-char (point-min))
+    (search-forward "chain/a/leaf.txt")
+    (let ((start (car (tired--name-region))))
+      (goto-char start)
+      (should (equal (tired--point-directory)
+                     (file-name-as-directory (expand-file-name "chain" root))))
+      (goto-char (+ start 6))
+      (should (equal (tired--point-directory)
+                     (file-name-as-directory
+                      (expand-file-name "chain/a" root))))
+      (goto-char (+ start 8))
+      (should (equal (tired--point-directory)
+                     (file-name-as-directory
+                      (expand-file-name "chain/a" root)))))))
+
+(ert-deftest tired-point-directory-falls-back-to-the-listing ()
+  "Point below the last row names the directory that the buffer lists."
+  (tired-tests--with-fixture
+    (tired root)
+    (goto-char (point-max))
+    (should (equal (tired--point-directory) root))))
+
+(ert-deftest tired-magit-status-runs-in-the-directory-at-point ()
+  "The command hands Magit the directory of the row at point."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (let ((asked nil))
+      (cl-letf (((symbol-function 'magit-status)
+                 (lambda (directory) (setq asked directory))))
+        (tired-magit-status))
+      (should (equal asked
+                     (file-name-as-directory (expand-file-name "sub" root)))))))
+
+(ert-deftest tired-context-menu-offers-the-magit-status ()
+  "A right click on a row offers the Magit status command."
+  (skip-unless (require 'mouse nil t))
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (let* ((event (tired-tests--click 'mouse-3 (point)))
+           (menu (tired-context-menu (make-sparse-keymap) event)))
+      (should (lookup-key menu [tired-magit-status])))))
+
 (ert-deftest tired-bookmark-round-trip ()
   "A Tired bookmark records the directory and restores the buffer."
   (tired-tests--with-fixture
