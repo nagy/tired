@@ -141,6 +141,38 @@ takes the context menu and the =Tired= menu, and no key.  Magit stays
 optional: the command signals a user error while =magit-status= is
 unbound.
 
+* Running a command at point
+
+Two functions and one accessor let another command use the row at
+point.  =tired-directory-at-point= answers the row directory, and
+=tired-path-at-point= answers the file itself.
+
+#+begin_src elisp
+  (tired-directory-at-point)  ; "/home/me/src/foo/"
+  (tired-path-at-point)       ; "/home/me/src/foo/a.txt"
+#+end_src
+
+=tired-with-directory-at-point= calls a function with
+=default-directory= set to the row.  Most commands read that variable,
+so a private command needs three lines and no code in =tired=.
+
+#+begin_src elisp
+  (defun my-magit-here ()
+    (interactive)
+    (tired-with-directory-at-point #'magit-status))
+
+  (with-eval-after-load 'tired
+    (define-key tired-mode-map (kbd "G") #'my-magit-here))
+#+end_src
+
+=tired-run-at-point= wraps that pattern as one interactive command.  It
+asks for a command and runs it in the row directory.
+
+#+begin_src elisp
+  (with-eval-after-load 'tired
+    (define-key tired-mode-map (kbd "C-c g") #'tired-run-at-point))
+#+end_src
+
 =tired-mode= sets =bookmark-make-record-function=, so =M-x bookmark-set=
 records a directory buffer and =M-x bookmark-jump= restores it.
 

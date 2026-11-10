@@ -3088,22 +3088,50 @@ shorthand rule prints there."
         (when (tired--name-bounds)
           (tired--row-path row))))))
 
-(defun tired--point-directory ()
+(defun tired-path-at-point ()
+  "Return the absolute path that the row at point stands for.
+A section row names the file that holds it, and a collapsed row names
+the chain component under point.  Point on no row names the directory
+that the buffer lists.  The answer covers the whole line, so point on
+the size, date or mode column still names the row."
+  (or (cdr-safe (tired--chain-name-at-point))
+      (when-let* ((row (tired--row-at-point)))
+        (tired--row-path row))
+      tired--directory
+      default-directory))
+
+(defun tired-directory-at-point ()
   "Return the directory that the row at point stands for.
 A directory row names itself, so a repository inside it wins over one
 that holds it.  A file row names the directory that holds the file,
 and a section row names the directory of its file.  A collapsed row
 names the chain component under point.  Point on no row names the
 directory that the buffer lists.  The answer ends with a slash, and a
-row whose path left the disk answers the directory that holds it."
-  (let ((path (if-let* ((chain (tired--chain-name-at-point)))
-                  (cdr chain)
-                (when-let* ((row (tired--row-at-point)))
-                  (tired--row-path row)))))
-    (cond
-     ((null path) (or tired--directory default-directory))
-     ((file-directory-p path) (file-name-as-directory path))
-     (t (file-name-directory path)))))
+row whose path left the disk answers the directory that holds it.
+The command `tired-path-at-point' answers the file itself."
+  (if-let* ((path (tired-path-at-point)))
+      (if (file-directory-p path)
+          (file-name-as-directory path)
+        (file-name-directory path))
+    default-directory))
+
+(defun tired-with-directory-at-point (function)
+  "Call FUNCTION with `default-directory' from the row at point.
+A command that reads `default-directory' needs no argument, so a
+caller wraps it here and the row at point decides the directory.
+`tired-directory-at-point' names that directory."
+  (declare (indent 0))
+  (let ((default-directory (tired-directory-at-point)))
+    (funcall function)))
+
+(defun tired-run-at-point (command)
+  "Run COMMAND in the directory that the row at point stands for.
+The command reads `default-directory' through
+`tired-with-directory-at-point', so a directory argument stays
+optional.  The command runs interactively, so its own prompt still
+reaches the user."
+  (interactive "C")
+  (tired-with-directory-at-point (lambda () (call-interactively command))))
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."

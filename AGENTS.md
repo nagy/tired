@@ -20,7 +20,9 @@ reasons.
   `tired-magit-status`, `tired-clear-caches`), the
   evil hook
 - `tired-core.el` — entries, section framework, display, selection,
-  redraw, watches, the size caches, `tired-mode`
+  redraw, watches, the size caches, `tired-mode`, and the point
+  accessors `tired-directory-at-point`, `tired-path-at-point`,
+  `tired-with-directory-at-point` and `tired-run-at-point`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Python, Go,
   Markdown, Cargo, KiCad schematic, SQLite and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook, the

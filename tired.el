@@ -268,7 +268,7 @@ menu and the context menu reach the command, and no key does."
   (interactive)
   (unless (fboundp 'magit-status)
     (user-error "Magit is not installed"))
-  (magit-status (tired--point-directory)))
+  (tired-run-at-point #'magit-status))
 
 ;;;###autoload
 (defun tired-jump (&optional other-window)

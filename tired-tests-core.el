@@ -2333,24 +2333,24 @@ forced walk waits for the display that follows."
         (tired-project))
       (should asked))))
 
-(ert-deftest tired-point-directory-names-the-directory-row ()
+(ert-deftest tired-directory-at-point-names-the-directory-row ()
   "Point on a directory row names that directory."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "sub")
-    (should (equal (tired--point-directory)
+    (should (equal (tired-directory-at-point)
                    (file-name-as-directory (expand-file-name "sub" root))))))
 
-(ert-deftest tired-point-directory-names-the-file-parent ()
-  "Point on a file row or a section row names its directory."
+(ert-deftest tired-directory-at-point-names-the-file-parent ()
+  "Point on a file row names the directory that holds the file."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "alpha.txt")
-    (should (equal (tired--point-directory) root))
+    (should (equal (tired-directory-at-point) root))
     (tired-tests--goto "beta.txt")
-    (should (equal (tired--point-directory) root))))
+    (should (equal (tired-directory-at-point) root))))
 
-(ert-deftest tired-point-directory-names-the-chain-component ()
+(ert-deftest tired-directory-at-point-names-the-chain-component ()
   "Point on a collapsed chain names the component under point."
   (tired-tests--with-fixture
     (make-directory (expand-file-name "chain/a" root) t)
@@ -2361,32 +2361,78 @@ forced walk waits for the display that follows."
     (search-forward "chain/a/leaf.txt")
     (let ((start (car (tired--name-region))))
       (goto-char start)
-      (should (equal (tired--point-directory)
+      (should (equal (tired-directory-at-point)
                      (file-name-as-directory (expand-file-name "chain" root))))
       (goto-char (+ start 6))
-      (should (equal (tired--point-directory)
+      (should (equal (tired-directory-at-point)
                      (file-name-as-directory
                       (expand-file-name "chain/a" root))))
       (goto-char (+ start 8))
-      (should (equal (tired--point-directory)
+      (should (equal (tired-directory-at-point)
                      (file-name-as-directory
                       (expand-file-name "chain/a" root)))))))
 
-(ert-deftest tired-point-directory-falls-back-to-the-listing ()
+(ert-deftest tired-directory-at-point-falls-back-to-the-listing ()
   "Point below the last row names the directory that the buffer lists."
   (tired-tests--with-fixture
     (tired root)
     (goto-char (point-max))
-    (should (equal (tired--point-directory) root))))
+    (should (equal (tired-directory-at-point) root))))
+
+(ert-deftest tired-path-at-point-names-the-row ()
+  "The path answer names the file itself, not its directory."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "alpha.txt")
+    (should (equal (tired-path-at-point)
+                   (expand-file-name "alpha.txt" root)))
+    (tired-tests--goto "sub")
+    (should (equal (tired-path-at-point) (expand-file-name "sub" root)))
+    ;; The whole line answers, so a column past the name still names
+    ;; the row.
+    (tired-tests--goto "alpha.txt")
+    (end-of-line)
+    (should (equal (tired-path-at-point)
+                   (expand-file-name "alpha.txt" root)))))
+
+(ert-deftest tired-path-at-point-falls-back-to-the-listing ()
+  "Point below the last row names the directory that the buffer lists."
+  (tired-tests--with-fixture
+    (tired root)
+    (goto-char (point-max))
+    (should (equal (tired-path-at-point) root))))
+
+(ert-deftest tired-with-directory-at-point-binds-the-row-directory ()
+  "The wrapper binds `default-directory' to the row directory."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (should (equal (tired-with-directory-at-point
+                     (lambda () default-directory))
+                   (file-name-as-directory (expand-file-name "sub" root))))))
+
+(ert-deftest tired-run-at-point-runs-the-command-in-the-row-directory ()
+  "A command that reads `default-directory' sees the row directory."
+  (tired-tests--with-fixture
+    (tired root)
+    (tired-tests--goto "sub")
+    (let ((asked nil))
+      (tired-run-at-point (lambda ()
+                            (interactive)
+                            (setq asked default-directory)))
+      (should (equal asked
+                     (file-name-as-directory (expand-file-name "sub" root)))))))
 
 (ert-deftest tired-magit-status-runs-in-the-directory-at-point ()
-  "The command hands Magit the directory of the row at point."
+  "The command runs Magit in the directory of the row at point."
   (tired-tests--with-fixture
     (tired root)
     (tired-tests--goto "sub")
     (let ((asked nil))
       (cl-letf (((symbol-function 'magit-status)
-                 (lambda (directory) (setq asked directory))))
+                 (lambda (&optional directory)
+                   (interactive)
+                   (setq asked (or directory default-directory)))))
         (tired-magit-status))
       (should (equal asked
                      (file-name-as-directory (expand-file-name "sub" root)))))))
