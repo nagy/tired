@@ -1,4 +1,4 @@
-;;; tired-tests-sections.el --- ERT tests for the Tired sections  -*- lexical-binding: t -*-
+;;; tired-sections-test.el --- ERT tests for the Tired sections  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -28,42 +28,42 @@
 
 (require 'seq)
 
-(require 'tired-tests-fixtures)
+(require 'tired-test-helper)
 
 (declare-function treesit-ready-p "treesit" (language &optional quiet))
 
 (ert-deftest tired-hidden-regexps-hide-the-sections-of-a-file ()
   "A hidden file takes its sections out of the listing too."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
     (let ((tired-hidden-regexps '("notes\\.org\\'")))
       (tired-refresh)
-      (should-not (member "notes.org" (tired-tests--names)))
-      (should (null (tired-tests--sections))))))
+      (should-not (member "notes.org" (tired-test--names)))
+      (should (null (tired-test--sections))))))
 
 (ert-deftest tired-collapse-row-expands-file-sections ()
   "A collapsed single file still expands its own sections."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
-    (tired-tests--write "chain/a/b/notes.org" "* Intro\n** Detail\n")
+    (tired-test--write "chain/a/b/notes.org" "* Intro\n** Detail\n")
     (tired root)
-    (should (member "chain/a/b/notes.org" (tired-tests--names)))
-    (tired-tests--goto "chain/a/b/notes.org")
+    (should (member "chain/a/b/notes.org" (tired-test--names)))
+    (tired-test--goto "chain/a/b/notes.org")
     (tired-toggle-subdir)
     (should (tired--expanded-p
              (expand-file-name "chain/a/b/notes.org" root)))
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("Intro" . 1) ("Detail" . 2))))
-    (tired-tests--goto "chain/a/b/notes.org")
+    (tired-test--goto "chain/a/b/notes.org")
     (tired-collapse-file)
-    (should-not (tired-tests--sections))))
+    (should-not (tired-test--sections))))
 
 (ert-deftest tired-file-handler-picks-the-first-matching-rule ()
   "The registry matches the absolute name and the first rule wins."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-file-handlers
            (list (cons (concat (regexp-quote root) "alpha") #'ignore)
                  (cons "\\.txt\\'" #'identity))))
@@ -75,34 +75,34 @@
 
 (ert-deftest tired-expand-org-file-shows-nested-headings ()
   "TAB on an org file row shows its headings with levels as depth."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org"
+  (tired-test--with-fixture
+    (tired-test--write "notes.org"
                         "#+title: Notes\n\n* Intro\nBody.\n\n** Detail\nMore.\n\n* Plans\n- item\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))
     (should (tired--expanded-p (expand-file-name "notes.org" root)))
     (should (string-match-p "1 expanded" (tired--mode-line)))))
 
 (ert-deftest tired-sections-of-an-elisp-file ()
   "An Emacs Lisp file lists its top-level forms in document order."
-  (tired-tests--with-fixture
-    (tired-tests--write "code.el"
+  (tired-test--with-fixture
+    (tired-test--write "code.el"
                         ";;; code\n(declare-function code-elsewhere \"other\")\n(defvar code-x 1)\n\n(defun code-foo (a) a)\n(provide 'code)\n")
     (tired root)
-    (tired-tests--goto "code.el")
+    (tired-test--goto "code.el")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("defvar code-x" . 1)
                      ("defun code-foo" . 1)
                      ("provide code" . 1))))))
 
 (ert-deftest tired-elisp-declare-function-earns-no-row ()
   "A byte-compiler declaration stays out, and its neighbours keep their lines."
-  (tired-tests--with-fixture
-    (tired-tests--write "code.el"
+  (tired-test--with-fixture
+    (tired-test--write "code.el"
                         (concat "(defvar code-x 1)\n\n"
                                 "(declare-function code-other \"other\")\n"
                                 "(declare-function code-third \"other\")\n\n"
@@ -120,8 +120,8 @@
 
 (ert-deftest tired-elisp-section-labels-take-mode-faces ()
   "An Emacs Lisp section label carries the faces of its source text."
-  (tired-tests--with-fixture
-    (tired-tests--write "code.el"
+  (tired-test--with-fixture
+    (tired-test--write "code.el"
                         "(defvar code-x 1)\n(defun code-foo (a) a)\n")
     (let* ((path (expand-file-name "code.el" root))
            (sections (tired-file-sections path))
@@ -142,8 +142,8 @@
 
 (ert-deftest tired-org-section-labels-take-mode-faces ()
   "An org heading label carries the faces of its source text."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org"
+  (tired-test--with-fixture
+    (tired-test--write "notes.org"
                         "* Intro\n* Body **with markup** here\n** TODO Detail :tag:\n")
     (let* ((path (expand-file-name "notes.org" root))
            (sections (tired-file-sections path))
@@ -165,8 +165,8 @@
 
 (ert-deftest tired-section-cell-keeps-only-the-source-faces ()
   "A section cell drops properties that belong to the source text."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* A [[file:x][link]] here\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* A [[file:x][link]] here\n")
     (let* ((path (expand-file-name "notes.org" root))
            (section (car (tired-file-sections path)))
            (label (tired-section-label section))
@@ -183,8 +183,8 @@
 (ert-deftest tired-rust-section-labels-take-mode-faces ()
   "A Rust item label reads like its source line and keeps its faces."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "lib.rs" "pub struct Config { n: u8 }\n\nfn main() {}\n")
+  (tired-test--with-fixture
+    (tired-test--write "lib.rs" "pub struct Config { n: u8 }\n\nfn main() {}\n")
     (let* ((path (expand-file-name "lib.rs" root))
            (sections (tired-file-sections path))
            (structure (car sections))
@@ -210,8 +210,8 @@
 (ert-deftest tired-rust-function-rows-read-fn-and-async-fn ()
   "A Rust function row takes its prefix from the source text."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "lib.rs"
+  (tired-test--with-fixture
+    (tired-test--write "lib.rs"
                         (concat "fn plain() {}\n\n"
                                 "async fn fetch() {}\n\n"
                                 "unsafe fn raw() {}\n\n"
@@ -228,8 +228,8 @@
 (ert-deftest tired-rust-prefix-takes-the-keyword-face-when-none-arrives ()
   "A Rust prefix with no source face takes `font-lock-keyword-face'."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "lib.rs" "fn main() {}\n")
+  (tired-test--with-fixture
+    (tired-test--write "lib.rs" "fn main() {}\n")
     ;; A mode that fontifies nothing leaves every word plain, so the
     ;; handler paints the keyword itself.
     (cl-letf (((symbol-function 'font-lock-ensure) #'ignore))
@@ -246,8 +246,8 @@
   (skip-unless (and (require 'treesit nil t)
                     (treesit-ready-p 'markdown t)
                     (treesit-ready-p 'markdown-inline t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.md" "# Intro\n\n## Detail\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.md" "# Intro\n\n## Detail\n")
     (let* ((path (expand-file-name "notes.md" root))
            (sections (tired-file-sections path))
            (first (get-text-property 0 'face
@@ -262,8 +262,8 @@
 (ert-deftest tired-sections-of-a-python-file ()
   "A Python file lists defs, classes and module constants in depth."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "demo.py"
+  (tired-test--with-fixture
+    (tired-test--write "demo.py"
                         (concat "import os\n\n"
                                 "LIMIT: int = 10\n\n"
                                 "@app.route(\"/\")\n"
@@ -283,9 +283,9 @@
                                 "        def deep(self):\n"
                                 "            pass\n"))
     (tired root)
-    (tired-tests--goto "demo.py")
+    (tired-test--goto "demo.py")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("LIMIT: int" . 1)
                      ("@app.route(\"/\") def top" . 1)
                      ("def inner" . 2)
@@ -298,8 +298,8 @@
 (ert-deftest tired-python-section-depth-caps-the-walk ()
   "A depth cap drops every nested definition below it."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "demo.py"
+  (tired-test--with-fixture
+    (tired-test--write "demo.py"
                         (concat "def top():\n"
                                 "    def inner():\n"
                                 "        pass\n\n"
@@ -320,8 +320,8 @@
 (ert-deftest tired-python-decorated-row-starts-at-its-decorator ()
   "A decorated row reads its decorator and visits the decorator line."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "demo.py"
+  (tired-test--with-fixture
+    (tired-test--write "demo.py"
                         "@app.route(\"/\")\ndef index():\n    pass\n")
     (let* ((path (expand-file-name "demo.py" root))
            (section (car (tired-file-sections path))))
@@ -332,8 +332,8 @@
 (ert-deftest tired-python-section-labels-take-mode-faces ()
   "A Python def row and class row keep the faces of their names."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "demo.py"
+  (tired-test--with-fixture
+    (tired-test--write "demo.py"
                         "class Config:\n    pass\n\ndef top():\n    pass\n")
     (let* ((path (expand-file-name "demo.py" root))
            (sections (tired-file-sections path))
@@ -350,15 +350,15 @@
 
 (ert-deftest tired-python-handler-claims-stub-files ()
   "A .pyi file reaches the Python handler too."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (should (eq (tired-file-handler (expand-file-name "demo.pyi" root))
                 #'tired-file-sections-python))))
 
 (ert-deftest tired-cargo-section-labels-take-mode-faces ()
   "A Cargo row keeps the face of its key and of its version."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "Cargo.toml"
+  (tired-test--with-fixture
+    (tired-test--write "Cargo.toml"
                         "[dependencies]\nanyhow = \"1.0\"\n")
     (let* ((path (expand-file-name "Cargo.toml" root))
            (sections (tired-file-sections path))
@@ -379,8 +379,8 @@
 
 (ert-deftest tired-call-handler-does-not-ask-to-kill-its-buffer ()
   "Parsing a file must not prompt about the discarded temp buffer."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n** Detail\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n** Detail\n")
     (let ((path (expand-file-name "notes.org" root))
           asked)
       (cl-letf* ((noninteractive nil)
@@ -397,13 +397,13 @@
 (ert-deftest tired-sections-of-a-rust-file ()
   "A Rust file lists items and nests the methods of an impl block."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "lib.rs"
+  (tired-test--with-fixture
+    (tired-test--write "lib.rs"
                         "struct Config { n: u8 }\n\nimpl Config {\n    fn new() -> Self { Config { n: 0 } }\n}\n\nfn main() {}\n")
     (tired root)
-    (tired-tests--goto "lib.rs")
+    (tired-test--goto "lib.rs")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("struct Config" . 1)
                      ("impl Config" . 1)
                      ("fn new" . 2)
@@ -412,8 +412,8 @@
 (ert-deftest tired-sections-of-a-go-file ()
   "A Go file lists declarations and indents a method under its type."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "main.go"
+  (tired-test--with-fixture
+    (tired-test--write "main.go"
                         (concat "package main\n\n"
                                 "const Limit = 10\n\n"
                                 "var name = \"demo\"\n\n"
@@ -421,9 +421,9 @@
                                 "func (c *Config) Label() string { return c.Name }\n\n"
                                 "func main() {\n\tvar local = 1\n\t_ = local\n}\n"))
     (tired root)
-    (tired-tests--goto "main.go")
+    (tired-test--goto "main.go")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("const Limit" . 1)
                      ("var name" . 1)
                      ("type Config" . 1)
@@ -433,23 +433,23 @@
 (ert-deftest tired-go-method-declared-before-its-type-stays-flat ()
   "A method that precedes its type takes no indent from it."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "main.go"
+  (tired-test--with-fixture
+    (tired-test--write "main.go"
                         (concat "package main\n\n"
                                 "func (c *Config) Label() string { return c.Name }\n\n"
                                 "type Config struct {}\n"))
     (tired root)
-    (tired-tests--goto "main.go")
+    (tired-test--goto "main.go")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("func (c *Config) Label" . 1)
                      ("type Config" . 1))))))
 
 (ert-deftest tired-go-section-labels-take-mode-faces ()
   "A Go label takes its keyword from the source text."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "main.go" "package main\n\nfunc main() {}\n")
+  (tired-test--with-fixture
+    (tired-test--write "main.go" "package main\n\nfunc main() {}\n")
     (let* ((path (expand-file-name "main.go" root))
            (label (tired-section-label
                    (car (tired-file-sections path)))))
@@ -462,8 +462,8 @@
 (ert-deftest tired-rust-constant-and-static-rows-name-their-kind ()
   "A Rust const row and a static row read apart."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'rust t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "lib.rs"
+  (tired-test--with-fixture
+    (tired-test--write "lib.rs"
                         "const LIMIT: u8 = 3;\n\nstatic NAME: &str = \"x\";\n")
     (let* ((path (expand-file-name "lib.rs" root))
            (sections (tired-file-sections path)))
@@ -478,20 +478,20 @@
   (skip-unless (and (require 'treesit nil t)
                     (treesit-ready-p 'markdown t)
                     (treesit-ready-p 'markdown-inline t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.md"
+  (tired-test--with-fixture
+    (tired-test--write "notes.md"
                         "# Intro\n\n## Detail\n\n```sh\n# not a heading\n```\n\nClosing\n=======\n")
     (tired root)
-    (tired-tests--goto "notes.md")
+    (tired-test--goto "notes.md")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Closing" . 1))))))
 
 (ert-deftest tired-sections-of-a-cargo-manifest ()
   "A Cargo manifest lists the four tables and their entries one level in."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "Cargo.toml"
+  (tired-test--with-fixture
+    (tired-test--write "Cargo.toml"
                         (concat "[package]\nname = \"demo\"\n\n"
                                 "[features]\ndefault = [\"cache\", \"svg\"]\n"
                                 "cache = [\"dep:jixel\"]\n\n"
@@ -503,9 +503,9 @@
                                 "[patch.crates-io]\ncc = \"1.1\"\n\n"
                                 "[target.'cfg(unix)'.dependencies]\nfoo = \"2.0\"\n"))
     (tired root)
-    (tired-tests--goto "Cargo.toml")
+    (tired-test--goto "Cargo.toml")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("features (2)" . 1)
                      ("default  \u2192 cache, svg" . 2)
                      ("cache    \u2192 dep:jixel" . 2)
@@ -525,15 +525,15 @@
 (ert-deftest tired-cargo-key-column-covers-every-table ()
   "Cargo rows share one key column across the four tables."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
-  (tired-tests--with-fixture
-    (tired-tests--write
+  (tired-test--with-fixture
+    (tired-test--write
      "Cargo.toml"
      (concat "[features]\nshort = [\"a\"]\n\n"
              "[dependencies]\na-much-longer-name = \"1.0\"\n"))
     (tired root)
-    (tired-tests--goto "Cargo.toml")
+    (tired-test--goto "Cargo.toml")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("features (1)" . 1)
                      ("short              \u2192 a" . 2)
                      ("dependencies (1)" . 1)
@@ -542,17 +542,17 @@
 (ert-deftest tired-cargo-version-column-aligns-badges ()
   "Cargo dependency badges start in one version column."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
-  (tired-tests--with-fixture
-    (tired-tests--write
+  (tired-test--with-fixture
+    (tired-test--write
      "Cargo.toml"
      (concat "[dependencies]\n"
              "a = { version = \"1.0\", optional = true }\n"
              "a-longer = { version = \"0.25.10\", optional = true, "
              "default-features = false }\n"))
     (tired root)
-    (tired-tests--goto "Cargo.toml")
+    (tired-test--goto "Cargo.toml")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("dependencies (2)" . 1)
                      ("a        1.0     [optional]" . 2)
                      ("a-longer 0.25.10 [optional] [no-default]" . 2))))))
@@ -560,34 +560,34 @@
 (ert-deftest tired-cargo-table-folds-its-entries ()
   "Folding a Cargo table section hides the entries below it."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'toml t)))
-  (tired-tests--with-fixture
-    (tired-tests--write "Cargo.toml"
+  (tired-test--with-fixture
+    (tired-test--write "Cargo.toml"
                         "[dependencies]\nanyhow = \"1.0\"\nserde = \"1.0\"\n")
     (tired root)
-    (tired-tests--goto "Cargo.toml")
+    (tired-test--goto "Cargo.toml")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("dependencies (2)" . 1)
                      ("anyhow 1.0" . 2)
                      ("serde  1.0" . 2))))
-    (tired-tests--goto-section "dependencies (2)")
+    (tired-test--goto-section "dependencies (2)")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("dependencies (2)" . 1))))))
 
 (ert-deftest tired-sections-of-a-sqlite-database ()
   "A SQLite file lists its tables and columns with a table action."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((path (expand-file-name "data.sqlite" root)))
       (let ((db (sqlite-open path nil)))
         (sqlite-execute db "CREATE TABLE logs (msg TEXT)")
         (sqlite-execute db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
         (sqlite-close db))
       (tired root)
-      (tired-tests--goto "data.sqlite")
+      (tired-test--goto "data.sqlite")
       (tired-toggle-subdir)
-      (should (equal (tired-tests--sections)
+      (should (equal (tired-test--sections)
                      '(("logs" . 1)
                        ("msg TEXT" . 2)
                        ("users" . 1)
@@ -600,7 +600,7 @@
 (ert-deftest tired-sqlite-table-section-counts-its-rows ()
   "A table section carries the number of rows that it holds."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((path (expand-file-name "data.sqlite" root)))
       (let ((db (sqlite-open path nil)))
         (sqlite-execute db "CREATE TABLE logs (msg TEXT)")
@@ -608,7 +608,7 @@
         (sqlite-execute db "INSERT INTO users VALUES (1, 'ann'), (2, 'bob')")
         (sqlite-close db))
       (tired root)
-      (tired-tests--goto "data.sqlite")
+      (tired-test--goto "data.sqlite")
       (tired-toggle-subdir)
       (should (equal (mapcar (lambda (section)
                                (cons (tired-section-label section)
@@ -617,11 +617,11 @@
                                            (eq (tired-section-kind section) 'table))
                                          (tired-file-sections path)))
                      '(("logs" . 0) ("users" . 2))))
-      (tired-tests--goto-section "users")
+      (tired-test--goto-section "users")
       (should (equal "2" (tired--elements-cell (tired--row-at-point))))
-      (tired-tests--goto-section "logs")
+      (tired-test--goto-section "logs")
       (should (equal "0" (tired--elements-cell (tired--row-at-point))))
-      (tired-tests--goto-section "name TEXT")
+      (tired-test--goto-section "name TEXT")
       (should (equal "" (tired--elements-cell (tired--row-at-point)))))))
 
 (ert-deftest tired-sqlite-column-labels-take-a-face-per-token ()
@@ -654,15 +654,15 @@ mirrors each face into `font-lock-face'."
 (ert-deftest tired-sqlite-table-action-opens-sqlite-mode ()
   "RET on a table section opens the database at that table."
   (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((path (expand-file-name "data.sqlite" root)))
       (let ((db (sqlite-open path nil)))
         (sqlite-execute db "CREATE TABLE users (id INTEGER)")
         (sqlite-close db))
       (tired root)
-      (tired-tests--goto "data.sqlite")
+      (tired-test--goto "data.sqlite")
       (tired-toggle-subdir)
-      (tired-tests--goto-section "users")
+      (tired-test--goto-section "users")
       (tired-find-file)
       (let ((buffer (get-buffer "*SQLite data.sqlite*")))
         (should buffer)
@@ -673,19 +673,19 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-sqlite-handler-rejects-a-non-database ()
   "A .db file that holds no database yields no sections."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (skip-unless (and (fboundp 'sqlite-available-p) (sqlite-available-p)))
-    (tired-tests--write "junk.db" "not a database")
+    (tired-test--write "junk.db" "not a database")
     (should-not (tired-file-sections (expand-file-name "junk.db" root)))))
 
 (ert-deftest tired-find-file-section-visits-its-line ()
   "RET on a section row visits the file at the section line."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n\n** Detail\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Detail")
+    (tired-test--goto-section "Detail")
     (tired-find-file)
     (should (equal (buffer-file-name)
                    (expand-file-name "notes.org" root)))
@@ -695,13 +695,13 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-find-file-org-heading-narrows-to-its-subtree ()
   "RET on an org heading narrows the visited buffer to that subtree."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org"
+  (tired-test--with-fixture
+    (tired-test--write "notes.org"
                         "* Intro\nintro body\n** Detail\ndetail body\n* Plans\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Detail")
+    (tired-test--goto-section "Detail")
     (tired-find-file)
     (should (buffer-narrowed-p))
     (let ((text (buffer-substring-no-properties
@@ -712,13 +712,13 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-find-file-org-heading-stays-wide-when-option-off ()
   "An org heading opens wide when `tired-org-narrow-on-open' is nil."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\nintro body\n* Plans\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\nintro body\n* Plans\n")
     (let ((tired-org-narrow-on-open nil))
       (tired root)
-      (tired-tests--goto "notes.org")
+      (tired-test--goto "notes.org")
       (tired-toggle-subdir)
-      (tired-tests--goto-section "Plans")
+      (tired-test--goto-section "Plans")
       (tired-find-file)
       (should-not (buffer-narrowed-p))
       (should (string-match-p
@@ -727,34 +727,34 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-find-file-non-org-section-stays-wide ()
   "A section of a non-org file opens without narrowing."
-  (tired-tests--with-fixture
-    (tired-tests--write "code.el" "(defun alpha ())\n(defun beta ())\n")
+  (tired-test--with-fixture
+    (tired-test--write "code.el" "(defun alpha ())\n(defun beta ())\n")
     (tired root)
-    (tired-tests--goto "code.el")
+    (tired-test--goto "code.el")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "defun beta")
+    (tired-test--goto-section "defun beta")
     (tired-find-file)
     (should-not (buffer-narrowed-p))))
 
 (ert-deftest tired-section-rows-are-not-selectable ()
   "A selection command refuses a section row."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Intro")
+    (tired-test--goto-section "Intro")
     (should-error (tired-select-toggle) :type 'user-error)
     (should-not tired--selection)))
 
 (ert-deftest tired-path-commands-use-the-file-of-a-section ()
   "A section stands for its file, so the path commands reach that file."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Intro")
+    (tired-test--goto-section "Intro")
     (let ((row (tired--row-at-point))
           (path (expand-file-name "notes.org" root)))
       (should (tired-section-p row))
@@ -764,27 +764,27 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-fold-hides-the-child-sections ()
   "TAB on a section row hides its children and TAB again shows them."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Intro")
+    (tired-test--goto-section "Intro")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("Intro" . 1) ("Plans" . 1))))
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("Intro" . 1) ("Detail" . 2) ("Plans" . 1))))))
 
 (ert-deftest tired-fold-keeps-point-at-the-label ()
   "A fold keeps point at the start of the section label it acted on."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n\n** Detail\n\n* Plans\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Detail")
+    (tired-test--goto-section "Detail")
     (tired-next-line 0)
     (should (= 4 (current-column)))
     (tired-toggle-subdir)
@@ -793,28 +793,28 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-collapse-file-hides-the-sections ()
   "E collapses the sections that TAB expanded."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (should (tired-tests--sections))
-    (tired-tests--goto "notes.org")
+    (should (tired-test--sections))
+    (tired-test--goto "notes.org")
     (tired-collapse-file)
-    (should-not (tired-tests--sections))))
+    (should-not (tired-test--sections))))
 
 (ert-deftest tired-expand-file-rejects-a-file-without-handler ()
   "A file that no rule claims reports the missing handler."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (should-error (tired-expand-file) :type 'user-error)
     (should-not (tired--expanded-p (expand-file-name "alpha.txt" root)))))
 
 (ert-deftest tired-section-cache-follows-modification-time ()
   "The handler runs once per modification time, not once per redraw."
-  (tired-tests--with-fixture
-    (tired-tests--write "alpha.txt" "abc")
+  (tired-test--with-fixture
+    (tired-test--write "alpha.txt" "abc")
     (let ((calls 0)
           (path (expand-file-name "alpha.txt" root)))
       (let ((tired-file-handlers
@@ -834,76 +834,76 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-broken-handler-keeps-the-listing ()
   "A handler that signals an error yields no sections and no crash."
-  (tired-tests--with-fixture
-    (tired-tests--write "alpha.txt" "abc")
+  (tired-test--with-fixture
+    (tired-test--write "alpha.txt" "abc")
     (let ((tired-file-handlers
-           (list (cons "\\.txt\\'" (lambda (_path) (error "boom"))))))
+           (list (cons "\\.txt\\'" (lambda (_path) (error "Boom"))))))
       (tired root)
-      (tired-tests--goto "alpha.txt")
+      (tired-test--goto "alpha.txt")
       (should-error (tired-expand-file) :type 'user-error)
-      (should (member "alpha.txt" (tired-tests--names))))))
+      (should (member "alpha.txt" (tired-test--names))))))
 
 (ert-deftest tired-refresh-drops-a-vanished-expanded-file ()
   "Refresh forgets an expanded file that a command removed."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
     (let ((path (expand-file-name "notes.org" root)))
       (delete-file path)
       (tired-refresh)
       (should-not (tired--expanded-p path))
-      (should-not (tired-tests--sections)))))
+      (should-not (tired-test--sections)))))
 
 (ert-deftest tired-watch-paths-cover-expanded-files ()
   "An expanded file gets its own notification watch."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t))
-      (tired-tests--write "notes.org" "* Intro\n")
+      (tired-test--write "notes.org" "* Intro\n")
       (tired root)
-      (tired-tests--goto "notes.org")
+      (tired-test--goto "notes.org")
       (tired-toggle-subdir)
       (should (member (expand-file-name "notes.org" root)
                       (tired--watch-paths))))))
 
 (ert-deftest tired-redraw-keeps-point-on-a-section-row ()
   "A redraw returns point to the same section, not to the file row."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n\n** Detail\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Detail")
+    (tired-test--goto-section "Detail")
     (tired--sort-by-column 'size)
     (should (equal (tired-section-label (tired--row-at-point)) "Detail"))))
 
 (ert-deftest tired-filter-keeps-the-sections-of-a-visible-file ()
   "A filter on the file name keeps that file and all of its sections."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n\n** Detail\n")
-    (tired-tests--write "other.org" "* Other\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n\n** Detail\n")
+    (tired-test--write "other.org" "* Other\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto "other.org")
+    (tired-test--goto "other.org")
     (tired-toggle-subdir)
     (tired--apply-filter "notes")
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("Intro" . 1) ("Detail" . 2))))
-    (should (equal (tired-tests--names) '("notes.org")))))
+    (should (equal (tired-test--names) '("notes.org")))))
 
 (ert-deftest tired-sections-of-a-tar-file ()
   "A tar archive lists its members and indents a nested member."
-  (tired-tests--with-fixture
-    (tired-tests--tar-write "bundle.tar"
+  (tired-test--with-fixture
+    (tired-test--tar-write "bundle.tar"
                             '("docs" "" ?5)
                             '("docs/readme.md" "hello\n")
                             '("main.go" "package main\n"))
     (tired root)
-    (tired-tests--goto "bundle.tar")
+    (tired-test--goto "bundle.tar")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("docs/" . 1) ("readme.md" . 2) ("main.go" . 1))))
     (should (eq (tired-section-kind
                  (car (tired-file-sections
@@ -913,38 +913,38 @@ mirrors each face into `font-lock-face'."
 (ert-deftest tired-tar-handler-reads-a-gnu-long-name ()
   "The handler follows a GNU long-name record."
   (let ((name (concat (make-string 120 ?n) ".txt")))
-    (tired-tests--with-fixture
-      (tired-tests--tar-write "long.tar"
+    (tired-test--with-fixture
+      (tired-test--tar-write "long.tar"
                               (list "././@LongLink" (concat name "\0") ?L)
                               (list (substring name 0 99) "x\n"))
       (tired root)
-      (tired-tests--goto "long.tar")
+      (tired-test--goto "long.tar")
       (tired-toggle-subdir)
-      (should (equal (tired-tests--sections) (list (cons name 1)))))))
+      (should (equal (tired-test--sections) (list (cons name 1)))))))
 
 (ert-deftest tired-tar-handler-reads-a-pax-name ()
   "The handler follows a pax extended header record."
   (let ((name (concat (make-string 120 ?p) ".txt")))
-    (tired-tests--with-fixture
-      (tired-tests--tar-write "pax.tar"
+    (tired-test--with-fixture
+      (tired-test--tar-write "pax.tar"
                               (list "PaxHeaders/x"
-                                    (tired-tests--pax-record "path" name)
+                                    (tired-test--pax-record "path" name)
                                     ?x)
                               (list (substring name 0 99) "y\n"))
       (tired root)
-      (tired-tests--goto "pax.tar")
+      (tired-test--goto "pax.tar")
       (tired-toggle-subdir)
-      (should (equal (tired-tests--sections) (list (cons name 1)))))))
+      (should (equal (tired-test--sections) (list (cons name 1)))))))
 
 (ert-deftest tired-tar-handler-reads-a-compressed-archive ()
   "A `.tar.gz' archive reaches the same parser as a plain one."
   (skip-unless (executable-find "gzip"))
-  (tired-tests--with-fixture
-    (tired-tests--tar-write "bundle.tar.gz" '("a.txt" "a\n"))
+  (tired-test--with-fixture
+    (tired-test--tar-write "bundle.tar.gz" '("a.txt" "a\n"))
     (tired root)
-    (tired-tests--goto "bundle.tar.gz")
+    (tired-test--goto "bundle.tar.gz")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections) '(("a.txt" . 1))))))
+    (should (equal (tired-test--sections) '(("a.txt" . 1))))))
 
 (ert-deftest tired-tar-handler-reads-a-zstd-archive ()
   "A `.tar.zst' archive reaches the same parser as a plain one."
@@ -953,27 +953,27 @@ mirrors each face into `font-lock-face'."
                     (seq-find (lambda (entry)
                                 (equal (aref entry 0) "\\.zst\\'"))
                               jka-compr-compression-info-list)))
-  (tired-tests--with-fixture
-    (tired-tests--tar-write "bundle.tar.zst" '("a.txt" "a\n"))
+  (tired-test--with-fixture
+    (tired-test--tar-write "bundle.tar.zst" '("a.txt" "a\n"))
     (tired root)
-    (tired-tests--goto "bundle.tar.zst")
+    (tired-test--goto "bundle.tar.zst")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections) '(("a.txt" . 1))))))
+    (should (equal (tired-test--sections) '(("a.txt" . 1))))))
 
 (ert-deftest tired-tar-extract-writes-the-member ()
   "The action of a member row writes that member to a temporary file."
-  (tired-tests--with-fixture
-    (tired-tests--tar-write "bundle.tar" '("ok.txt" "payload\n"))
+  (tired-test--with-fixture
+    (tired-test--tar-write "bundle.tar" '("ok.txt" "payload\n"))
     (let ((file (tired--tar-extract (expand-file-name "bundle.tar" root)
                                     "ok.txt")))
       (unwind-protect
-          (should (equal (tired-tests--contents file) "payload\n"))
+          (should (equal (tired-test--contents file) "payload\n"))
         (delete-directory (file-name-directory file) t)))))
 
 (ert-deftest tired-tar-extract-refuses-a-directory ()
   "A directory member has no bytes to write."
-  (tired-tests--with-fixture
-    (tired-tests--tar-write "bundle.tar" '("docs" "" ?5))
+  (tired-test--with-fixture
+    (tired-test--tar-write "bundle.tar" '("docs" "" ?5))
     (should-error (tired--tar-extract (expand-file-name "bundle.tar" root)
                                       "docs")
                   :type 'user-error)))
@@ -987,8 +987,8 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-sections-of-a-file-above-the-size-limit-stay-out ()
   "A file above `tired-section-file-size-limit' keeps a plain row."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (let ((path (expand-file-name "notes.org" root))
           (tired-section-file-size-limit 1))
       (should-not (tired-file-sections path))
@@ -997,8 +997,8 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-sections-of-a-kicad-schematic ()
   "A KiCad schematic lists one row per placed unit and skips a virtual symbol."
-  (tired-tests--with-fixture
-    (tired-tests--write
+  (tired-test--with-fixture
+    (tired-test--write
      "board.kicad_sch"
      (concat "(kicad_sch\n"
              "\t(version 20260306)\n"
@@ -1037,9 +1037,9 @@ mirrors each face into `font-lock-face'."
              "\t)\n"
              ")\n"))
     (tired root)
-    (tired-tests--goto "board.kicad_sch")
+    (tired-test--goto "board.kicad_sch")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("R1 10k   Resistor_SMD:R_0603" . 1)
                      ("U1 LM324" . 1)
                      ("U1 LM324" . 1))))
@@ -1050,8 +1050,8 @@ mirrors each face into `font-lock-face'."
 
 (ert-deftest tired-kicad-scan-keeps-a-paren-inside-a-value ()
   "A parenthesis in a string or a bar leaves the depth of the scan alone."
-  (tired-tests--with-fixture
-    (tired-tests--write
+  (tired-test--with-fixture
+    (tired-test--write
      "divider.kicad_sch"
      (concat "(kicad_sch\n"
              "\t(version 20260306)\n"
@@ -1063,11 +1063,11 @@ mirrors each face into `font-lock-face'."
              "\t)\n"
              ")\n"))
     (tired root)
-    (tired-tests--goto "divider.kicad_sch")
+    (tired-test--goto "divider.kicad_sch")
     (tired-toggle-subdir)
-    (should (equal (tired-tests--sections)
+    (should (equal (tired-test--sections)
                    '(("R1 divider (1/2)" . 1))))))
 
-(provide 'tired-tests-sections)
+(provide 'tired-sections-test)
 
-;;; tired-tests-sections.el ends here
+;;; tired-sections-test.el ends here

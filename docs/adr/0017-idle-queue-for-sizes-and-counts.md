@@ -70,9 +70,9 @@ can.
 ## Consequences
 
 One queue serves both kinds, and a new kind costs a step function, a
-finish function and a data struct.  `tired-tests--with-fixture` binds a
+finish function and a data struct.  `tired-test--with-fixture` binds a
 private queue and stubs both schedulers, and a test flushes the queue by
-hand with `tired-tests--flush-sizes`.
+hand with `tired-test--flush-sizes`.
 
 `tired-directory-size-budget` limits one idle pass, not one redraw.  A
 zero budget leaves the job in the queue and a nil budget walks every

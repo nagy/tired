@@ -1,4 +1,4 @@
-;;; tired-tests-evil.el --- ERT tests for the Tired evil bindings  -*- lexical-binding: t -*-
+;;; tired-evil-test.el --- ERT tests for the Tired evil bindings  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -25,7 +25,7 @@
 
 (require 'ert)
 
-(require 'tired-tests-fixtures)
+(require 'tired-test-helper)
 
 (declare-function evil-local-mode "evil" (&optional arg))
 
@@ -39,7 +39,7 @@
   "The global evil mode gives a Tired buffer dired-style keys."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (evil-local-mode 1)
     (unwind-protect
@@ -123,7 +123,7 @@
   "A visual range reaches delete, and the text objects stay."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (evil-local-mode 1)
     (unwind-protect
@@ -148,7 +148,7 @@
   "A Tired buffer that appears after the mode is on takes the keys."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (evil-local-mode 1)
     (unwind-protect
@@ -163,7 +163,7 @@
 (ert-deftest tired-evil-bindings-arrive-with-the-evil-library ()
   "Loading Tired and then evil gives RET back to the Tired command."
   (skip-unless (require 'evil nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (evil-local-mode 1)
     (unwind-protect
@@ -179,14 +179,14 @@
   "The evil line motions stop on the name of the row."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (evil-local-mode 1)
     (unwind-protect
         (progn
           (tired-evil-mode 1)
           (tired-insert-subdir)
-          (tired-tests--goto "sub")
+          (tired-test--goto "sub")
           (call-interactively (key-binding (key-parse "j")))
           (should (equal (tired-entry-name (tired--row-at-point))
                          "deep/leaf.txt"))
@@ -204,8 +204,8 @@ The normal state map binds every row key ahead of the edit key map,
 so only the insert state carries a typed character to a name."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
-    (tired-tests--with-trash
+  (tired-test--with-fixture
+    (tired-test--with-trash
       (tired root)
       (evil-local-mode 1)
       (unwind-protect
@@ -214,7 +214,7 @@ so only the insert state carries a typed character to a name."
             (should (eq (bound-and-true-p evil-state) 'normal))
             (tired-edit-names)
             (should (eq evil-state 'insert))
-            (tired-tests--goto "alpha.txt")
+            (tired-test--goto "alpha.txt")
             (let ((region (tired--rename-region)))
               (delete-region (car region) (cdr region))
               (goto-char (car region))
@@ -228,12 +228,12 @@ so only the insert state carries a typed character to a name."
         (evil-local-mode -1)))))
 
 (ert-deftest tired-evil-name-edit-survives-a-late-enable ()
-  "Evil started during an edit enters the insert state at once, and a
-buffer that leaves the local mode keeps no stale hook."
+  "Evil started during an edit enters the insert state at once.
+A buffer that leaves the local mode keeps no stale hook."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
-    (tired-tests--with-trash
+  (tired-test--with-fixture
+    (tired-test--with-trash
       (tired root)
       (evil-local-mode 1)
       (unwind-protect
@@ -259,25 +259,25 @@ The line motions carry the `:keep-visual' property, so evil leaves the
 range unexpanded around them and `V j j' covers three rows."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (evil-local-mode 1)
     (unwind-protect
         (progn
           (tired-evil-mode 1)
-          (tired-tests--goto ".hidden")
+          (tired-test--goto ".hidden")
           (execute-kbd-macro (kbd "Vjj"))
           (should (eq evil-state 'visual))
-          (should (equal (tired-tests--target-names)
+          (should (equal (tired-test--target-names)
                          '(".hidden" "link" "alpha.txt")))
           (execute-kbd-macro (kbd "k"))
-          (should (equal (tired-tests--target-names)
+          (should (equal (tired-test--target-names)
                          '(".hidden" "link")))
           (execute-kbd-macro (kbd "<escape>"))
           (should (eq evil-state 'normal))
-          (tired-tests--goto ".hidden")
+          (tired-test--goto ".hidden")
           (execute-kbd-macro (kbd "vjj"))
-          (should (equal (tired-tests--target-names)
+          (should (equal (tired-test--target-names)
                          '(".hidden" "link" "alpha.txt"))))
       (evil-normal-state)
       (tired-evil-mode -1)
@@ -291,14 +291,14 @@ commands."
   (skip-unless (require 'evil nil t))
   (require 'tired-evil)
   (should (memq 'evil-force-normal-state tired-filter-quit-commands))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "beta")
     (let ((this-command 'evil-force-normal-state))
       (tired--filter-quit-on-command))
     (should-not tired--filter)
-    (should (= 5 (length (tired-tests--names))))))
+    (should (= 5 (length (tired-test--names))))))
 
-(provide 'tired-tests-evil)
+(provide 'tired-evil-test)
 
-;;; tired-tests-evil.el ends here
+;;; tired-evil-test.el ends here

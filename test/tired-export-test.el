@@ -1,4 +1,4 @@
-;;; tired-tests-export.el --- ERT tests for the Tired export commands  -*- lexical-binding: t -*-
+;;; tired-export-test.el --- ERT tests for the Tired export commands  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -29,11 +29,11 @@
 
 (require 'seq)
 
-(require 'tired-tests-fixtures)
+(require 'tired-test-helper)
 
 (ert-deftest tired-export-csv-writes-a-header-and-rows ()
   "The CSV export carries a header and one row per visible entry."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root))
           count)
       (with-current-buffer tired
@@ -61,11 +61,11 @@
 
 (ert-deftest tired-export-text-prints-relative-paths ()
   "The text export replaces indentation with the relative path."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root))
           count)
       (with-current-buffer tired
-        (tired-tests--goto "sub")
+        (tired-test--goto "sub")
         (tired-insert-subdir)
         (setq count (length (tired--visible-entries))))
       (let ((buffer (with-current-buffer tired (tired-export-text))))
@@ -83,7 +83,7 @@
 
 (ert-deftest tired-export-json-matches-the-rclone-shape ()
   "The JSON export holds the six rclone lsjson keys per object."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root))
           objects)
       (let ((buffer (with-current-buffer tired (tired-export-json))))
@@ -117,12 +117,12 @@
 
 (ert-deftest tired-export-follows-the-selection ()
   "A selection limits the export to the selected entries."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root)))
       (with-current-buffer tired
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-select-toggle)
-        (tired-tests--goto "beta.txt")
+        (tired-test--goto "beta.txt")
         (tired-select-toggle))
       (let ((buffer (with-current-buffer tired (tired-export-csv))))
         (with-current-buffer buffer
@@ -135,9 +135,9 @@
 
 (ert-deftest tired-export-follows-the-region ()
   "An active region limits the export without a selection."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
     (let ((buffer (tired-export-csv)))
       (with-current-buffer buffer
         (let ((lines (split-string (buffer-string) "\n" t)))
@@ -149,15 +149,15 @@
 
 (ert-deftest tired-export-skips-section-rows ()
   "A section row never reaches an export."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* One\n** Two\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* One\n** Two\n")
     (let ((tired (tired-noselect root))
           count)
       (with-current-buffer tired
-        (tired-tests--goto "notes.org")
+        (tired-test--goto "notes.org")
         (tired-expand-file)
         (setq count (length (tired--visible-entries)))
-        (should (tired-tests--sections)))
+        (should (tired-test--sections)))
       (let ((buffer (with-current-buffer tired (tired-export-csv))))
         (with-current-buffer buffer
           (let ((lines (split-string (buffer-string) "\n" t)))
@@ -168,7 +168,7 @@
 
 (ert-deftest tired-export-whole-view-reuses-a-buffer-per-format ()
   "A second whole-view export replaces the contents of one buffer."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root))
           first
           second)
@@ -179,13 +179,13 @@
 
 (ert-deftest tired-export-selection-gets-a-fresh-buffer ()
   "A partial export never reuses a whole-view buffer."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root))
           whole
           partial)
       (setq whole (with-current-buffer tired (tired-export-csv)))
       (with-current-buffer tired
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-select-toggle))
       (setq partial (with-current-buffer tired (tired-export-csv)))
       (should-not (eq whole partial))
@@ -193,7 +193,7 @@
 
 (ert-deftest tired-export-commands-remap-their-major-modes ()
   "A key that runs a major mode reaches the matching export."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq (command-remapping 'csv-mode) #'tired-export-csv))
     (should (eq (command-remapping 'text-mode) #'tired-export-text))
@@ -201,12 +201,12 @@
 
 (ert-deftest tired-export-relative-path-reaches-an-inserted-entry ()
   "The CSV path of an inserted entry keeps its subdirectory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired (tired-noselect root)))
       (with-current-buffer tired
-        (tired-tests--goto "sub")
+        (tired-test--goto "sub")
         (tired-insert-subdir)
-        (tired-tests--goto "inner.txt")
+        (tired-test--goto "inner.txt")
         (tired-select-toggle))
       (let ((buffer (with-current-buffer tired (tired-export-csv))))
         (with-current-buffer buffer
@@ -216,6 +216,6 @@
                                    (cdr lines))
                            '("sub/inner.txt")))))))))
 
-(provide 'tired-tests-export)
+(provide 'tired-export-test)
 
-;;; tired-tests-export.el ends here
+;;; tired-export-test.el ends here

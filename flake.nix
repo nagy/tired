@@ -47,24 +47,27 @@
           }
           ''
             export HOME=$TMPDIR
-            for file in tired.el tired-core.el tired-sections.el \
-              tired-elements.el tired-file-ops.el tired-export.el \
-              tired-evil.el; do
-              cp "$src/$file" .
-            done
+            # The lint surface spans the libraries and the `test/' tree, so
+            # copy the whole source rather than a file list.
+            cp -r "$src"/. .
 
             # package-lint exits non-zero on any finding.  The package has
             # no external dependencies, so it needs no package-alist
-            # stubs.  It only accepts the main file, so tired-evil.el
-            # goes through checkdoc alone.
-            emacs --batch -l package-lint -f package-lint-batch-and-exit tired.el
+            # stubs.  The test files carry no `Package-Requires' header,
+            # so `package-lint-main-file' names the file that supplies
+            # one, and the test files join the run.  tired-evil.el stays
+            # out, because a secondary file earns a header warning alone.
+            emacs --batch -l package-lint \
+              --eval '(setq package-lint-main-file "tired.el")' \
+              -f package-lint-batch-and-exit \
+              tired.el test/*.el
 
             # checkdoc and relint exit 0 even when they report
-            # problems; gate on output.  The ERT files stay out: a test
-            # docstring is a sentence, not a checkdoc argument list.
+            # problems; gate on output.  The test files join the gate so
+            # they keep the header, docstring and prefix rules.
             for file in tired.el tired-core.el tired-sections.el \
               tired-elements.el tired-file-ops.el tired-export.el \
-              tired-evil.el; do
+              tired-evil.el test/*.el; do
               doc=$(emacs --batch -l checkdoc \
                 --eval "(checkdoc-file \"$file\")" 2>&1)
               if [ -n "$doc" ]; then
@@ -77,7 +80,7 @@
             # per run.  A regexp finding prints a line for each problem.
             for file in tired.el tired-core.el tired-sections.el \
               tired-elements.el tired-file-ops.el tired-export.el \
-              tired-evil.el; do
+              tired-evil.el test/*.el; do
               report=$(emacs --batch -l relint \
                 --eval "(relint-file \"$file\")" 2>&1)
               if [ -n "$report" ]; then
@@ -179,9 +182,23 @@
                 ${pkgs.lib.optionalString (treesitGrammars != null) ''
                   export TREESIT_EXTRA_LOAD_PATH="${treesitGrammars}/lib"
                 ''}
-                emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-                  -f batch-byte-compile *.el
-                emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
+                # Byte-compile the libraries and the suites together, so a
+                # test file keeps the same warning-free bar as its library.
+                emacs --batch -L . -L test \
+                  --eval '(setq byte-compile-error-on-warn t)' \
+                  -f batch-byte-compile *.el test/*.el
+                # Glob the suites instead of listing them: a new
+                # `test/<unit>-test.el' needs no flake edit.  failglob makes
+                # an empty glob a shell error, so the `||' guard fires even
+                # without `set -e'.  The unquoted $test_args is intentional:
+                # the words split back into `-l <file>' pairs, and test file
+                # names hold no spaces.
+                shopt -s failglob
+                test_args=$(printf -- "-l %s " test/*-test.el) || { echo 'no tests matched test/*-test.el' >&2; exit 1; }
+                shopt -u failglob
+                emacs --batch -L . -L test \
+                  $test_args \
+                  -f ert-run-tests-batch-and-exit
                 runHook postCheck
               '';
 

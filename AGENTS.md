@@ -33,12 +33,11 @@ reasons.
 - `tired-export.el` — the CSV, text and `rclone lsjson` exports and
   their read-only buffers
 - `tired-evil.el` — optional evil bindings
-- `tired-tests.el` — loads the suites
-- `tired-tests-fixtures.el` — shared fixtures, helpers and setup
-- `tired-tests-core.el`, `tired-tests-sections.el`,
-  `tired-tests-elements.el`, `tired-tests-file-ops.el`,
-  `tired-tests-export.el`, `tired-tests-evil.el` — one suite per
-  library
+- `test/` — the ERT suites.  `tired-test-helper.el` holds the shared
+  fixtures, helpers and setup, and `tired-core-test.el`,
+  `tired-sections-test.el`, `tired-elements-test.el`,
+  `tired-file-ops-test.el`, `tired-export-test.el` and
+  `tired-evil-test.el` give one suite per library
 - `flake.nix`, `README.org`, `GLOSSARY.md`, `docs/adr/`, `LICENSE`
 
 Each library keeps a "Design notes" list in its `;;; Commentary:`.  Read
@@ -52,9 +51,11 @@ nix build                       # package
 nix flake check                 # package + ERT suite + lint check
 nix develop                     # Emacs with evil, git and treefmt
 nix fmt                         # nixfmt only
-emacs --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
-  -f batch-byte-compile *.el
-emacs --batch -L . -l tired-tests.el -f ert-run-tests-batch-and-exit
+emacs --batch -L . -L test --eval '(setq byte-compile-error-on-warn t)' \
+  -f batch-byte-compile *.el test/*.el
+emacs --batch -L . -L test \
+  $(printf -- "-l %s " test/*-test.el) \
+  -f ert-run-tests-batch-and-exit
 ```
 
 Run `nix flake check` before a commit.  A new file must be `git add`-ed
@@ -70,9 +71,11 @@ first, because the flake sources take git-tracked files alone.
   and TOML grammars, and `checkPhase` exports
   `TREESIT_EXTRA_LOAD_PATH` and puts `zstd` on the path for the archive
   fixtures.  A missing grammar skips its test instead of failing.
-- `checks.lint` is `mkLint`: `package-lint` on `tired.el`, `checkdoc` on
-  the seven libraries, and `relint` on the same seven.  `checkdoc` and
-  `relint` exit 0 while they report, so the check gates on output.
+- `checks.lint` is `mkLint`: `package-lint` on `tired.el` and
+  `test/*.el`, `checkdoc` on the seven libraries and `test/*.el`, and
+  `relint` on the same set.  `checkdoc` and `relint` exit 0 while they
+  report, so the check gates on output.  `package-lint-main-file`
+  names `tired.el`, because no test file carries a header.
 - Systems: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
   `aarch64-darwin`.  `meta.platforms` is `lib.platforms.unix`.
 - The version string is `0.1.0-unstable-<commit date>`, derived from the
@@ -125,8 +128,8 @@ carries no cookie at all: `tired-noselect` runs the mode.
   `tired-project` and `tired-magit-status` take `M-x` and the menu
   alone.  `tired-undo` and
   `tired-redo` take the `<undo>` and `<redo>` keysyms alone, so no
-  printable key and no menu entry reaches them.  `tired-tests-core` and
-  `tired-tests-file-ops` fail when a binding returns.
+  printable key and no menu entry reaches them.  `tired-core-test` and
+  `tired-file-ops-test` fail when a binding returns.
 - Every file command clears the selection through
   `tired--clear-selection`.  Only the interactive `tired-select-none`
   clears the deletion flags too, so a copy or a move never cancels a
@@ -213,16 +216,21 @@ carries no cookie at all: `tired-noselect` runs the mode.
 
 ## Testing
 
-`tired-tests-fixtures.el` holds the macros.  Read their docstrings
+A suite file is `test/<unit>-test.el` and holds one library.  The
+glob loader in `checkPhase` reads every such file, so a new suite needs
+no flake edit.  `test/tired-test-helper.el` carries no `-test.el'
+suffix, because the loader must stay a test-only list.
+
+`test/tired-test-helper.el` holds the macros.  Read their docstrings
 before you write a test.
 
 - Batch Emacs runs no idle timer and no reprint timer.
-  `tired-tests--with-fixture` binds a private element cache and an empty
+  `tired-test--with-fixture` binds a private element cache and an empty
   idle queue, stubs the two schedulers, binds
   `tired-delete-delay` to nil and binds `tired-expand-all-if-fits` to
   nil, because the fixture tree fits a window.  A test of the expansion
-  binds the option to t.  `tired-tests--flush-sizes` and
-  `tired-tests--flush-elements` both run the queue and then the reprint.
+  binds the option to t.  `tired-test--flush-sizes` and
+  `tired-test--flush-elements` both run the queue and then the reprint.
   A test that needs the real scheduler stubs `run-with-idle-timer`.
 - Batch Emacs runs no `window-buffer-change-functions` entry during
   redisplay, so a test of the deferred expansion calls
@@ -231,22 +239,22 @@ before you write a test.
   `window-text-pixel-size` answers a row count and the printed fit
   check stays exact.
 - Batch Emacs opens a window for `tired`.  A test that needs a hidden
-  listing binds `tired-tests--with-deferred-sizes`, which stubs
-  `tired--size-window-p`.  Bind `tired-tests--window-shown` to t inside
+  listing binds `tired-test--with-deferred-sizes`, which stubs
+  `tired--size-window-p`.  Bind `tired-test--window-shown` to t inside
   that macro to act as the display does.
 - Batch Emacs dispatches no file notification event during `sit-for`,
   so a test stubs `file-notify-add-watch`.
 - Batch Emacs sends no mouse event, so a test builds one with
-  `tired-tests--click`.
+  `tired-test--click`.
 - The region needs `transient-mark-mode`, which starts off, and no
   command loop runs `post-command-hook`, so a test enables the first or
   runs the second.
-- A test never reaches the network.  `tired-tests--with-remote` stubs
+- A test never reaches the network.  `tired-test--with-remote` stubs
   `file-remote-p` for a real temporary directory.
-- `tired-tests--with-trash` binds a private trash, an empty undo stack,
+- `tired-test--with-trash` binds a private trash, an empty undo stack,
   an empty redo stack and an empty `tired-undo-push-functions`.  Use it
   to remove or replace a path.
-- `tired-tests-core` holds
+- `tired-core-test` holds
   `tired-autoload-cookies-stay-in-a-loading-entry-point`, so a cookie in
   a sub-library fails the suite.
 

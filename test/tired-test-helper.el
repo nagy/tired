@@ -1,4 +1,4 @@
-;;; tired-tests-fixtures.el --- Shared ERT fixtures and helpers for Tired  -*- lexical-binding: t -*-
+;;; tired-test-helper.el --- Shared ERT fixtures and helpers for Tired  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -22,11 +22,11 @@
 ;; Every test builds its own directory tree under a temporary
 ;; directory, so no test depends on the state of the working tree.
 ;;
-;; The suite splits like the library: `tired-tests-core' tests the
-;; listing, `tired-tests-sections' the file section handlers,
-;; `tired-tests-file-ops' the file and shell commands, and
-;; `tired-tests-evil' the evil bindings.  `tired-tests' loads them
-;; all.
+;; The suite splits like the library: `tired-core-test' tests the
+;; listing, `tired-sections-test' the file section handlers,
+;; `tired-file-ops-test' the file and shell commands, and
+;; `tired-evil-test' the evil bindings.  The `test/*-test.el' glob in
+;; the flake `checkPhase' loads them all.
 
 ;;; Code:
 
@@ -51,7 +51,7 @@
     (setq treesit-extra-load-path
           (cons directory treesit-extra-load-path))))
 
-(defmacro tired-tests--with-fixture (&rest body)
+(defmacro tired-test--with-fixture (&rest body)
   "Run BODY inside a fresh directory that holds test entries.
 The variable `root' is bound to the temporary directory.  The
 fixture contains a subdirectory, regular files, a hidden file and
@@ -59,7 +59,7 @@ a symlink, and removes every Tired buffer it opened.  It binds
 `tired-expand-all-if-fits' to nil, so a listing stays collapsed;
 a test of the expansion binds the option to t."
   (declare (indent 0) (debug t))
-  `(let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
+  `(let* ((root (file-name-as-directory (make-temp-file "tired-test-" t)))
           (default-directory root)
           ;; The size table is global.  Bind a private one, so a test
           ;; never sees a total that another test computed.  Batch
@@ -118,52 +118,52 @@ a test of the expansion binds the option to t."
                (kill-buffer buffer))))
          (delete-directory root t)))))
 
-(defun tired-tests--flush-sizes ()
+(defun tired-test--flush-sizes ()
   "Finish every queued idle job and repaint the listing."
   (tired--queue-run)
   (tired--queue-reprint))
 
-(defun tired-tests--flush-elements ()
+(defun tired-test--flush-elements ()
   "Finish every queued idle job and repaint the listing."
-  (tired-tests--flush-sizes))
+  (tired-test--flush-sizes))
 
-(defun tired-tests--queued-jobs (kind)
+(defun tired-test--queued-jobs (kind)
   "Return the queued idle jobs of KIND.
 A listing queues a size walk of every shown directory beside the
 element counts, so a test that cares about one kind names it."
   (seq-filter (lambda (job) (eq kind (tired--job-kind job)))
               tired--queue-jobs))
 
-(defvar tired-tests--window-shown nil
+(defvar tired-test--window-shown nil
   "When non-nil, the size gate reads the listing as shown.
 Batch Emacs opens a window for `tired', so a test that needs a
 hidden listing stubs the gate through
-`tired-tests--with-deferred-sizes'.")
+`tired-test--with-deferred-sizes'.")
 
-(defmacro tired-tests--with-deferred-sizes (&rest body)
+(defmacro tired-test--with-deferred-sizes (&rest body)
   "Run BODY with the size walk gated as a hidden listing gates it.
 The walk then waits for a window, as it does in a buffer that no
-window shows.  Bind `tired-tests--window-shown' to t for the part of
+window shows.  Bind `tired-test--window-shown' to t for the part of
 BODY that acts as the display does."
   (declare (indent 0) (debug t))
-  `(let ((tired-tests--window-shown nil)
+  `(let ((tired-test--window-shown nil)
          (tired--size-always nil)
          (tired-directory-size-budget 0.2))
      (cl-letf (((symbol-function 'tired--size-window-p)
-                (lambda () tired-tests--window-shown)))
+                (lambda () tired-test--window-shown)))
        ,@body)))
 
-(defun tired-tests--click (type position)
+(defun tired-test--click (type position)
   "Return a mouse click event of TYPE at buffer POSITION.
 The event names the selected window, so batch Emacs reads it like a
 click on the listing that the window shows."
   (list type (list (selected-window) position)))
 
-(defun tired-tests--names ()
+(defun tired-test--names ()
   "Return the names of the visible entries in display order."
   (mapcar #'tired-entry-name (tired--visible-entries)))
 
-(defun tired-tests--printed-name-face (name)
+(defun tired-test--printed-name-face (name)
   "Return the `face' that the printed row of NAME shows, or nil.
 Read the buffer, so the test sees the face that the printer wrote
 and not the face that the cell builder would write."
@@ -178,7 +178,7 @@ and not the face that the cell builder would write."
         (forward-line 1))
       found)))
 
-(defun tired-tests--header-string ()
+(defun tired-test--header-string ()
   "Return the header line of the current listing as one string.
 The printer builds the header from several strings, and the column
 labels carry `tabulated-list-column-name', so scan for that
@@ -192,16 +192,16 @@ property."
                 (flatten-list header-line-format))
       ""))
 
-(defun tired-tests--click-header (label)
+(defun tired-test--click-header (label)
   "Run the header click command of the column named LABEL."
-  (let* ((string (tired-tests--header-string))
+  (let* ((string (tired-test--header-string))
          (position (string-match (regexp-quote label) string))
          (map (and position (get-text-property position 'keymap string))))
     (unless (keymapp map)
       (error "No header key map on %s" label))
     (call-interactively (lookup-key map [header-line mouse-1]))))
 
-(defun tired-tests--goto (name)
+(defun tired-test--goto (name)
   "Move point to the line whose entry is NAME."
   (goto-char (point-min))
   (let ((found nil))
@@ -214,17 +214,17 @@ property."
     (unless found
       (error "Entry not listed: %s" name))))
 
-(defun tired-tests--line-start (name)
+(defun tired-test--line-start (name)
   "Return the start of the line whose entry is NAME."
   (save-excursion
-    (tired-tests--goto name)
+    (tired-test--goto name)
     (point)))
 
-(defun tired-tests--edit-name (name new)
+(defun tired-test--edit-name (name new)
   "Replace the editable name NAME with NEW in the current listing.
 The listing must hold the name edit mode, so the change reaches the
 name cell alone."
-  (tired-tests--goto name)
+  (tired-test--goto name)
   (let ((region (tired--rename-region)))
     (unless region
       (error "No editable name on %s" name))
@@ -232,7 +232,7 @@ name cell alone."
     (goto-char (car region))
     (insert new)))
 
-(defun tired-tests--goto-section (label)
+(defun tired-test--goto-section (label)
   "Move point to the section row whose label is LABEL."
   (goto-char (point-min))
   (let ((found nil))
@@ -245,7 +245,7 @@ name cell alone."
     (unless found
       (error "Section not listed: %s" label))))
 
-(defun tired-tests--sections ()
+(defun tired-test--sections ()
   "Return (LABEL . DEPTH) conses for the section rows in the listing."
   (delq nil
         (mapcar (lambda (row)
@@ -254,23 +254,23 @@ name cell alone."
                       (cons (tired-section-label entry) (cdr row)))))
                 (tired--display-rows t))))
 
-(defmacro tired-tests--write (name content)
+(defmacro tired-test--write (name content)
   "Write CONTENT to NAME inside `root'."
   (declare (indent 1) (debug t))
   `(with-temp-file (expand-file-name ,name root)
      (insert ,content)))
 
-(defun tired-tests--entry (name)
+(defun tired-test--entry (name)
   "Return the listed entry called NAME."
   (seq-find (lambda (entry)
               (equal (tired-entry-name entry) name))
             (tired--sorted-directory-entries tired--directory nil)))
 
-(defmacro tired-tests--with-trash (&rest body)
+(defmacro tired-test--with-trash (&rest body)
   "Run BODY with a private trash directory and an empty undo stack."
   (declare (indent 0) (debug t))
   `(let ((tired-trash-directory
-          (file-name-as-directory (make-temp-file "tired-tests-trash-" t)))
+          (file-name-as-directory (make-temp-file "tired-test-trash-" t)))
          (tired-undo-push-functions nil)
          (tired--undo-actions nil)
          (tired--redo-actions nil)
@@ -279,11 +279,11 @@ name cell alone."
          (progn ,@body)
        (delete-directory tired-trash-directory t))))
 
-(defun tired-tests--trash-entries ()
+(defun tired-test--trash-entries ()
   "Return the names inside `tired-trash-directory'."
   (directory-files tired-trash-directory nil "\\`[^.]"))
 
-(defmacro tired-tests--with-delete-timers (&rest body)
+(defmacro tired-test--with-delete-timers (&rest body)
   "Run BODY with a stubbed deletion scheduler.
 The variable `scheduled' holds one (DELAY FUNCTION ARGS) list per
 `run-at-time' call, and `cancelled' holds every timer that
@@ -304,18 +304,18 @@ fires inside a test, and the macro cancels it after BODY."
            ,@body)
        (cancel-timer timer))))
 
-(defun tired-tests--delete-countdowns (scheduled)
+(defun tired-test--delete-countdowns (scheduled)
   "Return the deletion countdowns of SCHEDULED, in call order."
   (seq-filter (lambda (call) (eq (nth 1 call) #'tired--delete-flagged))
               (reverse scheduled)))
 
-(defun tired-tests--contents (path)
+(defun tired-test--contents (path)
   "Return the text inside PATH."
   (with-temp-buffer
     (insert-file-contents path)
     (buffer-string)))
 
-(defmacro tired-tests--with-messages (&rest body)
+(defmacro tired-test--with-messages (&rest body)
   "Run BODY and return the lines that it prints, in order."
   (declare (indent 0) (debug t))
   `(let ((lines nil))
@@ -326,7 +326,7 @@ fires inside a test, and the macro cancels it after BODY."
        ,@body)
      (nreverse lines)))
 
-(defmacro tired-tests--with-other-window (directory &rest body)
+(defmacro tired-test--with-other-window (directory &rest body)
   "Show DIRECTORY in another window and run BODY.
 The selected window keeps the current buffer.  The window is
 deleted afterwards."
@@ -342,7 +342,7 @@ deleted afterwards."
              ,@body)
          (delete-window ,other)))))
 
-(defun tired-tests--shell-run (command)
+(defun tired-test--shell-run (command)
   "Run `tired-do-shell-command' with COMMAND and report what it did.
 Return a cons of the shell command lines, in call order, and the
 number of `tired-refresh' calls."
@@ -355,30 +355,30 @@ number of `tired-refresh' calls."
       (tired-do-shell-command command))
     (cons (nreverse lines) refreshes)))
 
-(defun tired-tests--shell-mark-fills (command text)
+(defun tired-test--shell-mark-fills (command text)
   "Return COMMAND with each substitution mark replaced by TEXT."
   (tired--shell-fill-marks command text))
 
-(defun tired-tests--cell-face (entry)
+(defun tired-test--cell-face (entry)
   "Return the face of the name column of ENTRY."
   (get-text-property 0 'face (tired--name-cell entry)))
 
-(defun tired-tests--mark-row-range (first last)
+(defun tired-test--mark-row-range (first last)
   "Activate a region that covers the rows FIRST through LAST.
 The region ends at the beginning of the line of LAST, and the row at
 point joins the range."
   (transient-mark-mode 1)
-  (tired-tests--goto first)
+  (tired-test--goto first)
   (beginning-of-line)
   (push-mark (point) t t)
-  (tired-tests--goto last)
+  (tired-test--goto last)
   (beginning-of-line))
 
-(defun tired-tests--target-names ()
+(defun tired-test--target-names ()
   "Return the names of the current targets."
   (mapcar #'tired-entry-name (tired--selection-targets)))
 
-(defun tired-tests--tar-put (header start text)
+(defun tired-test--tar-put (header start text)
   "Copy TEXT into the tar HEADER at START and return HEADER."
   (let ((index 0))
     (while (< index (length text))
@@ -386,54 +386,54 @@ point joins the range."
       (setq index (1+ index))))
   header)
 
-(defun tired-tests--tar-header (name size type &optional link prefix)
+(defun tired-test--tar-header (name size type &optional link prefix)
   "Return one 512-byte tar header.
 NAME is the member name, SIZE the byte count, and TYPE the type flag.
 LINK fills the link field, and PREFIX fills the ustar prefix field."
   (let ((header (make-string 512 ?\0)))
-    (tired-tests--tar-put header 0 name)
-    (tired-tests--tar-put header 100 "0000644\0")
-    (tired-tests--tar-put header 108 "0000000\0")
-    (tired-tests--tar-put header 116 "0000000\0")
-    (tired-tests--tar-put header 124 (format "%011o\0" size))
-    (tired-tests--tar-put header 136 "00000000000\0")
-    (tired-tests--tar-put header 148 "        ")
+    (tired-test--tar-put header 0 name)
+    (tired-test--tar-put header 100 "0000644\0")
+    (tired-test--tar-put header 108 "0000000\0")
+    (tired-test--tar-put header 116 "0000000\0")
+    (tired-test--tar-put header 124 (format "%011o\0" size))
+    (tired-test--tar-put header 136 "00000000000\0")
+    (tired-test--tar-put header 148 "        ")
     (aset header 156 type)
-    (when link (tired-tests--tar-put header 157 link))
-    (tired-tests--tar-put header 257 "ustar\0")
-    (tired-tests--tar-put header 263 "00")
-    (tired-tests--tar-put header 265 "tester")
-    (tired-tests--tar-put header 297 "tester")
-    (when prefix (tired-tests--tar-put header 345 prefix))
+    (when link (tired-test--tar-put header 157 link))
+    (tired-test--tar-put header 257 "ustar\0")
+    (tired-test--tar-put header 263 "00")
+    (tired-test--tar-put header 265 "tester")
+    (tired-test--tar-put header 297 "tester")
+    (when prefix (tired-test--tar-put header 345 prefix))
     header))
 
-(defun tired-tests--tar-member (name content &optional type link)
+(defun tired-test--tar-member (name content &optional type link)
   "Return the header and the data blocks of one tar member.
 NAME is the member name, CONTENT the text, TYPE the type flag and
 LINK the link target."
   (let ((type (or type ?0))
         (content (or content ""))
         (padded (* 512 (/ (+ (length content) 511) 512))))
-    (concat (tired-tests--tar-header name (length content) type link)
+    (concat (tired-test--tar-header name (length content) type link)
             content
             (make-string (- padded (length content)) ?\0))))
 
-(defun tired-tests--tar-bytes (&rest members)
+(defun tired-test--tar-bytes (&rest members)
   "Return the bytes of a tar archive that holds MEMBERS.
 Each member is a list of NAME, CONTENT and the optional TYPE and LINK."
   (concat (mapconcat (lambda (member)
-                       (apply #'tired-tests--tar-member member))
+                       (apply #'tired-test--tar-member member))
                      members "")
           (make-string 1024 ?\0)))
 
-(defun tired-tests--tar-write-to (archive &rest members)
+(defun tired-test--tar-write-to (archive &rest members)
   "Write a tar archive at ARCHIVE from MEMBERS.
 A `.gz' or `.zst' suffix compresses the archive with the matching
 program, so a test needs that program."
   (let ((plain (concat archive ".plain.tar")))
     (with-temp-buffer
       (set-buffer-multibyte nil)
-      (insert (apply #'tired-tests--tar-bytes members))
+      (insert (apply #'tired-test--tar-bytes members))
       (write-region (point-min) (point-max) plain))
     (if (string-suffix-p ".tar" archive)
         (rename-file plain archive)
@@ -448,13 +448,13 @@ program, so a test needs that program."
             (write-region (point-min) (point-max) archive)))
         (delete-file plain)))))
 
-(defmacro tired-tests--tar-write (name &rest members)
+(defmacro tired-test--tar-write (name &rest members)
   "Write a tar archive called NAME inside `root' from MEMBERS.
 Each member is a list of NAME, CONTENT and the optional TYPE and LINK."
   (declare (indent 1) (debug t))
-  `(tired-tests--tar-write-to (expand-file-name ,name root) ,@members))
+  `(tired-test--tar-write-to (expand-file-name ,name root) ,@members))
 
-(defun tired-tests--pax-record (key value)
+(defun tired-test--pax-record (key value)
   "Return one pax extended header record for KEY and VALUE.
 The record starts with its own decimal length."
   (let* ((body (concat " " key "=" value "\n"))
@@ -463,8 +463,8 @@ The record starts with its own decimal length."
       (setq length (+ (length body) (length (number-to-string length)))))
     (concat (number-to-string length) body)))
 
-(provide 'tired-tests)
+(provide 'tired-test-helper)
 
-(provide 'tired-tests-fixtures)
+(provide 'tired-test-helper)
 
-;;; tired-tests-fixtures.el ends here
+;;; tired-test-helper.el ends here

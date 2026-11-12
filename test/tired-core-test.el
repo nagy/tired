@@ -1,4 +1,4 @@
-;;; tired-tests-core.el --- ERT tests for the Tired listing  -*- lexical-binding: t -*-
+;;; tired-core-test.el --- ERT tests for the Tired listing  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -29,7 +29,7 @@
 
 (require 'seq)
 
-(require 'tired-tests-fixtures)
+(require 'tired-test-helper)
 
 ;; The suite byte-compiles, so a `let' binding of a recentf variable
 ;; needs a declaration.  Without one the compiler makes the binding
@@ -45,14 +45,14 @@
 
 (ert-deftest tired-mode-is-derived-from-tabulated-list-mode ()
   "The major mode must inherit from `tabulated-list-mode'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (derived-mode-p 'tired-mode 'tabulated-list-mode))
     (should (equal (tired--buffer-name root) (buffer-name)))))
 
 (ert-deftest tired-noselect-returns-buffer-without-display ()
   "`tired-noselect' returns a buffer and keeps the window layout."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((buffer (tired-noselect root)))
       (should (buffer-live-p buffer))
       (should (equal (tired--buffer-name root) (buffer-name buffer)))
@@ -64,12 +64,12 @@
 
 (ert-deftest tired-noselect-reuses-its-buffer ()
   "Two calls for one directory return the same buffer."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (should (eq (tired-noselect root) (tired-noselect root)))))
 
 (ert-deftest tired-passes-the-display-action-to-display-buffer ()
   "`tired' hands its action to `display-buffer'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((seen nil)
           (tired-display-buffer-action '(display-buffer-same-window)))
       (cl-letf (((symbol-function 'display-buffer)
@@ -85,7 +85,7 @@
 `switch-to-buffer-other-window' reads `pop-up-windows', the
 `split-height-threshold' and the `split-width-threshold', so the
 listing opens beside the current buffer and not on a new frame."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let (shown)
       (cl-letf (((symbol-function 'switch-to-buffer-other-window)
                  (lambda (buffer) (push buffer shown) buffer)))
@@ -97,7 +97,7 @@ listing opens beside the current buffer and not on a new frame."
 `display-buffer' reads a value that is not a cons cell as a request
 for another window, so a bare symbol would drop the action and add
 `inhibit-same-window'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((seen nil)
           (tired-display-buffer-action 'display-buffer-same-window))
       (cl-letf (((symbol-function 'display-buffer)
@@ -113,7 +113,7 @@ for another window, so a bare symbol would drop the action and add
 
 (ert-deftest tired-default-action-reaches-display-buffer-as-a-list ()
   "The default action must reach `display-buffer' as a cons cell."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let (seen)
       (cl-letf (((symbol-function 'display-buffer)
                  (lambda (_buffer action)
@@ -141,9 +141,9 @@ for another window, so a bare symbol would drop the action and add
         (should-not (memq #'tired-noselect find-directory-functions)))
     (tired-find-file-mode -1)))
 
-(ert-deftest find-file-opens-a-directory-in-tired-mode ()
+(ert-deftest tired-find-file-opens-a-directory-in-tired-mode ()
   "With the mode on, `find-file' visits a directory with Tired."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (unwind-protect
         (progn
           (tired-find-file-mode 1)
@@ -175,18 +175,18 @@ default `tired-file-handlers' names a void section handler.
 
 (ert-deftest tired-listing-puts-directories-first ()
   "Directories sort before files, and files group by extension."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "link" "alpha.txt" "beta.txt")))))
 
 (ert-deftest tired-entries-carry-file-attributes ()
   "Each entry records its type, size and mode."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let ((sub (tired-tests--entry "sub"))
-          (alpha (tired-tests--entry "alpha.txt"))
-          (link (tired-tests--entry "link")))
+    (let ((sub (tired-test--entry "sub"))
+          (alpha (tired-test--entry "alpha.txt"))
+          (link (tired-test--entry "link")))
       (should (eq 'directory (tired-entry-type sub)))
       (should (tired-entry-dirp sub))
       (should (eq 'file (tired-entry-type alpha)))
@@ -198,72 +198,72 @@ default `tired-file-handlers' names a void section handler.
 
 (ert-deftest tired-toggle-dotfiles-hides-hidden-entries ()
   "Toggling dotfiles removes and restores hidden entries."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-toggle-dotfiles)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" "link" "alpha.txt" "beta.txt")))
     (tired-toggle-dotfiles)
-    (should (member ".hidden" (tired-tests--names)))))
+    (should (member ".hidden" (tired-test--names)))))
 
 (ert-deftest tired-hidden-regexps-remove-entries ()
   "A regexp in `tired-hidden-regexps' removes matching entries."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-hidden-regexps '("\\.txt\\'")))
       (tired root)
-      (should (equal (tired-tests--names)
+      (should (equal (tired-test--names)
                      '("sub" ".hidden" "link"))))))
 
 (ert-deftest tired-hidden-regexps-hide-an-inserted-subtree ()
   "A hidden directory hides the children that the user inserted."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-toggle-subdir)
-    (should (member "inner.txt" (tired-tests--names)))
+    (should (member "inner.txt" (tired-test--names)))
     (let ((tired-hidden-regexps '("\\`sub\\'")))
       (tired-refresh)
-      (should-not (member "sub" (tired-tests--names)))
-      (should-not (member "inner.txt" (tired-tests--names))))))
+      (should-not (member "sub" (tired-test--names)))
+      (should-not (member "inner.txt" (tired-test--names))))))
 
 (ert-deftest tired-toggle-hidden-shows-and-hides-entries ()
   "The toggle inverts the display of entries that a regexp hides."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-hidden-regexps '("\\.txt\\'")))
       (tired root)
       (should (eq (key-binding (key-parse "~")) #'tired-toggle-hidden))
-      (should-not (member "alpha.txt" (tired-tests--names)))
+      (should-not (member "alpha.txt" (tired-test--names)))
       (should (string-match-p "2 hidden" (tired--mode-line)))
       (tired-toggle-hidden)
-      (should (member "alpha.txt" (tired-tests--names)))
+      (should (member "alpha.txt" (tired-test--names)))
       (should (string-match-p "2 hidden shown" (tired--mode-line)))
       (tired-toggle-hidden)
-      (should-not (member "alpha.txt" (tired-tests--names)))
+      (should-not (member "alpha.txt" (tired-test--names)))
       (should (string-match-p "2 hidden" (tired--mode-line))))))
 
 (ert-deftest tired-sort-by-column-toggles-direction ()
   "Sorting by size orders files by size and flips on repetition."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--sort-by-column 'size)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
     (tired--sort-by-column 'size)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" "beta.txt" "link" "alpha.txt" ".hidden")))))
 
 (ert-deftest tired-sort-walks-the-sort-states ()
   "`tired-sort' walks `tired-sort-states' and wraps around."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq (tired--sort-state) 'name-asc))
     (tired-sort)
     (should (eq (tired--sort-state) 'name-desc))
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" "alpha.txt" "beta.txt" ".hidden" "link")))
     (tired-sort)
     (should (eq (tired--sort-state) 'size-asc))
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
     (tired-sort -1)
     (should (eq (tired--sort-state) 'name-desc))
@@ -274,7 +274,7 @@ default `tired-file-handlers' names a void section handler.
 
 (ert-deftest tired-sort-backward-walks-the-states ()
   "`tired-sort-backward' walks `tired-sort-states' back."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq (tired--sort-state) 'name-asc))
     (tired-sort-backward)
@@ -286,7 +286,7 @@ default `tired-file-handlers' names a void section handler.
 
 (ert-deftest tired-sort-selects-a-state-by-position ()
   "A positive prefix selects a position in `tired-sort-states'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-sort 3)
     (should (eq (tired--sort-state) 'size-asc))
@@ -303,7 +303,7 @@ default `tired-file-handlers' names a void section handler.
 
 (ert-deftest tired-sort-crosses-a-state-outside-the-list ()
   "A column that the state list leaves out gives way to the list."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--sort-by-column 'mode)
     (should-not (tired--sort-state))
@@ -324,28 +324,28 @@ default `tired-file-handlers' names a void section handler.
 
 (ert-deftest tired-sort-by-name-keeps-directories-first ()
   "The name sort keeps directories first in both directions."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--sort-by-column 'name)
-    (should (equal (car (tired-tests--names)) "sub"))
+    (should (equal (car (tired-test--names)) "sub"))
     (tired--sort-by-column 'name)
-    (should (equal (car (tired-tests--names)) "sub"))))
+    (should (equal (car (tired-test--names)) "sub"))))
 
 (ert-deftest tired-name-sort-groups-files-by-extension ()
   "`tired-sort-by-extension' groups files by extension, then by name.
 A name without an extension leads the file group, a dotfile counts
 as extensionless, and an upper-case extension joins its lower-case
 twin.  The option nil keeps the plain name order."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* a\n")
-    (tired-tests--write "alpha.TXT" "x")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* a\n")
+    (tired-test--write "alpha.TXT" "x")
     (tired root)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "link" "notes.org" "alpha.TXT"
                      "alpha.txt" "beta.txt")))
     (let ((tired-sort-by-extension nil))
       (tired-refresh)
-      (should (equal (tired-tests--names)
+      (should (equal (tired-test--names)
                      '("sub" ".hidden" "alpha.TXT" "alpha.txt"
                        "beta.txt" "link" "notes.org"))))))
 
@@ -353,19 +353,19 @@ twin.  The option nil keeps the plain name order."
   "The name key reads the directory, so a leaf extension moves no row.
 The chain row stays in the directory group and keeps the name place
 of its directory, because the leaf name must not regroup it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((chain (expand-file-name "chain/a" root)))
       (make-directory chain t)
       (with-temp-file (expand-file-name "leaf.zzz" chain)
         (insert "x")))
     (tired root)
-    (should (equal (seq-take (tired-tests--names) 2)
+    (should (equal (seq-take (tired-test--names) 2)
                    '("chain/a/leaf.zzz" "sub")))))
 
 (ert-deftest tired-sort-by-modified-follows-a-collapsed-leaf ()
   "A collapsed row sorts by the time that its row prints.
 The top directory takes the opposite time, so the leaf decides."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((base 1600000000))
       (dolist (spec '(("chain-old" 9000 100) ("chain-new" 0 700)))
         (let* ((top (expand-file-name (car spec) root))
@@ -380,14 +380,14 @@ The top directory takes the opposite time, so the leaf decides."
     (tired--sort-by-column 'modified)
     (should (equal (seq-filter (lambda (name)
                                  (string-prefix-p "chain" name))
-                               (tired-tests--names))
+                               (tired-test--names))
                    '("chain-old/a/b/leaf.txt" "chain-new/a/b/leaf.txt")))))
 
 (ert-deftest tired-sort-by-size-follows-the-printed-directory-total ()
   "A directory sorts by the total that its size cell shows.
 Both temporary directories hold one entry, so a sort on the raw
 inode size ties and falls back to the name, which puts `big' first."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((small (expand-file-name "small" root))
           (big (expand-file-name "big" root)))
       (make-directory small t)
@@ -399,10 +399,10 @@ inode size ties and falls back to the name, which puts `big' first."
     (let ((tired-directory-size t)
           (tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (tired--sort-by-column 'size)
-      (let ((names (tired-tests--names)))
-        (should (equal (tired--size-cell (tired-tests--entry "small"))
+      (let ((names (tired-test--names)))
+        (should (equal (tired--size-cell (tired-test--entry "small"))
                        "10"))
         (should (< (seq-position names "small")
                    (seq-position names "big")))))))
@@ -411,7 +411,7 @@ inode size ties and falls back to the name, which puts `big' first."
   "With `tired-group-directories' nil, one order holds every row.
 The option nil lets a file sit between two directories, the way
 `dired' sorts by time."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((base 1600000000))
       (dolist (spec '(("alpha.txt" 30) (".hidden" 10)
                       ("sub" 20) ("beta.txt" 40)))
@@ -419,39 +419,39 @@ The option nil lets a file sit between two directories, the way
                         (seconds-to-time (+ base (cadr spec))))))
     (tired root)
     (tired--sort-by-column 'modified)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "alpha.txt" "beta.txt" "link")))
     (let ((tired-group-directories nil))
       (tired-refresh)
-      (should (equal (tired-tests--names)
+      (should (equal (tired-test--names)
                      '(".hidden" "sub" "alpha.txt" "beta.txt"
                        "link"))))))
 
 (ert-deftest tired-header-click-sorts-by-a-column ()
   "A click on a header label sorts the listing by its column."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq tired--sort-key 'name))
-    (tired-tests--click-header "Size")
+    (tired-test--click-header "Size")
     (should (eq tired--sort-key 'size))
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "alpha.txt" "link" "beta.txt")))
-    (tired-tests--click-header "Size")
+    (tired-test--click-header "Size")
     (should tired--sort-flip)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" "beta.txt" "link" "alpha.txt" ".hidden")))))
 
 (ert-deftest tired-header-click-keeps-the-sort-indicator ()
   "The label of the sort column carries the arrow and a key map."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((asc (format "Name %c" tabulated-list-gui-sort-indicator-asc))
           (desc (format "Name %c" tabulated-list-gui-sort-indicator-desc))
           (header nil))
-      (setq header (tired-tests--header-string))
+      (setq header (tired-test--header-string))
       (should (string-match-p (regexp-quote asc) header))
-      (tired-tests--click-header "Modified")
-      (setq header (tired-tests--header-string))
+      (tired-test--click-header "Modified")
+      (setq header (tired-test--header-string))
       (should (string-match-p
                (regexp-quote (format "Modified %c"
                                      tabulated-list-gui-sort-indicator-asc))
@@ -463,23 +463,23 @@ The option nil lets a file sit between two directories, the way
       (should (string-match-p
                (regexp-quote (format "Name %c"
                                      tabulated-list-gui-sort-indicator-desc))
-               (tired-tests--header-string))))))
+               (tired-test--header-string))))))
 
 (ert-deftest tired-header-indicator-follows-the-emacs-options ()
   "A user setting of the tabulated-list indicators reaches the header.
 The two options are the ones that `tabulated-list-mode' itself reads
 for its own header line."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tabulated-list-gui-sort-indicator-asc ?A)
           (tabulated-list-gui-sort-indicator-desc ?D))
       (tired root)
-      (should (string-match-p "Name A" (tired-tests--header-string)))
+      (should (string-match-p "Name A" (tired-test--header-string)))
       (tired--sort-by-column 'size 'reverse)
-      (should (string-match-p "Size D" (tired-tests--header-string))))))
+      (should (string-match-p "Size D" (tired-test--header-string))))))
 
 (ert-deftest tired-name-column-grows-to-longest-name ()
   "The name column width follows the longest visible entry."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((name (make-string 30 ?n)))
       (with-temp-file (expand-file-name name) (insert "x")))
     (tired root)
@@ -489,7 +489,7 @@ for its own header line."
 
 (ert-deftest tired-name-column-keeps-minimum-width ()
   "Short names do not shrink the name column below the minimum."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 100)))
       (tired-refresh))
@@ -498,7 +498,7 @@ for its own header line."
 
 (ert-deftest tired-name-column-clamps-to-window ()
   "A long name does not push the other columns off screen."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (with-temp-file (expand-file-name (make-string 80 ?x)) (insert "x"))
     (tired root)
     (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 80)))
@@ -508,7 +508,7 @@ for its own header line."
 
 (ert-deftest tired-window-size-change-resizes-name-column ()
   "A window size change updates the name column width."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
     (tired root)
     (let ((width 120))
@@ -524,9 +524,9 @@ for its own header line."
   "A size hook call with the same width redraws nothing.
 The hook also runs when the echo area grows, and that growth leaves
 the width of the listing untouched."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (cl-letf (((symbol-function 'tired--redraw)
                (lambda (&rest _) (error "Unexpected redraw"))))
       (tired--window-size-changed (selected-frame)))
@@ -536,7 +536,7 @@ the width of the listing untouched."
   "A redraw sizes the column from the window that renders the listing.
 The selected window can show another buffer in another frame, and its
 width would restyle the columns of a buffer that it never draws."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
     (tired root)
     (let ((listing (selected-window))
@@ -544,7 +544,7 @@ width would restyle the columns of a buffer that it never draws."
       (unwind-protect
           (progn
             (set-window-buffer other
-                               (get-buffer-create " *tired-tests-other*"))
+                               (get-buffer-create " *tired-test-other*"))
             (select-window other)
             (cl-letf (((symbol-function 'window-width)
                        (lambda (&optional window _pixelwise)
@@ -556,14 +556,14 @@ width would restyle the columns of a buffer that it never draws."
                 (should (= 60 (nth 1 (aref tabulated-list-format 0)))))))
         (select-window listing)
         (delete-window other)
-        (when (get-buffer " *tired-tests-other*")
-          (kill-buffer " *tired-tests-other*"))))))
+        (when (get-buffer " *tired-test-other*")
+          (kill-buffer " *tired-test-other*"))))))
 
 (ert-deftest tired-window-size-change-ignores-a-window-without-the-listing ()
-  "A size event from a window that does not decide the width repaints
-nothing.  Another window of another size keeps the column that the
-pinned window asked for."
-  (tired-tests--with-fixture
+  "A size event from a window that does not decide the width repaints nothing.
+Another window of another size keeps the column that the pinned window
+asked for."
+  (tired-test--with-fixture
     (with-temp-file (expand-file-name (make-string 60 ?w)) (insert "x"))
     (tired root)
     (let ((listing (selected-window))
@@ -571,7 +571,7 @@ pinned window asked for."
       (unwind-protect
           (progn
             (set-window-buffer other
-                               (get-buffer-create " *tired-tests-other*"))
+                               (get-buffer-create " *tired-test-other*"))
             (cl-letf (((symbol-function 'window-width)
                        (lambda (&optional window _pixelwise)
                          (if (eq (or window (selected-window)) listing)
@@ -582,15 +582,15 @@ pinned window asked for."
                 (should (= 60 (nth 1 (aref tabulated-list-format 0))))
                 (should-not (tired--width-changed-p other)))))
         (delete-window other)
-        (when (get-buffer " *tired-tests-other*")
-          (kill-buffer " *tired-tests-other*"))))))
+        (when (get-buffer " *tired-test-other*")
+          (kill-buffer " *tired-test-other*"))))))
 
 (ert-deftest tired-size-redraw-reuses-the-pinned-window ()
   "The idle size pass keeps the window that rendered the listing.
 The pass once read `get-buffer-window' with ALL-FRAMES set, so it took
 an arbitrary window from any frame, and the column then followed the
 width of that window."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((listing (selected-window))
           (other (split-window))
@@ -598,7 +598,7 @@ width of that window."
       (unwind-protect
           (progn
             (set-window-buffer other
-                               (get-buffer-create " *tired-tests-other*"))
+                               (get-buffer-create " *tired-test-other*"))
             (select-window other)
             (with-current-buffer (window-buffer listing)
               (setq tired--size-deferred t)
@@ -612,44 +612,44 @@ width of that window."
                 (should (eq seen listing)))))
         (select-window listing)
         (delete-window other)
-        (when (get-buffer " *tired-tests-other*")
-          (kill-buffer " *tired-tests-other*"))))))
+        (when (get-buffer " *tired-test-other*")
+          (kill-buffer " *tired-test-other*"))))))
 
 (ert-deftest tired-filter-matches-case-insensitively ()
   "A filter keeps only matching names."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "BETA")
-    (should (equal (tired-tests--names) '("beta.txt")))
+    (should (equal (tired-test--names) '("beta.txt")))
     (tired-clear-filter)
-    (should (= 5 (length (tired-tests--names))))))
+    (should (= 5 (length (tired-test--names))))))
 
 (ert-deftest tired-filter-command-commits-with-ret ()
   "RET in the live filter keeps the typed value."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (cl-letf (((symbol-function 'read-string)
                (lambda (&rest _) "BETA")))
       (tired-filter))
     (should (equal tired--filter "BETA"))
-    (should (equal (tired-tests--names) '("beta.txt")))))
+    (should (equal (tired-test--names) '("beta.txt")))))
 
 (ert-deftest tired-filter-command-restores-on-quit ()
-  "C-g in the live filter restores the previous filter."
-  (tired-tests--with-fixture
+  "A quit in the live filter restores the previous filter."
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "beta")
     (cl-letf (((symbol-function 'read-string)
                (lambda (&rest _) (signal 'quit nil))))
       (tired-filter))
     (should (equal tired--filter "beta"))
-    (should (equal (tired-tests--names) '("beta.txt")))))
+    (should (equal (tired-test--names) '("beta.txt")))))
 
 (ert-deftest tired-filter-command-restores-point-on-quit ()
-  "C-g puts point back on the row it started from."
-  (tired-tests--with-fixture
+  "A quit puts point back on the row it started from."
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (let ((start (point)))
       (cl-letf (((symbol-function 'read-string)
                  (lambda (&rest _)
@@ -662,7 +662,7 @@ width of that window."
 
 (ert-deftest tired-filter-command-applies-minibuffer-text ()
   "A keystroke applies the minibuffer text, not the buffer body."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((origin (current-buffer))
           (tired-filter-delay 0))
@@ -670,13 +670,13 @@ width of that window."
                  (lambda () "BETA")))
         (tired--filter-changed origin))
       (should (equal tired--filter "BETA"))
-      (should (equal (tired-tests--names) '("beta.txt"))))))
+      (should (equal (tired-test--names) '("beta.txt"))))))
 
 (ert-deftest tired-filter-command-waits-for-the-delay ()
   "A keystroke schedules one redraw instead of applying it.
 A second keystroke replaces the pending redraw, so a typed word
 costs one redraw and not one per character."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((tired-filter-delay 30))
       (cl-letf (((symbol-function 'minibuffer-contents)
@@ -696,38 +696,38 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-filter-quit-command-clears-the-filter ()
   "The quit hook clears a kept filter before its command runs."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (memq #'tired--filter-quit-on-command pre-command-hook))
     (tired--apply-filter "beta")
     (let ((this-command 'keyboard-quit))
       (tired--filter-quit-on-command))
     (should-not tired--filter)
-    (should (= 5 (length (tired-tests--names))))))
+    (should (= 5 (length (tired-test--names))))))
 
 (ert-deftest tired-filter-quit-command-keeps-the-row-at-point ()
   "A cleared filter leaves point on the row that it showed."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "beta")
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (let ((this-command 'keyboard-quit))
       (tired--filter-quit-on-command))
     (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))))
 
 (ert-deftest tired-filter-quit-command-ignores-another-command ()
   "A command outside the list keeps the filter."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "beta")
     (let ((this-command 'tired-next-line))
       (tired--filter-quit-on-command))
     (should (equal tired--filter "beta"))
-    (should (equal (tired-tests--names) '("beta.txt")))))
+    (should (equal (tired-test--names) '("beta.txt")))))
 
 (ert-deftest tired-filter-quit-command-without-a-filter-does-nothing ()
   "A listing without a filter takes no redraw."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((called nil))
       (cl-letf (((symbol-function 'tired--apply-filter)
@@ -738,9 +738,9 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-selection-drives-targets ()
   "Selecting an entry makes it the target of file commands."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (should (equal (mapcar #'tired-entry-name (tired--selection-targets))
                    '("beta.txt")))
@@ -755,7 +755,7 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-all-selects-visible-entries ()
   "Selecting all covers exactly the visible entries."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-select-all)
     (should (= 5 (length tired--selection)))
@@ -765,7 +765,7 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-all-toggles-the-selection-off ()
   "A second select-all clears a selection that covers every visible entry."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-select-all)
     (tired-select-all)
@@ -776,9 +776,9 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-all-toggles-a-partial-selection ()
   "Selecting all inverts the visible part of a partial selection."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
     (tired-select-all)
     (should (= 4 (length tired--selection)))
@@ -787,10 +787,10 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-all-keeps-a-selection-that-the-filter-hides ()
   "A hidden selected entry survives a toggle of the visible entries."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-select-all)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (setq tired--filter "alpha")
     (tired-refresh)
     (tired-select-all)
@@ -800,9 +800,9 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-extension-selects-sibling-files ()
   "The command selects every visible file with the extension of point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (call-interactively #'tired-select-extension)
     (should (equal (sort (mapcar #'tired-entry-name (tired--selection-targets))
                          #'string<)
@@ -811,13 +811,13 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-extension-adds-to-the-selection ()
   "A second extension joins the first, and a directory stays out."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (with-temp-file (expand-file-name "gamma.org" root) (insert "g"))
     (make-directory (expand-file-name "notes.org" root))
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-extension)
-    (tired-tests--goto "gamma.org")
+    (tired-test--goto "gamma.org")
     (tired-select-extension)
     (should (equal (sort (mapcar #'tired-entry-name (tired--selection-targets))
                          #'string<)
@@ -826,7 +826,7 @@ costs one redraw and not one per character."
 
 (ert-deftest tired-select-extension-signals-on-an-empty-row ()
   "A listing line that holds no row signals an error."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (goto-char (point-max))
     (beginning-of-line)
@@ -835,11 +835,11 @@ costs one redraw and not one per character."
 (ert-deftest tired-copy-name-alternates-between-name-and-path ()
   "One call copies the names, the next copies the full paths.
 The home directory of a path takes its abbreviation."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((directory-abbrev-alist
            (list (cons (concat "\\`" (regexp-quote root)) "~/"))))
       (tired root)
-      (tired-tests--goto "alpha.txt")
+      (tired-test--goto "alpha.txt")
       (tired-copy-name)
       (should (equal (current-kill 0) "alpha.txt"))
       (tired-copy-name)
@@ -849,9 +849,9 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-next-line-drops-the-path-form-of-copy-name ()
   "A line motion makes the next copy a name again."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-copy-name)
     (should (equal (current-kill 0) "alpha.txt"))
     (tired-copy-name)
@@ -864,9 +864,9 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-previous-line-drops-the-path-form-of-copy-name ()
   "A line motion up makes the next copy a name again."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-copy-name)
     (tired-copy-name)
     (should (equal (current-kill 0)
@@ -878,11 +878,11 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-copy-name-keeps-targets-on-one-line-each ()
   "A selection copies every target in the current form."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (tired-copy-name)
     (should (equal (current-kill 0) "alpha.txt\nbeta.txt"))
@@ -896,11 +896,11 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-copy-path-joins-targets ()
   "Copying paths puts one path per line on the kill ring."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (tired-copy-path)
     (should (equal (current-kill 0)
@@ -910,31 +910,31 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-copy-relative-path-uses-buffer-directory ()
   "Relative copies drop the shown directory prefix."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (tired-copy-relative-path)
     (should (equal (current-kill 0) "alpha.txt\nbeta.txt"))))
 
 (ert-deftest tired-copy-relative-path-handles-inserted-entries ()
   "Relative copies work inside inserted sections."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (tired-select-toggle)
     (tired-copy-relative-path)
     (should (equal (current-kill 0) "sub/inner.txt"))))
 
 (ert-deftest tired-copy-project-path-uses-project-root ()
   "Project copies are relative to the project root."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (cl-letf (((symbol-function 'tired--project-root)
                (lambda () root)))
       (tired-copy-project-path))
@@ -942,7 +942,7 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-copy-project-path-without-project-errors ()
   "Project copies signal an error outside a project."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (require 'project)
     (cl-letf (((symbol-function 'project-current)
@@ -951,11 +951,11 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-browse-url-of-file-browses-the-targets ()
   "Browsing sends every target path to the browser."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (let (visited)
       (cl-letf (((symbol-function 'browse-url-of-file)
@@ -967,9 +967,9 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-browse-url-of-file-uses-the-secondary-browser ()
   "A prefix argument selects the secondary browser."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (let (browser handlers)
       (cl-letf (((symbol-function 'browse-url-of-file)
                  (lambda (&rest _)
@@ -981,12 +981,12 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-browse-url-of-file-browses-the-section-file ()
   "A section row browses the file that holds it."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* Intro\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* Intro\n")
     (tired root)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "Intro")
+    (tired-test--goto-section "Intro")
     (let (visited)
       (cl-letf (((symbol-function 'browse-url-of-file)
                  (lambda (url &rest _) (push url visited))))
@@ -995,18 +995,18 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-find-file-visits-the-file ()
   "Opening a file entry visits that file."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-find-file)
     (should (equal (buffer-file-name) (expand-file-name "alpha.txt" root)))
     (kill-buffer (current-buffer))))
 
 (ert-deftest tired-find-file-literally-visits-the-file ()
   "Opening a file entry literally reads it without conversion."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (let (visited)
       (cl-letf (((symbol-function 'find-file-literally)
                  (lambda (path &rest _) (push path visited))))
@@ -1015,10 +1015,10 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-find-file-directory-replaces-the-listing ()
   "Opening a directory entry shows it in a Tired buffer."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((origin (current-buffer)))
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-find-file)
       (should (derived-mode-p 'tired-mode))
       (should (equal tired--directory
@@ -1028,9 +1028,9 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-row-carries-the-help-text ()
   "A printed row explains the mouse commands, and its name highlights."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (should (string-match-p "double-click"
                             (get-text-property (point) 'help-echo)))
     ;; The size column and the space after the mode column explain too.
@@ -1040,7 +1040,7 @@ The home directory of a path takes its abbreviation."
     ;; The indent belongs to the row, so a child row explains from the
     ;; left edge too.
     (tired-insert-subdir)
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (should (string-match-p "mouse-2"
                             (get-text-property (line-beginning-position)
                                                'help-echo)))
@@ -1060,21 +1060,21 @@ The home directory of a path takes its abbreviation."
 
 (ert-deftest tired-mouse-click-does-not-follow-a-link ()
   "One click moves point, so a marked row is no link."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (should-not (mouse-on-link-p (list (selected-window) (point))))))
 
 (ert-deftest tired-mouse-find-file-other-window-opens-the-clicked-row ()
   "The middle button opens the row under the pointer, not the selection."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (let* ((position (save-excursion
-                       (tired-tests--goto "alpha.txt")
+                       (tired-test--goto "alpha.txt")
                        (point)))
-           (event (tired-tests--click 'mouse-2 position))
+           (event (tired-test--click 'mouse-2 position))
            (opened nil))
       (cl-letf (((symbol-function 'tired--open-entry)
                  (lambda (row other-window)
@@ -1082,26 +1082,26 @@ The home directory of a path takes its abbreviation."
         (tired-mouse-find-file-other-window event))
       (should (equal opened '(("alpha.txt" t))))
       (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt"))
-      (should (tired--selected-p (tired-tests--entry "beta.txt"))))))
+      (should (tired--selected-p (tired-test--entry "beta.txt"))))))
 
 (ert-deftest tired-mouse-toggle-toggles-the-clicked-row ()
   "A double click inserts the children of a directory and removes them."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let ((event (tired-tests--click
+    (let ((event (tired-test--click
                   'double-mouse-1
-                  (save-excursion (tired-tests--goto "sub") (point)))))
+                  (save-excursion (tired-test--goto "sub") (point)))))
       (tired-mouse-toggle event)
-      (should (member "inner.txt" (tired-tests--names)))
+      (should (member "inner.txt" (tired-test--names)))
       (should (equal (tired-entry-name (tired--row-at-point)) "sub"))
       (tired-mouse-toggle event)
-      (should-not (member "inner.txt" (tired-tests--names))))))
+      (should-not (member "inner.txt" (tired-test--names))))))
 
 (ert-deftest tired-mouse-commands-refuse-a-click-outside-a-row ()
   "A click below the last row signals an error instead of acting."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let ((event (tired-tests--click 'mouse-2 (point-max))))
+    (let ((event (tired-test--click 'mouse-2 (point-max))))
       (should-error (tired-mouse-find-file-other-window event)
                     :type 'user-error)
       (should-error (tired-mouse-toggle event) :type 'user-error))))
@@ -1109,10 +1109,10 @@ The home directory of a path takes its abbreviation."
 (ert-deftest tired-context-menu-lists-the-row-commands ()
   "A right click on a row offers the commands that act on it."
   (skip-unless (require 'mouse nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
-    (let* ((event (tired-tests--click 'mouse-3 (point)))
+    (tired-test--goto "alpha.txt")
+    (let* ((event (tired-test--click 'mouse-3 (point)))
            (menu (tired-context-menu (make-sparse-keymap) event)))
       (should (lookup-key menu [tired-visit]))
       (should (lookup-key menu [tired-rename]))
@@ -1120,16 +1120,16 @@ The home directory of a path takes its abbreviation."
       (should (lookup-key menu [tired-refresh]))
       ;; The command acts on the clicked row, not on the row at point
       ;; when the menu opened.
-      (tired-tests--goto "beta.txt")
+      (tired-test--goto "beta.txt")
       (call-interactively (lookup-key menu [tired-copy-name]))
       (should (equal (current-kill 0) "alpha.txt")))))
 
 (ert-deftest tired-context-menu-skips-a-click-outside-a-row ()
   "A click below the last row keeps the plain Emacs menu."
   (skip-unless (require 'mouse nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let* ((event (tired-tests--click 'mouse-3 (point-max)))
+    (let* ((event (tired-test--click 'mouse-3 (point-max)))
            (menu (tired-context-menu (make-sparse-keymap) event)))
       (should-not (lookup-key menu [tired-visit]))
       (should-not (lookup-key menu [tired-refresh])))))
@@ -1137,30 +1137,30 @@ The home directory of a path takes its abbreviation."
 (ert-deftest tired-mode-adds-the-context-menu-function ()
   "A Tired buffer carries the context menu function locally."
   (skip-unless (require 'mouse nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (memq #'tired-context-menu context-menu-functions))))
 
 (ert-deftest tired-refresh-prunes-deleted-selection ()
   "Refresh drops selected entries that no longer exist."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (delete-file (expand-file-name "beta.txt" root))
     (tired-refresh)
     (should-not tired--selection)
-    (should-not (member "beta.txt" (tired-tests--names)))))
+    (should-not (member "beta.txt" (tired-test--names)))))
 
 (ert-deftest tired-refresh-survives-a-vanished-directory ()
   "A shown directory that left the disk leaves an empty listing.
 An external move takes the whole directory away, and the
 `tired--auto-revert-now' timer must print no error then.  A later
 refresh of the directory that came back fills the rows again."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let* ((buffer (tired root))
            (moved (concat (directory-file-name root) "-moved")))
-      (should (= 5 (length (tired-tests--names))))
+      (should (= 5 (length (tired-test--names))))
       (unwind-protect
           (progn
             (rename-file (directory-file-name root) moved)
@@ -1168,21 +1168,21 @@ refresh of the directory that came back fills the rows again."
               (with-current-buffer buffer
                 (tired--auto-revert-now buffer)))
             (with-current-buffer buffer
-              (should-not (tired-tests--names))
+              (should-not (tired-test--names))
               (should (equal (list (cons root nil))
                              (tired--shown-stamps)))))
         (when (file-directory-p moved)
           (rename-file moved (directory-file-name root))))
       (with-current-buffer buffer
         (tired-refresh)
-        (should (= 5 (length (tired-tests--names)))))
+        (should (= 5 (length (tired-test--names)))))
       (kill-buffer buffer))))
 
 (ert-deftest tired-refresh-keeps-an-unchanged-listing ()
   "A refresh of a directory that did not change prints no row again.
 The read still runs, because a write to a file inside the directory
 leaves the stamp of the directory alone."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((prints 0)
           (reads 0)
@@ -1204,13 +1204,13 @@ leaves the stamp of the directory alone."
   "A write to an existing file reaches its row on a refresh.
 The write changes no stamp of the directory that holds the file, so
 a refresh that trusts the stamps alone keeps the old size."
-  (tired-tests--with-fixture
-    (tired-tests--write "log.txt" "")
+  (tired-test--with-fixture
+    (tired-test--write "log.txt" "")
     (tired root)
-    (should (= 0 (tired-entry-size (tired-tests--entry "log.txt"))))
-    (tired-tests--write "log.txt" "0123456789")
+    (should (= 0 (tired-entry-size (tired-test--entry "log.txt"))))
+    (tired-test--write "log.txt" "0123456789")
     (tired-refresh)
-    (should (= 10 (tired-entry-size (tired-tests--entry "log.txt"))))
+    (should (= 10 (tired-entry-size (tired-test--entry "log.txt"))))
     (should (string-match-p
              "log.txt +10 "
              (save-excursion
@@ -1221,28 +1221,28 @@ a refresh that trusts the stamps alone keeps the old size."
 
 (ert-deftest tired-revert-carries-a-written-file-size ()
   "A revert carries a write to a file that the listing still shows."
-  (tired-tests--with-fixture
-    (tired-tests--write "log.txt" "")
+  (tired-test--with-fixture
+    (tired-test--write "log.txt" "")
     (let ((buffer (tired-noselect root)))
       (with-current-buffer buffer
-        (tired-tests--write "log.txt" "0123456789")
+        (tired-test--write "log.txt" "0123456789")
         (revert-buffer-quick)
-        (should (= 10 (tired-entry-size (tired-tests--entry "log.txt"))))
-        (tired-tests--write "log.txt" "0123456789abcde")
+        (should (= 10 (tired-entry-size (tired-test--entry "log.txt"))))
+        (tired-test--write "log.txt" "0123456789abcde")
         (revert-buffer)
-        (should (= 15 (tired-entry-size (tired-tests--entry "log.txt"))))))))
+        (should (= 15 (tired-entry-size (tired-test--entry "log.txt"))))))))
 
 (ert-deftest tired-refresh-re-reads-a-changed-listing ()
   "A child that arrived reaches the listing through a refresh."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--write "arrived.txt" "x")
+    (tired-test--write "arrived.txt" "x")
     (tired-refresh)
-    (should (member "arrived.txt" (tired-tests--names)))))
+    (should (member "arrived.txt" (tired-test--names)))))
 
 (ert-deftest tired-refresh-option-re-reads-every-time ()
   "The option turns the keep for an unchanged listing off."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((tired-refresh-keeps-an-unchanged-listing nil)
           (reads 0)
@@ -1256,21 +1256,21 @@ a refresh that trusts the stamps alone keeps the old size."
 
 (ert-deftest tired-refresh-notices-a-child-inside-a-chain ()
   "A new child deep in a collapsed chain breaks the row of the chain."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "deep/a/b" root) t)
-    (tired-tests--write "deep/a/b/only.txt" "x")
+    (tired-test--write "deep/a/b/only.txt" "x")
     (tired root)
-    (should (member "deep/a/b/only.txt" (tired-tests--names)))
-    (tired-tests--write "deep/a/b/other.txt" "x")
+    (should (member "deep/a/b/only.txt" (tired-test--names)))
+    (tired-test--write "deep/a/b/other.txt" "x")
     (tired-refresh)
-    (should (member "deep/a/b" (tired-tests--names)))))
+    (should (member "deep/a/b" (tired-test--names)))))
 
 (ert-deftest tired-refresh-keeps-sort-and-point ()
   "Refresh keeps the sort order and the entry at point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--sort-by-column 'size 'reverse)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (tired-refresh)
     (should (equal (tired-entry-name (tired--row-at-point)) "link"))
     (should (eq 'size tired--sort-key))
@@ -1278,26 +1278,26 @@ a refresh that trusts the stamps alone keeps the old size."
 
 (ert-deftest tired-name-cell-shows-symlink-target ()
   "The name column of a symlink shows its target."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let ((cell (tired--name-cell (tired-tests--entry "link"))))
+    (let ((cell (tired--name-cell (tired-test--entry "link"))))
       (should (string-match-p " -> alpha\\.txt\\'" cell)))
     (should (string-suffix-p "/"
-                             (tired--name-cell (tired-tests--entry "sub"))))))
+                             (tired--name-cell (tired-test--entry "sub"))))))
 
 (ert-deftest tired-name-cell-shows-a-shorthand-target ()
   "`tired-shorthand-rules' shortens the target text of a symbolic link.
 The first rule that matches wins, and the rest of the target stays."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((tired-shorthand-rules '(("\\`alpha" . "@a/"))))
       (should (string-match-p " -> @a/\\.txt\\'"
-                              (tired--name-cell (tired-tests--entry "link")))))
+                              (tired--name-cell (tired-test--entry "link")))))
     (let ((tired-shorthand-rules '(("\\`nomatch" . "@x/"))))
       (should (string-match-p " -> alpha\\.txt\\'"
-                              (tired--name-cell (tired-tests--entry "link")))))
+                              (tired--name-cell (tired-test--entry "link")))))
     (should (string-match-p " -> alpha\\.txt\\'"
-                            (tired--name-cell (tired-tests--entry "link"))))))
+                            (tired--name-cell (tired-test--entry "link"))))))
 
 (ert-deftest tired-mode-map-offers-a-menu ()
   "The mode map holds a Tired menu bar entry.
@@ -1313,7 +1313,7 @@ key map alone."
 
 (ert-deftest tired-command-opens-a-listing ()
   "The `tired' command opens the listing of the directory it gets."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (should (commandp 'tired))
     (let ((buffer (tired (directory-file-name root))))
       (should (eq buffer (current-buffer)))
@@ -1322,9 +1322,9 @@ key map alone."
 
 (ert-deftest tired-directory-name-cell-paints-its-slash ()
   "The slash of a directory row takes `tired-directory-suffix-face'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let ((cell (tired--name-cell (tired-tests--entry "sub"))))
+    (let ((cell (tired--name-cell (tired-test--entry "sub"))))
       (should (string-suffix-p "/" cell))
       (should (eq 'tired-directory-suffix-face
                   (get-text-property (1- (length cell)) 'face cell)))
@@ -1346,13 +1346,13 @@ key map alone."
 
 (ert-deftest tired-name-cell-fontifies-names-like-dired ()
   "Directory, symlink and special names get the Dired face mapping."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq 'tired-directory-face
-                (tired-tests--cell-face (tired-tests--entry "sub"))))
+                (tired-test--cell-face (tired-test--entry "sub"))))
     (should (eq 'tired-symlink-face
-                (tired-tests--cell-face (tired-tests--entry "link"))))
-    (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
+                (tired-test--cell-face (tired-test--entry "link"))))
+    (should-not (tired-test--cell-face (tired-test--entry "alpha.txt")))
     (should (eq 'tired-special-face
                 (tired--name-face
                  (tired--entry-create :name "fifo" :type 'special))))))
@@ -1517,16 +1517,16 @@ the last digit of `4755' lines up with `755'."
 
 (ert-deftest tired-size-cell-stays-empty-by-default ()
   "A directory shows no size unless `tired-directory-size' is on."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should-not (default-value 'tired-directory-size))
-    (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))
+    (should (equal "" (tired--size-cell (tired-test--entry "sub"))))
     (should (equal (file-size-human-readable 3)
-                   (tired--size-cell (tired-tests--entry "alpha.txt"))))))
+                   (tired--size-cell (tired-test--entry "alpha.txt"))))))
 
 (ert-deftest tired-size-cell-skips-a-remote-directory ()
   "A remote directory shows no total, because the walk would cross the network."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (original (symbol-function 'file-remote-p)))
       (tired root)
@@ -1563,18 +1563,18 @@ ends in a string-end anchor covers one directory alone."
   "An excluded directory shows no total, takes no walk and adds no byte.
 The walk of a parent directory leaves the whole subtree out of its
 sum, so a mounted directory costs nothing even from above."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (tired-directory-size-exclude
            (list (concat (regexp-quote root) "sub/"))))
       (tired root)
-      (tired-tests--flush-sizes)
-      (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))
+      (tired-test--flush-sizes)
+      (should (equal "" (tired--size-cell (tired-test--entry "sub"))))
       (should-not (tired--directory-total (expand-file-name "sub" root)))
       (should-not (tired--queue-job
                    'size (tired--size-key (expand-file-name "sub" root))))
       (tired--size-enqueue (tired--size-key root) root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       ;; alpha.txt, beta.txt and .hidden alone, because the walk of the
       ;; root pushes no frame for the excluded subtree.
       (should (equal 44 (tired--directory-total root))))))
@@ -1582,33 +1582,33 @@ sum, so a mounted directory costs nothing even from above."
 (ert-deftest tired-excluded-directory-counts-as-non-empty ()
   "An excluded directory keeps the directory face and adds no byte.
 No walk reads it, so the empty-directory mark cannot know its size."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (tired-directory-size-exclude
            (list (concat (regexp-quote root) "sub/"))))
       (tired root)
       (should-not (tired--directory-empty-p (expand-file-name "sub" root)))
       (should (eq 'tired-directory-face
-                  (tired-tests--cell-face (tired-tests--entry "sub"))))
-      (should (zerop (tired--entry-size (tired-tests--entry "sub")))))))
+                  (tired-test--cell-face (tired-test--entry "sub"))))
+      (should (zerop (tired--entry-size (tired-test--entry "sub")))))))
 
 (ert-deftest tired-size-cell-sums-a-directory-recursively ()
   "With `tired-directory-size' on, a directory sums its files."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (equal (file-size-human-readable 9)
-                     (tired--size-cell (tired-tests--entry "sub"))))
+                     (tired--size-cell (tired-test--entry "sub"))))
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root))))
       (tired--size-enqueue (tired--size-key root) root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (equal 53 (tired--directory-total root))))))
 
 (ert-deftest tired--size-walk-reads-each-directory-once ()
   "One walk reads each nested directory once, and a second pass reads nothing."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (calls 0)
           (original (symbol-function 'directory-files-and-attributes)))
@@ -1617,19 +1617,19 @@ No walk reads it, so the empty-directory mark cannot know its size."
                  (lambda (&rest args)
                    (setq calls (1+ calls))
                    (apply original args))))
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (equal 9 (tired--directory-total
                           (expand-file-name "sub" root))))
         ;; The child and its grandchild, once each.  The link back to
         ;; the root stays unfollowed.
         (should (= 2 calls))
         (tired--redraw)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (= 2 calls))))))
 
 (ert-deftest tired--size-key-needs-no-truename ()
   "The size memo keys on the absolute name, not on a resolved link."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (resolved 0))
       (should (equal (directory-file-name root) (tired--size-key root)))
@@ -1645,31 +1645,31 @@ No walk reads it, so the empty-directory mark cannot know its size."
 
 (ert-deftest tired-redraw-reuses-the-size-memo ()
   "A redraw after a redraw reads no directory twice."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (calls 0)
           (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (cl-letf (((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
                    (setq calls (1+ calls))
                    (apply original args))))
         (tired--redraw)
         (tired--redraw)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (= 0 calls))))))
 
 (ert-deftest tired-refresh-rewalks-a-young-size-total ()
   "A refresh recomputes a young total, and a plain redraw reuses it.
 The refresh reads the disk, so a total that `tired-size-cache-ttl'
 still covers can hide a file that arrived after its walk."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
       (cl-letf (((symbol-function 'directory-files-and-attributes)
@@ -1677,28 +1677,28 @@ still covers can hide a file that arrived after its walk."
                    (setq reads (1+ reads))
                    (apply original args))))
         (tired--redraw)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (= 0 reads))
         (tired-refresh)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (> reads 0)))
       (should (equal (file-size-human-readable 104)
-                     (tired--size-cell (tired-tests--entry "sub")))))))
+                     (tired--size-cell (tired-test--entry "sub")))))))
 
 
 (ert-deftest tired-size-cache-ttl-zero-sums-every-refresh ()
   "A zero `tired-size-cache-ttl' makes each refresh walk the subtree."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (tired-size-cache-ttl 0))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
       (tired-refresh)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (equal (file-size-human-readable 104)
-                     (tired--size-cell (tired-tests--entry "sub")))))))
+                     (tired--size-cell (tired-test--entry "sub")))))))
 
 (ert-deftest tired--size-cache-valid-p-follows-the-ttl ()
   "A total expires when its stamp falls outside the window."
@@ -1719,7 +1719,7 @@ still covers can hide a file that arrived after its walk."
 
 (ert-deftest tired--size-cache-clear-drops-every-total ()
   "Clearing the table makes the next row walk the subtree again."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (sub-reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
@@ -1730,11 +1730,11 @@ still covers can hide a file that arrived after its walk."
                      (setq sub-reads (1+ sub-reads)))
                    (apply original directory args))))
         (tired root)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (= 1 sub-reads))
         (tired--size-cache-clear)
         (tired--redraw)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (= 2 sub-reads))))))
 
 ;;; Persistent directories
@@ -1754,7 +1754,7 @@ still covers can hide a file that arrived after its walk."
 
 (ert-deftest tired--size-store-keeps-a-persistent-total ()
   "A walk under a rule stores into the permanent table."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-persistent-directories
            (list (concat "\\`" (regexp-quote root)))))
       (tired--size-store (tired--size-key root) 7 (tired--size-walk-create))
@@ -1764,7 +1764,7 @@ still covers can hide a file that arrived after its walk."
 
 (ert-deftest tired--size-cache-prune-keeps-a-persistent-total ()
   "The permanent table ignores the cache window."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-size-cache-ttl 60)
           (tired-persistent-directories '("/kept/"))
           (tired--size-cache-rules '("/kept/")))
@@ -1777,7 +1777,7 @@ still covers can hide a file that arrived after its walk."
 
 (ert-deftest tired--size-cache-prune-flushes-on-a-rule-change ()
   "A changed rule empties the permanent table once."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-persistent-directories '("/nix/store/")))
       (puthash "/nix/store/a" (cons 5 (float-time))
                tired--size-cache-permanent)
@@ -1791,12 +1791,12 @@ still covers can hide a file that arrived after its walk."
   "A refresh reads no subtree under a rule and keeps its total.
 The rule says that the content never changes, so a total that it
 holds outlives a refresh and a change inside the subtree."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (tired-persistent-directories
            (list (concat "\\`" (regexp-quote root)))))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (gethash (tired--size-key (expand-file-name "sub" root))
                        tired--size-cache-permanent))
       (should (equal 9 (tired--directory-total
@@ -1804,14 +1804,14 @@ holds outlives a refresh and a change inside the subtree."
       (with-temp-file (expand-file-name "sub/inner.txt")
         (insert (make-string 100 ?y)))
       (tired-refresh)
-      (should-not (tired-tests--queued-jobs 'size))
-      (tired-tests--flush-sizes)
+      (should-not (tired-test--queued-jobs 'size))
+      (tired-test--flush-sizes)
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root)))))))
 
 (ert-deftest tired-sync-watches-skips-a-persistent-directory ()
   "A path under a rule takes no watch, because no change arrives."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t)
           (tired-persistent-directories
            (list (concat "\\`" (regexp-quote root))))
@@ -1828,9 +1828,9 @@ holds outlives a refresh and a change inside the subtree."
 
 (ert-deftest tired-clear-caches-drops-every-table ()
   "The command empties the windowed and the permanent caches."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--flush-sizes)
+    (tired-test--flush-sizes)
     (puthash "/kept" (cons 1 (float-time)) tired--size-cache-permanent)
     (puthash "/held" (list nil nil (float-time) 3)
              tired--elements-cache-permanent)
@@ -1846,8 +1846,8 @@ holds outlives a refresh and a change inside the subtree."
   "A listing that no window shows queues no directory size walk.
 Batch Emacs runs no display, so the gate stub keeps the listing
 hidden."
-  (tired-tests--with-fixture
-    (tired-tests--with-deferred-sizes
+  (tired-test--with-fixture
+    (tired-test--with-deferred-sizes
       (let ((tired-directory-size t))
         (tired root)
         (should-not (seq-some #'tired--size-walk-job-p tired--queue-jobs))
@@ -1855,18 +1855,18 @@ hidden."
                      'size (tired--size-key (expand-file-name "sub" root))))
         (should tired--size-deferred)
         (should-not (timerp tired--size-timer))
-        (should (equal "" (tired--size-cell (tired-tests--entry "sub"))))))))
+        (should (equal "" (tired--size-cell (tired-test--entry "sub"))))))))
 
 (ert-deftest tired-size-walk-serves-a-young-total-without-a-window ()
   "A listing that no window shows still reads a young total from the table."
-  (tired-tests--with-fixture
-    (tired-tests--with-deferred-sizes
+  (tired-test--with-fixture
+    (tired-test--with-deferred-sizes
       (puthash (tired--size-key root) (cons 42 (float-time)) tired--size-cache)
       (should (equal 42 (tired--directory-total root))))))
 
 (ert-deftest tired--directory-total-reads-the-table-alone ()
   "A missing total returns nil and reads no directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
@@ -1882,7 +1882,7 @@ hidden."
 
 (ert-deftest tired-size-budget-stops-a-pass ()
   "A spent budget leaves the walk in the queue for a later pass."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (tired-directory-size-budget 0))
       (tired root)
@@ -1899,7 +1899,7 @@ hidden."
 
 (ert-deftest tired--size-walk-advances-one-directory-per-step ()
   "One step reads one directory, so one pass holds a bounded read."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
@@ -1924,7 +1924,7 @@ hidden."
 
 (ert-deftest tired-refresh-drops-a-running-size-walk ()
   "A refresh drops the walk that a stale directory started."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t))
       (tired root)
       (let* ((key (tired--size-key (expand-file-name "sub" root)))
@@ -1936,7 +1936,7 @@ hidden."
 
 (ert-deftest tired-redraw-reads-no-directory-for-a-size ()
   "A redraw prints from the memo table alone."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t))
       (tired root)
       (let ((reads 0)
@@ -1950,34 +1950,34 @@ hidden."
 
 (ert-deftest tired-redraw-defers-a-walk-past-its-budget ()
   "A zero budget leaves the size cell of every directory empty."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t)
           (tired-directory-size-budget 0))
       (tired root)
       (tired--queue-run)
       (should-not (gethash (tired--size-key (expand-file-name "sub" root))
                            tired--size-cache))
-      (should (equal "" (tired--size-cell (tired-tests--entry "sub")))))))
+      (should (equal "" (tired--size-cell (tired-test--entry "sub")))))))
 
 (ert-deftest tired-empty-directory-mark-waits-for-a-window ()
   "A deferred walk keeps the plain directory face and no byte total."
-  (tired-tests--with-fixture
-    (tired-tests--with-deferred-sizes
+  (tired-test--with-fixture
+    (tired-test--with-deferred-sizes
       (make-directory (expand-file-name "hollow" root))
       (tired root)
       (should (eq 'tired-directory-face
-                  (tired-tests--cell-face (tired-tests--entry "hollow"))))
-      (should (zerop (tired--entry-size (tired-tests--entry "hollow")))))))
+                  (tired-test--cell-face (tired-test--entry "hollow"))))
+      (should (zerop (tired--entry-size (tired-test--entry "hollow")))))))
 
 (ert-deftest tired-window-buffer-changed-schedules-the-size-walk ()
   "A window that starts to show the listing schedules the deferred walk.
 Batch Emacs runs no display, so the test calls the hook itself."
-  (tired-tests--with-fixture
-    (tired-tests--with-deferred-sizes
+  (tired-test--with-fixture
+    (tired-test--with-deferred-sizes
       (let ((tired-directory-size t))
         (tired root)
         (should tired--size-deferred)
-        (let ((tired-tests--window-shown t))
+        (let ((tired-test--window-shown t))
           (tired--window-buffer-changed (selected-window))
           (should (timerp tired--size-timer))
           (cancel-timer tired--size-timer)
@@ -1985,13 +1985,13 @@ Batch Emacs runs no display, so the test calls the hook itself."
 
 (ert-deftest tired-name-cell-fontifies-broken-symlink ()
   "A link that does not resolve gets the broken symlink face."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-symbolic-link "missing.txt" (expand-file-name "dead"))
     (tired root)
-    (let ((entry (tired-tests--entry "dead"))
+    (let ((entry (tired-test--entry "dead"))
           (cell nil))
       (should (tired-entry-broken entry))
-      (should-not (tired-entry-broken (tired-tests--entry "link")))
+      (should-not (tired-entry-broken (tired-test--entry "link")))
       (setq cell (tired--name-cell entry))
       (should (eq 'tired-broken-symlink-face (get-text-property 0 'face cell)))
       (should (eq 'tired-broken-symlink-face
@@ -1999,22 +1999,22 @@ Batch Emacs runs no display, so the test calls the hook itself."
 
 (ert-deftest tired-name-cell-fontifies-ignored-suffix ()
   "A name that matches `completion-ignored-extensions' gets the ignored face."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (with-temp-file (expand-file-name "alpha.elc") (insert "x"))
     (tired root)
     (should (eq 'tired-ignored-face
-                (tired-tests--cell-face (tired-tests--entry "alpha.elc"))))
-    (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))
+                (tired-test--cell-face (tired-test--entry "alpha.elc"))))
+    (should-not (tired-test--cell-face (tired-test--entry "alpha.txt")))
     (should (equal (tired--ignored-regexp) (tired--ignored-regexp)))))
 
 (ert-deftest tired-name-cell-marks-an-empty-directory ()
   "A directory whose subtree holds no byte takes `tired-ignored-face'.
 The slash follows the name, so the row dims as one run."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "hollow" root))
     (tired root)
-    (tired-tests--flush-sizes)
-    (let* ((entry (tired-tests--entry "hollow"))
+    (tired-test--flush-sizes)
+    (let* ((entry (tired-test--entry "hollow"))
            (cell (tired--name-cell entry)))
       (should (zerop (tired--directory-total (tired-entry-path entry))))
       (should (eq 'tired-ignored-face (get-text-property 0 'face cell)))
@@ -2023,70 +2023,70 @@ The slash follows the name, so the row dims as one run."
       (should (eq 'tired-ignored-face
                   (get-text-property (1- (length cell)) 'face cell))))
     (should (eq 'tired-directory-face
-                (tired-tests--cell-face (tired-tests--entry "sub"))))))
+                (tired-test--cell-face (tired-test--entry "sub"))))))
 
 (ert-deftest tired-name-cell-marks-a-subtree-of-empty-files ()
   "A directory that holds only empty files and empty children dims too."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "hollow/deeper" root) t)
     (with-temp-file (expand-file-name "hollow/blank.txt") nil)
     (tired root)
-    (tired-tests--flush-sizes)
+    (tired-test--flush-sizes)
     (should (eq 'tired-ignored-face
-                (tired-tests--cell-face (tired-tests--entry "hollow"))))))
+                (tired-test--cell-face (tired-test--entry "hollow"))))))
 
 (ert-deftest tired-name-face-marks-an-empty-directory-without-the-column ()
   "The mark does not wait for `tired-directory-size'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size nil))
       (make-directory (expand-file-name "hollow" root))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (eq 'tired-ignored-face
-                  (tired-tests--cell-face (tired-tests--entry "hollow")))))))
+                  (tired-test--cell-face (tired-test--entry "hollow")))))))
 
 (ert-deftest tired-refresh-recomputes-a-live-total ()
   "A refresh re-walks a shown directory, so a new file clears the dim.
 A total young enough for `tired-size-cache-ttl' would otherwise
 keep `tired-ignored-face' and a zero size cell until that window
 ends, even though the refresh just read the new file from disk."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-collapse-single-child nil))
       (make-directory (expand-file-name "hollow" root))
       (tired root)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (zerop (tired--directory-total
                       (expand-file-name "hollow" root))))
       (should (eq 'tired-ignored-face
-                  (tired-tests--printed-name-face "hollow")))
+                  (tired-test--printed-name-face "hollow")))
       (with-temp-file (expand-file-name "hollow/new.txt") (insert "bytes"))
       (tired-refresh)
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (= 5 (tired--directory-total
                     (expand-file-name "hollow" root))))
       (should (eq 'tired-directory-face
-                  (tired-tests--printed-name-face "hollow"))))))
+                  (tired-test--printed-name-face "hollow"))))))
 
 (ert-deftest tired-refresh-keeps-a-forced-walk-until-a-window-shows ()
   "A refresh of a hidden listing waits to queue its walk.
 No window shows the listing, so the refresh queues nothing and the
 forced walk waits for the display that follows."
-  (tired-tests--with-fixture
-    (tired-tests--with-deferred-sizes
+  (tired-test--with-fixture
+    (tired-test--with-deferred-sizes
       (let ((tired-collapse-single-child nil))
         (make-directory (expand-file-name "hollow" root))
-        (let ((tired-tests--window-shown t))
+        (let ((tired-test--window-shown t))
           (tired root)
-          (tired-tests--flush-sizes))
+          (tired-test--flush-sizes))
         (should (zerop (tired--directory-total
                         (expand-file-name "hollow" root))))
         (with-temp-file (expand-file-name "hollow/new.txt") (insert "bytes"))
         (tired-refresh)
         (should tired--size-forced)
-        (setq tired-tests--window-shown t)
+        (setq tired-test--window-shown t)
         (tired--redraw-buffer)
         (should-not tired--size-forced)
-        (tired-tests--flush-sizes)
+        (tired-test--flush-sizes)
         (should (= 5 (tired--directory-total
                       (expand-file-name "hollow" root))))))))
 
@@ -2110,36 +2110,36 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-name-faces-colorizes-a-matching-name ()
   "A `tired-name-faces' rule sets the name face, and a directory keeps its own."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-name-faces '(("\\.txt\\'" . bold)
                               ("." . italic))))
       (tired root)
-      (should (eq 'bold (tired-tests--cell-face
-                         (tired-tests--entry "alpha.txt"))))
+      (should (eq 'bold (tired-test--cell-face
+                         (tired-test--entry "alpha.txt"))))
       (should (eq 'tired-directory-face
-                  (tired-tests--cell-face (tired-tests--entry "sub"))))
+                  (tired-test--cell-face (tired-test--entry "sub"))))
       ;; The first matching rule wins.
-      (should (eq 'bold (tired--name-face (tired-tests--entry "beta.txt")))))))
+      (should (eq 'bold (tired--name-face (tired-test--entry "beta.txt")))))))
 
 (ert-deftest tired-name-faces-accepts-a-face-list ()
   "A rule value may add attributes to a color with an anonymous face."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-name-faces '(("\\.txt\\'" bold (:underline t)))))
       (tired root)
       (should (equal '(bold (:underline t))
-                     (tired-tests--cell-face
-                      (tired-tests--entry "alpha.txt"))))
+                     (tired-test--cell-face
+                      (tired-test--entry "alpha.txt"))))
       (should (equal '(bold (:underline t))
                      (get-text-property
                       0 'font-lock-face
-                      (tired--name-cell (tired-tests--entry "alpha.txt"))))))))
+                      (tired--name-cell (tired-test--entry "alpha.txt"))))))))
 
 (ert-deftest tired-name-faces-paints-only-a-submatch ()
   "An integer third element paints the submatch and leaves the name plain."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
       (tired root)
-      (let ((cell (tired--name-cell (tired-tests--entry "alpha.txt"))))
+      (let ((cell (tired--name-cell (tired-test--entry "alpha.txt"))))
         (should (equal "alpha.txt" (substring-no-properties cell)))
         ;; "alpha" stays plain.
         (should-not (get-text-property 0 'face cell))
@@ -2147,32 +2147,32 @@ forced walk waits for the display that follows."
         (should (eq 'bold (get-text-property 5 'face cell)))
         (should (eq 'bold (get-text-property 5 'font-lock-face cell)))
         ;; A partial rule never paints the whole name.
-        (should-not (tired--name-face (tired-tests--entry "alpha.txt")))))))
+        (should-not (tired--name-face (tired-test--entry "alpha.txt")))))))
 
 (ert-deftest tired-name-faces-later-partial-rule-wins ()
   "A later partial rule paints over an earlier one on the same text."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0)
                               ("\\(?:txt\\)\\'" italic 0))))
       (tired root)
-      (let ((cell (tired--name-cell (tired-tests--entry "alpha.txt"))))
+      (let ((cell (tired--name-cell (tired-test--entry "alpha.txt"))))
         (should (eq 'bold (get-text-property 5 'face cell)))
         (should (equal '(italic bold) (get-text-property 6 'face cell)))))))
 
 (ert-deftest tired-name-faces-partial-rule-skips-a-directory ()
   "A directory keeps its own face and no partial span."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
       (make-directory (expand-file-name "name.txt") t)
       (with-temp-file (expand-file-name "name.txt/keep.txt") (insert "x"))
       (tired root)
-      (let ((cell (tired--name-cell (tired-tests--entry "name.txt"))))
+      (let ((cell (tired--name-cell (tired-test--entry "name.txt"))))
         (should (eq 'tired-directory-face (get-text-property 0 'face cell)))
         (should (eq 'tired-directory-face (get-text-property 4 'face cell)))))))
 
 (ert-deftest tired-name-faces-paint-the-extension-of-a-collapsed-row ()
   "A collapsed row paints the base name, never the directory chain."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-name-faces '(("\\(?:\\.txt\\)\\'" bold 0))))
       (make-directory (expand-file-name "chain/a" root) t)
       (with-temp-file (expand-file-name "chain/a/leaf.txt" root)
@@ -2193,38 +2193,38 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-name-face-defaults-to-nil ()
   "With no rule and no Dired face, a plain file keeps no face."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should-not (default-value 'tired-name-faces))
-    (should-not (tired-tests--cell-face (tired-tests--entry "alpha.txt")))))
+    (should-not (tired-test--cell-face (tired-test--entry "alpha.txt")))))
 
 (ert-deftest tired-name-cell-sets-both-face-properties ()
   "A name cell carries `face' and `font-lock-face', so refontification keeps it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let ((cell (tired--name-cell (tired-tests--entry "sub"))))
+    (let ((cell (tired--name-cell (tired-test--entry "sub"))))
       (should (eq 'tired-directory-face (get-text-property 0 'face cell)))
       (should (eq 'tired-directory-face
                   (get-text-property 0 'font-lock-face cell))))))
 
 (ert-deftest tired-file-size-cell-carries-the-size-face ()
   "The size column takes `tired-file-size' and an empty cell stays plain."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let* ((entry (tired-tests--entry "alpha.txt"))
+    (let* ((entry (tired-test--entry "alpha.txt"))
            (cell (aref (tired--row entry 0) 1)))
       (should (eq 'tired-file-size (get-text-property 0 'face cell)))
       (should (eq 'tired-file-size
                   (get-text-property 0 'font-lock-face cell)))
       (should (string= cell (tired--size-cell entry))))
-    (let ((cell (aref (tired--row (tired-tests--entry "sub") 0) 1)))
+    (let ((cell (aref (tired--row (tired-test--entry "sub") 0) 1)))
       (should (equal "" cell)))))
 
 (ert-deftest tired-date-cell-carries-the-date-face ()
   "The modification time column takes `tired-date'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (let* ((entry (tired-tests--entry "alpha.txt"))
+    (let* ((entry (tired-test--entry "alpha.txt"))
            (cell (aref (tired--row entry 0) 3)))
       (should (eq 'tired-date (get-text-property 0 'face cell)))
       (should (eq 'tired-date (get-text-property 0 'font-lock-face cell)))
@@ -2233,7 +2233,7 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-name-face-survives-font-lock ()
   "Font-lock refontification does not strip the directory face."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (setq-local font-lock-defaults
                 '((("alpha\\.txt\\>" (0 'bold)))))
@@ -2242,19 +2242,19 @@ forced walk waits for the display that follows."
     (unwind-protect
         (progn
           (font-lock-ensure)
-          (tired-tests--goto "sub")
+          (tired-test--goto "sub")
           (should (eq 'tired-directory-face
                       (get-text-property (point) 'font-lock-face)))
-          (tired-tests--goto "alpha.txt")
+          (tired-test--goto "alpha.txt")
           (should (eq 'bold (get-text-property (point) 'face))))
       (let ((noninteractive nil))
         (font-lock-mode -1)))))
 
 (ert-deftest tired-jump-from-file-buffer ()
   "Jumping from a file buffer opens its directory and marks the file."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-find-file)
     (let ((file-buffer (current-buffer)))
       (unwind-protect
@@ -2268,10 +2268,10 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-jump-from-tired-buffer-goes-up ()
   "Jumping from a Tired buffer opens the parent and marks the directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((origin (current-buffer)))
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-find-file)
       (tired-jump)
       (should (eq (current-buffer) origin))
@@ -2279,7 +2279,7 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-jump-centers-the-origin-row ()
   "A jump puts the row of the origin buffer in the middle of the window."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     ;; Twenty-four sibling directories give the origin row more rows
     ;; above it than half a batch window, so a centered window start
     ;; stays inside the listing.
@@ -2288,7 +2288,7 @@ forced walk waits for the display that follows."
     (tired root)
     (let ((origin (current-buffer))
           (height (window-body-height)))
-      (tired-tests--goto "d15")
+      (tired-test--goto "d15")
       (tired-find-file)
       (tired-jump)
       (should (eq (current-buffer) origin))
@@ -2300,7 +2300,7 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-jump-uses-default-directory ()
   "Jumping from a buffer without a file uses `default-directory'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (with-temp-buffer
       (setq default-directory root)
       (tired-jump)
@@ -2309,7 +2309,7 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-project-opens-the-project-root ()
   "The command shows the root that the project reports."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (require 'project)
     (let ((project-root (file-name-as-directory
                          (expand-file-name "sub" root))))
@@ -2321,7 +2321,7 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-project-asks-for-a-project ()
   "A directory outside a project makes the command prompt."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (require 'project)
     (let (asked
           (project-root (file-name-as-directory
@@ -2335,24 +2335,24 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-directory-at-point-names-the-directory-row ()
   "Point on a directory row names that directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (should (equal (tired-directory-at-point)
                    (file-name-as-directory (expand-file-name "sub" root))))))
 
 (ert-deftest tired-directory-at-point-names-the-file-parent ()
   "Point on a file row names the directory that holds the file."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (should (equal (tired-directory-at-point) root))
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (should (equal (tired-directory-at-point) root))))
 
 (ert-deftest tired-directory-at-point-names-the-chain-component ()
   "Point on a collapsed chain names the component under point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a" root) t)
     (with-temp-file (expand-file-name "chain/a/leaf.txt" root)
       (insert "leaf"))
@@ -2374,48 +2374,48 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-directory-at-point-falls-back-to-the-listing ()
   "Point below the last row names the directory that the buffer lists."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (goto-char (point-max))
     (should (equal (tired-directory-at-point) root))))
 
 (ert-deftest tired-path-at-point-names-the-row ()
   "The path answer names the file itself, not its directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (should (equal (tired-path-at-point)
                    (expand-file-name "alpha.txt" root)))
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (should (equal (tired-path-at-point) (expand-file-name "sub" root)))
     ;; The whole line answers, so a column past the name still names
     ;; the row.
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (end-of-line)
     (should (equal (tired-path-at-point)
                    (expand-file-name "alpha.txt" root)))))
 
 (ert-deftest tired-path-at-point-falls-back-to-the-listing ()
   "Point below the last row names the directory that the buffer lists."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (goto-char (point-max))
     (should (equal (tired-path-at-point) root))))
 
 (ert-deftest tired-with-directory-at-point-binds-the-row-directory ()
   "The wrapper binds `default-directory' to the row directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (should (equal (tired-with-directory-at-point
                      (lambda () default-directory))
                    (file-name-as-directory (expand-file-name "sub" root))))))
 
 (ert-deftest tired-run-at-point-runs-the-command-in-the-row-directory ()
   "A command that reads `default-directory' sees the row directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (let ((asked nil))
       (tired-run-at-point (lambda ()
                             (interactive)
@@ -2425,9 +2425,9 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-magit-status-runs-in-the-directory-at-point ()
   "The command runs Magit in the directory of the row at point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (let ((asked nil))
       (cl-letf (((symbol-function 'magit-status)
                  (lambda (&optional directory)
@@ -2440,16 +2440,16 @@ forced walk waits for the display that follows."
 (ert-deftest tired-context-menu-offers-the-magit-status ()
   "A right click on a row offers the Magit status command."
   (skip-unless (require 'mouse nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
-    (let* ((event (tired-tests--click 'mouse-3 (point)))
+    (tired-test--goto "alpha.txt")
+    (let* ((event (tired-test--click 'mouse-3 (point)))
            (menu (tired-context-menu (make-sparse-keymap) event)))
       (should (lookup-key menu [tired-magit-status])))))
 
 (ert-deftest tired-bookmark-round-trip ()
   "A Tired bookmark records the directory and restores the buffer."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((record (tired-bookmark-make-record)))
       (should (equal (car record) (abbreviate-file-name root)))
@@ -2462,7 +2462,7 @@ forced walk waits for the display that follows."
 (ert-deftest tired-records-the-directory-in-recentf ()
   "Opening a listing records the directory while recentf holds."
   (skip-unless (require 'recentf nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((recentf-list nil)
           (recentf-mode t))
       (tired root)
@@ -2478,7 +2478,7 @@ forced walk waits for the display that follows."
 (ert-deftest tired-skips-recentf-when-the-mode-is-off ()
   "A session without recentf keeps an untouched list."
   (skip-unless (require 'recentf nil t))
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((recentf-list nil)
           (recentf-mode nil))
       (tired root)
@@ -2486,12 +2486,12 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-insert-subdir-adds-indented-children ()
   "Inserting a directory shows its children below it, indented by depth."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
     ;; `deep` holds one file, so it collapses into one row.
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" "deep/leaf.txt" "loop" "inner.txt"
                      ".hidden" "link" "alpha.txt" "beta.txt")))
     (should (equal (mapcar #'cdr (tired--display-rows t))
@@ -2506,14 +2506,14 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-insert-subdir-nests ()
   "Inserting a child section keeps the tree order."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-insert-subdir)
-      (tired-tests--goto "deep")
+      (tired-test--goto "deep")
       (tired-insert-subdir)
-      (should (equal (tired-tests--names)
+      (should (equal (tired-test--names)
                      '("sub" "deep" "leaf.txt" "loop" "inner.txt"
                        ".hidden" "link" "alpha.txt" "beta.txt")))
       (should (equal (mapcar #'cdr (tired--display-rows t))
@@ -2521,30 +2521,30 @@ forced walk waits for the display that follows."
 
 (ert-deftest tired-toggle-subdir-removes-children ()
   "TAB inserts and removes one section."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-toggle-subdir)
-    (should (member "inner.txt" (tired-tests--names)))
+    (should (member "inner.txt" (tired-test--names)))
     (tired-toggle-subdir)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("sub" ".hidden" "link" "alpha.txt" "beta.txt")))))
 
 (ert-deftest tired-toggle-subdir-keeps-point-at-the-name ()
   "TAB keeps point at the start of the name of its row.
 A deeply indented row must not move the cursor to the line start,
 because `tired-next-line' leaves it on the name."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "sub/deep/nest" root) t)
-    (tired-tests--write "sub/deep/other.txt" "other")
-    (tired-tests--write "sub/deep/nest/a.txt" "a")
-    (tired-tests--write "sub/deep/nest/b.txt" "b")
+    (tired-test--write "sub/deep/other.txt" "other")
+    (tired-test--write "sub/deep/nest/a.txt" "a")
+    (tired-test--write "sub/deep/nest/b.txt" "b")
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--goto "deep")
+    (tired-test--goto "deep")
     (tired-insert-subdir)
-    (tired-tests--goto "nest")
+    (tired-test--goto "nest")
     (tired-next-line 0)
     (should (= 4 (current-column)))
     (tired-toggle-subdir)
@@ -2559,15 +2559,15 @@ because `tired-next-line' leaves it on the name."
 The idle size pass repaints the listing after a view command, and
 `tired--goto-row' leaves point at the line start, so a deep row once
 put the cursor inside the indent a moment after the toggle."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-insert-subdir)
-      (tired-tests--goto "deep")
+      (tired-test--goto "deep")
       (tired--beginning-of-name)
       (should (= 2 (current-column)))
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (equal "deep" (tired-entry-name (tired--row-at-point))))
       (should (= 2 (current-column)))
       (tired-sort)
@@ -2580,31 +2580,31 @@ The idle size pass repaints the listing while point sits inside a
 name, and `tired--goto-row' leaves point at the line start.  The
 redraw once put the cursor back on the first character of the name,
 and on a nested row it put it inside the indent."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired--beginning-of-name)
       (forward-char 2)
       (should (= 2 (current-column)))
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (equal "sub" (tired-entry-name (tired--row-at-point))))
       (should (= 2 (current-column)))
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-insert-subdir)
-      (tired-tests--goto "deep")
+      (tired-test--goto "deep")
       (tired--beginning-of-name)
       (forward-char 1)
       (should (= 3 (current-column)))
-      (tired-tests--flush-sizes)
+      (tired-test--flush-sizes)
       (should (equal "deep" (tired-entry-name (tired--row-at-point))))
       (should (= 3 (current-column))))))
 
 (ert-deftest tired-goto-name-offset-stops-at-the-line ()
   "A name offset stays between the name start and the line end."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired--goto-name-offset 1000)
     (should (= (line-end-position) (point)))
     (tired--goto-name-offset -5)
@@ -2614,64 +2614,64 @@ and on a nested row it put it inside the indent."
 
 (ert-deftest tired-remove-subdir-drops-descendants ()
   "Removing a section drops nested inserted sections as well."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-insert-subdir)
-      (tired-tests--goto "deep")
+      (tired-test--goto "deep")
       (tired-insert-subdir)
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-remove-subdir)
       (should (= 0 (hash-table-count tired--inserted)))
-      (should (equal (tired-tests--names)
+      (should (equal (tired-test--names)
                      '("sub" ".hidden" "link" "alpha.txt" "beta.txt"))))))
 
 (ert-deftest tired-insert-subdir-rejects-files ()
   "Inserting a file signals a user error."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (should-error (tired-insert-subdir) :type 'user-error)))
 
 (ert-deftest tired-refresh-keeps-inserted-sections ()
   "Refresh reloads inserted directories and keeps the sections."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
     (with-temp-file (expand-file-name "sub/new.txt") (insert "new"))
     (tired-refresh)
-    (should (member "new.txt" (tired-tests--names)))
+    (should (member "new.txt" (tired-test--names)))
     (should (tired--inserted-p (expand-file-name "sub" root)))))
 
 (ert-deftest tired-insert-subdir-expands-symlink-directory ()
   "An inserted symlink to a directory shows its children."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((link (expand-file-name "dirlink" root)))
       (make-symbolic-link (expand-file-name "sub" root) link)
       (tired root)
-      (tired-tests--goto "dirlink")
+      (tired-test--goto "dirlink")
       (should (eq 'symlink (tired-entry-type (tired--row-at-point))))
       (tired-toggle-subdir)
-      (should (member "inner.txt" (tired-tests--names)))
-      (should (member "deep/leaf.txt" (tired-tests--names)))
+      (should (member "inner.txt" (tired-test--names)))
+      (should (member "deep/leaf.txt" (tired-test--names)))
       (should (tired--inserted-p link))
       (tired-toggle-subdir)
-      (should-not (member "inner.txt" (tired-tests--names))))))
+      (should-not (member "inner.txt" (tired-test--names))))))
 
 (ert-deftest tired-insert-subdir-guards-symlink-cycles ()
   "A symlink back to an ancestor does not recurse."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--goto "loop")
+    (tired-test--goto "loop")
     (tired-insert-subdir)
-    (should (= 8 (length (tired-tests--names))))))
+    (should (= 8 (length (tired-test--names))))))
 
-(defmacro tired-tests--with-remote (root added &rest body)
-  "Treat every path below ROOT as remote and record watches in ADDED."
+(defmacro tired-test--with-remote (root added &rest body)
+  "Treat every path below ROOT as remote, record watches in ADDED and run BODY."
   (declare (indent 2) (debug t))
   `(cl-letf (((symbol-function 'file-remote-p)
               (lambda (path &rest _) (string-prefix-p ,root path)))
@@ -2679,7 +2679,7 @@ and on a nested row it put it inside the indent."
               (lambda (directory &rest _) (push directory ,added) nil)))
      ,@body))
 
-(defun tired-tests--tree-with-files (root count)
+(defun tired-test--tree-with-files (root count)
   "Create COUNT directories under ROOT, each with two files.
 Two files keep a directory from collapsing into a single row, so
 every directory prints one row and adds two rows when it expands."
@@ -2698,21 +2698,21 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-inserts-every-directory-when-it-fits ()
   "A tree that fits the window expands on the first display."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
       (tired root)
       (should (tired--inserted-p (expand-file-name "sub" root)))
       ;; The link back to the root expands to no new row.
       (should (tired--inserted-p (expand-file-name "sub/loop" root)))
-      (should (equal (tired-tests--names)
+      (should (equal (tired-test--names)
                      '("sub" "deep/leaf.txt" "loop" "inner.txt"
                        ".hidden" "link" "alpha.txt" "beta.txt"))))))
 
 (ert-deftest tired-expand-all-leaves-a-tall-tree-collapsed ()
   "A tree that would scroll the window stays as it is."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
-      (tired-tests--tree-with-files root 8)
+      (tired-test--tree-with-files root 8)
       (tired root)
       (let* ((base (length (tired--display-rows t)))
              (height (window-body-height)))
@@ -2726,9 +2726,9 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-leaves-a-longer-base-listing-collapsed ()
   "A listing that already scrolls stays collapsed."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
-      (tired-tests--tree-with-files root 30)
+      (tired-test--tree-with-files root 30)
       (tired root)
       (should (> (length (tired--display-rows t)) (window-body-height)))
       (should (zerop (hash-table-count tired--inserted)))
@@ -2736,12 +2736,12 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-reads-only-a-prefix-of-a-huge-tree ()
   "The trial stops reading directories when the budget passes."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t)
           (tired-collapse-single-child nil)
           (reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
-      (tired-tests--tree-with-files root 200)
+      (tired-test--tree-with-files root 200)
       (cl-letf (((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest arguments)
                    (setq reads (1+ reads))
@@ -2753,7 +2753,7 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-fits-p-stops-at-the-limit ()
   "The trial accepts a full fit and rejects one row over the limit."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((base (length (tired--display-rows t)))
           (tables (copy-hash-table tired--tables))
@@ -2773,7 +2773,7 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-budget-reads-the-window-and-the-line ()
   "The row budget divides the body pixels by one default line."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((window (selected-window)))
       (should (= (floor (window-body-height window t)
@@ -2782,25 +2782,25 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-honours-the-option ()
   "A nil option keeps the tree collapsed."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (zerop (hash-table-count tired--inserted)))
     (should-not tired--expand-fits-done)))
 
 (ert-deftest tired-expand-all-drops-a-tree-that-a-tall-row-scrolls ()
   "A printed listing taller than the body goes back to collapsed."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
       (cl-letf (((symbol-function 'tired--listing-fits-p) #'ignore))
         (tired root)
         (should (zerop (hash-table-count tired--inserted)))
-        (should (equal (tired-tests--names)
+        (should (equal (tired-test--names)
                        '("sub" ".hidden" "link" "alpha.txt"
                          "beta.txt")))))))
 
 (ert-deftest tired-expand-all-skips-a-directory-that-a-read-fails ()
   "A directory that fails to read stays collapsed, and the trial goes on."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "other" root))
     (with-temp-file (expand-file-name "other/one.txt") (insert "1"))
     (with-temp-file (expand-file-name "other/two.txt") (insert "2"))
@@ -2821,21 +2821,21 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-skips-a-remote-directory ()
   "A remote directory stays collapsed, and the attempt still runs."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t)
           (added nil))
-      (tired-tests--with-remote root added
+      (tired-test--with-remote root added
         (tired root)
         (should (zerop (hash-table-count tired--inserted)))
         (should tired--expand-fits-done)))))
 
 (ert-deftest tired-expand-all-tries-once-per-buffer ()
   "A collapse that the user makes after the attempt stays collapsed."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
       (tired root)
       (should (tired--inserted-p (expand-file-name "sub" root)))
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-remove-subdir)
       (should-not (tired--inserted-p (expand-file-name "sub" root)))
       (tired--expand-all-in-buffer (current-buffer) (selected-window))
@@ -2844,7 +2844,7 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-expand-all-waits-for-a-window ()
   "A listing that no window shows finishes the attempt on display."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let* ((tired-expand-all-if-fits t)
            (buffer (tired-noselect root)))
       (with-current-buffer buffer
@@ -2861,11 +2861,11 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-selection-targets-cover-inserted-entries ()
   "Selection and targets work inside inserted sections."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (tired-select-toggle)
     (should (equal (mapcar #'tired-entry-name (tired--selection-targets))
                    '("inner.txt")))
@@ -2875,67 +2875,67 @@ every directory prints one row and adds two rows when it expands."
 
 (ert-deftest tired-region-drives-targets ()
   "The active region sets the targets when the selection is empty."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
-    (should (equal (tired-tests--target-names) '("alpha.txt" "beta.txt")))
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
+    (should (equal (tired-test--target-names) '("alpha.txt" "beta.txt")))
     (should-not tired--selection)))
 
 (ert-deftest tired-region-includes-the-row-at-point ()
   "A region that ends at a line start keeps that row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (transient-mark-mode 1)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (beginning-of-line)
     (push-mark (point) t t)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (beginning-of-line)
-    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))
+    (should (equal (tired-test--target-names) '("link" "alpha.txt")))
     (deactivate-mark)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (beginning-of-line)
     (push-mark (point) t t)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (beginning-of-line)
-    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))))
+    (should (equal (tired-test--target-names) '("link" "alpha.txt")))))
 
 (ert-deftest tired-region-follows-the-line-motions ()
   "A line motion extends the region to the row that it reaches.
 The name motion and the plain motion both add the row at point, so
 the indent of the row decides nothing."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (transient-mark-mode 1)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (beginning-of-line)
     (push-mark (point) t t)
     (tired-next-line)
-    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))
+    (should (equal (tired-test--target-names) '("link" "alpha.txt")))
     (tired-next-line)
-    (should (equal (tired-tests--target-names)
+    (should (equal (tired-test--target-names)
                    '("link" "alpha.txt" "beta.txt")))
     (deactivate-mark)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (beginning-of-line)
     (push-mark (point) t t)
     (forward-line 1)
-    (should (equal (tired-tests--target-names) '("link" "alpha.txt")))))
+    (should (equal (tired-test--target-names) '("link" "alpha.txt")))))
 
 (ert-deftest tired-region-loses-to-the-selection ()
   "An explicit selection wins over the active region."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (tired-select-toggle)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
-    (should (equal (tired-tests--target-names) '("link")))))
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
+    (should (equal (tired-test--target-names) '("link")))))
 
 (ert-deftest tired-region-copy-path-copies-every-row ()
   "Copy acts on the region and then deactivates it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
     (tired-copy-path)
     (should (equal (current-kill 0)
                    (concat (expand-file-name "alpha.txt" root)
@@ -2946,78 +2946,78 @@ the indent of the row decides nothing."
 (ert-deftest tired-region-over-sections-targets-the-file ()
   "A region over the headings of a file reaches that file once.
 The file row may lie inside the same region, and it joins once."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* one\n** one-a\n* two\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* one\n** one-a\n* two\n")
     (tired root)
     (transient-mark-mode 1)
     (tired-expand-file "notes.org")
-    (tired-tests--goto-section "one")
+    (tired-test--goto-section "one")
     (beginning-of-line)
     (push-mark (point) t t)
-    (tired-tests--goto-section "two")
+    (tired-test--goto-section "two")
     (beginning-of-line)
-    (should (equal (tired-tests--target-names) '("notes.org")))
+    (should (equal (tired-test--target-names) '("notes.org")))
     (deactivate-mark)
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (beginning-of-line)
     (push-mark (point) t t)
-    (tired-tests--goto-section "two")
+    (tired-test--goto-section "two")
     (beginning-of-line)
-    (should (equal (tired-tests--target-names) '("notes.org")))))
+    (should (equal (tired-test--target-names) '("notes.org")))))
 
 (ert-deftest tired-region-drives-insert-subdir ()
   "Insert acts on every directory that the region holds."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "extra/zeta" root) t)
     (let ((tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--mark-row-range "extra" "sub")
+      (tired-test--mark-row-range "extra" "sub")
       (tired-insert-subdir)
       (should (tired--inserted-p (expand-file-name "extra" root)))
       (should (tired--inserted-p (expand-file-name "sub" root)))
-      (should (member "zeta" (tired-tests--names)))
+      (should (member "zeta" (tired-test--names)))
       (should (= 2 (length tired--selection))))))
 
 (ert-deftest tired-region-drives-expand-file ()
   "Expand acts on every file with a handler in the region."
-  (tired-tests--with-fixture
-    (tired-tests--write "one.org" "* a\n* b\n")
-    (tired-tests--write "two.org" "* c\n* d\n")
+  (tired-test--with-fixture
+    (tired-test--write "one.org" "* a\n* b\n")
+    (tired-test--write "two.org" "* c\n* d\n")
     (tired root)
-    (tired-tests--mark-row-range "one.org" "two.org")
+    (tired-test--mark-row-range "one.org" "two.org")
     (tired-expand-file)
     (should (tired--expanded-p (expand-file-name "one.org" root)))
     (should (tired--expanded-p (expand-file-name "two.org" root)))
-    (should (member "a" (mapcar #'car (tired-tests--sections))))))
+    (should (member "a" (mapcar #'car (tired-test--sections))))))
 
 (ert-deftest tired-region-drives-toggle-subdir ()
   "Toggle expands every handled file in the region."
-  (tired-tests--with-fixture
-    (tired-tests--write "one.org" "* a\n* b\n")
-    (tired-tests--write "two.org" "* c\n* d\n")
+  (tired-test--with-fixture
+    (tired-test--write "one.org" "* a\n* b\n")
+    (tired-test--write "two.org" "* c\n* d\n")
     (tired root)
-    (tired-tests--mark-row-range "one.org" "two.org")
+    (tired-test--mark-row-range "one.org" "two.org")
     (tired-toggle-subdir)
     (should (tired--expanded-p (expand-file-name "one.org" root)))
     (should (tired--expanded-p (expand-file-name "two.org" root)))))
 
 (ert-deftest tired-select-none-clears-the-region ()
   "Clear drops both target sources, so a region never survives it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "link" "alpha.txt")
+    (tired-test--mark-row-range "link" "alpha.txt")
     (should (use-region-p))
     (tired-select-none)
     (should-not (use-region-p))
     (should-not tired--selection)
-    (should (equal (tired-tests--target-names) '("alpha.txt")))))
+    (should (equal (tired-test--target-names) '("alpha.txt")))))
 
 (ert-deftest tired-select-none-at-point-unmarks-one-row ()
   "Unmark drops the row at point alone and moves down."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-select-all)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (let ((line (line-number-at-pos)))
       (tired-select-none-at-point)
       (should (= (line-number-at-pos) (1+ line))))
@@ -3031,11 +3031,11 @@ The file row may lie inside the same region, and it joins once."
 
 (ert-deftest tired-select-none-at-point-keeps-an-unselected-row ()
   "Unmark on a row outside the selection changes nothing but point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (let ((line (line-number-at-pos)))
       (tired-select-none-at-point)
       (should (= (line-number-at-pos) (1+ line))))
@@ -3044,22 +3044,22 @@ The file row may lie inside the same region, and it joins once."
 
 (ert-deftest tired-select-none-at-point-refuses-a-section-row ()
   "A section row stands for its file, so unmark signals an error."
-  (tired-tests--with-fixture
-    (tired-tests--write "notes.org" "* one\n** one-a\n")
+  (tired-test--with-fixture
+    (tired-test--write "notes.org" "* one\n** one-a\n")
     (tired root)
     (tired-expand-file "notes.org")
-    (tired-tests--goto-section "one")
+    (tired-test--goto-section "one")
     (should-error (tired-select-none-at-point) :type 'user-error)))
 
 (ert-deftest tired-select-none-at-point-unflags-a-flagged-row ()
   "Unmark drops the deletion flag of the row at point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-select-none-at-point)
         (should-not tired--flagged-deletion)
         (should-not tired--delete-timer)
@@ -3073,37 +3073,37 @@ The file row may lie inside the same region, and it joins once."
 
 (ert-deftest tired-narrow-to-selection-accepts-a-region ()
   "Narrow reads the region when the selection stays empty."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
     (tired-narrow-to-selection)
-    (should (equal (tired-tests--names) '("alpha.txt" "beta.txt")))))
+    (should (equal (tired-test--names) '("alpha.txt" "beta.txt")))))
 
 (ert-deftest tired-mode-line-reports-the-region-size ()
   "The mode line gives the region the count and the size of a selection.
 A directory in the region adds its whole subtree, as a selected
 directory does."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--flush-sizes)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-test--flush-sizes)
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
     (tired--update-mode-line)
     (should (string-match-p "2 in region, 43" (tired--mode-line)))
     (deactivate-mark)
-    (tired-tests--mark-row-range "sub" ".hidden")
+    (tired-test--mark-row-range "sub" ".hidden")
     (tired--update-mode-line)
     (should (string-match-p "2 in region, 10" (tired--mode-line)))
     (deactivate-mark)
-    (tired-tests--mark-row-range ".hidden" "beta.txt")
+    (tired-test--mark-row-range ".hidden" "beta.txt")
     (tired--update-mode-line)
     (should (string-match-p "4 in region, 53" (tired--mode-line)))))
 
 (ert-deftest tired-redraw-restores-the-mark-by-path ()
   "Refresh and sort keep the mark on the same entry."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (transient-mark-mode 1)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (beginning-of-line)
     (push-mark (point) t t)
     (tired-refresh)
@@ -3118,14 +3118,14 @@ directory does."
 The window size hook redraws a listing while another window holds the
 selection, so the redraw reads the window point, not the buffer point,
 and it puts that window point back after the reprint."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (let* ((listing (selected-window))
            (other (split-window)))
       (unwind-protect
           (progn
-            (set-window-buffer other (get-buffer-create " *tired-tests-other*"))
+            (set-window-buffer other (get-buffer-create " *tired-test-other*"))
             (select-window other)
             (with-current-buffer (window-buffer listing)
               (tired--redraw listing)
@@ -3133,17 +3133,17 @@ and it puts that window point back after the reprint."
                              (tired-entry-name
                               (tired--row-at (window-point listing)))))))
         (delete-window other)
-        (when (get-buffer " *tired-tests-other*")
-          (kill-buffer " *tired-tests-other*"))))))
+        (when (get-buffer " *tired-test-other*")
+          (kill-buffer " *tired-test-other*"))))))
 
 (ert-deftest tired-redraw-keeps-the-window-start ()
   "A redraw keeps the scroll position of a long listing.
 The reprint erases the buffer, and the erase also collapses the
 display start marker, so point would land at the bottom of a window
 that starts at the first line."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (dotimes (index 40)
-      (tired-tests--write (format "n%02d.txt" index) "x"))
+      (tired-test--write (format "n%02d.txt" index) "x"))
     (tired root)
     (let ((window (selected-window)))
       (goto-char (point-min))
@@ -3160,7 +3160,7 @@ that starts at the first line."
   "A redraw builds one row list for the width pass and the print.
 Before the cache, the name column width walked the tree and the
 printer walked it again, so a redraw cost two walks."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((calls 0)
           (original (symbol-function 'tired--display-rows)))
@@ -3173,27 +3173,27 @@ printer walked it again, so a redraw cost two walks."
 
 (ert-deftest tired-mode-line-is-empty-without-state ()
   "A plain listing shows no bracket group in the mode line."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t)
           (tired-collapse-single-child t))
       (tired root)
       (should (equal "" (tired--mode-line)))
-      (tired-tests--goto "alpha.txt")
+      (tired-test--goto "alpha.txt")
       (tired-select-toggle)
       (should (string-prefix-p " [1 selected" (tired--mode-line))))))
 
 (ert-deftest tired-mode-line-counts-hidden-entries ()
   "The mode line reports the entries that `tired-hidden-regexps' hides."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-hidden-regexps '("\\.txt\\'")))
       (tired root)
       (should (string-match-p "2 hidden" (tired--mode-line))))))
 
 (ert-deftest tired-mode-line-counts-the-region ()
   "The mode line reports the region when the selection is empty."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "link" "alpha.txt")
+    (tired-test--mark-row-range "link" "alpha.txt")
     (should (string-match-p "2 in region" (tired--mode-line)))
     (tired-select-toggle)
     (should-not (string-match-p "in region" (tired--mode-line)))))
@@ -3202,7 +3202,7 @@ printer walked it again, so a redraw cost two walks."
   "The mode line data holds a string, not a `:eval' form.
 Redisplay therefore formats no string and walks no tree, which the
 old `:eval' element did on every frame refresh."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-select-all)
     (should (stringp (car (last mode-line-format))))
@@ -3215,9 +3215,9 @@ old `:eval' element did on every frame refresh."
   "A new region updates the cached mode line at once.
 A redraw does not run for a region change, so the buffer-local
 `post-command-hook' must refresh the string."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--mark-row-range "alpha.txt" "beta.txt")
+    (tired-test--mark-row-range "alpha.txt" "beta.txt")
     (should-not (string-match-p "in region" (car (last mode-line-format))))
     ;; Batch Emacs runs no command loop, so the test runs the hook that
     ;; the loop would run.
@@ -3228,7 +3228,7 @@ A redraw does not run for a region change, so the buffer-local
   "A filter with a percent sign survives the mode line reader.
 The reader takes one sign as the start of a substitution, so a
 literal one needs two."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "50%")
     (should (string-match-p "50%%" (car (last mode-line-format))))))
@@ -3236,16 +3236,16 @@ literal one needs two."
 (ert-deftest tired-header-line-escapes-a-percent-sign ()
   "A filter with a percent sign survives the header line reader.
 The same substitution rules apply to the header line."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired--apply-filter "50%")
     (should (string-match-p "50%%" (car header-line-format)))))
 
 (ert-deftest tired-select-invert-flips-visible-entries ()
   "Inverting selects every visible entry that was not selected."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
     (tired-select-invert)
     (should (equal (sort (mapcar #'tired-entry-name
@@ -3255,63 +3255,63 @@ The same substitution rules apply to the header line."
 
 (ert-deftest tired-selection-size-counts-a-directory-subtree ()
   "The selection size adds file sizes and each directory subtree."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--flush-sizes)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--flush-sizes)
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-select-toggle)
     (should (= 52 (tired--selection-size)))
     (should (string-match-p "3 selected, 52" (tired--mode-line)))))
 
 (ert-deftest tired-narrow-shows-selection-and-widens ()
   "Narrowing hides unselected entries and widening restores them."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-select-toggle)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (tired-narrow-to-selection)
-    (should (equal (tired-tests--names) '("alpha.txt" "beta.txt")))
+    (should (equal (tired-test--names) '("alpha.txt" "beta.txt")))
     (should (string-match-p "narrowed" (tired--header-title)))
     (tired-widen)
-    (should (= 5 (length (tired-tests--names))))))
+    (should (= 5 (length (tired-test--names))))))
 
 (ert-deftest tired-narrow-keeps-ancestor-directories ()
   "A narrowed entry inside a section keeps its parent row visible."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (tired-select-toggle)
     (tired-narrow-to-selection)
-    (should (equal (tired-tests--names) '("sub" "inner.txt")))))
+    (should (equal (tired-test--names) '("sub" "inner.txt")))))
 
 (ert-deftest tired-narrow-prunes-deleted-paths ()
   "Refresh drops narrowed paths that vanished and widens when empty."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "beta.txt")
+    (tired-test--goto "beta.txt")
     (tired-select-toggle)
     (tired-narrow-to-selection)
     (delete-file (expand-file-name "beta.txt" root))
     (tired-refresh)
     (should-not tired--narrowed)
-    (should (= 4 (length (tired-tests--names))))))
+    (should (= 4 (length (tired-test--names))))))
 
 (ert-deftest tired-watch-directories-follow-inserted-sections ()
   "The watch list holds the root, the insertions and the collapsed chains."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t))
       (tired root)
       (should (equal (tired--watch-paths)
                      (list (directory-file-name root))))
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-insert-subdir)
       ;; `deep` collapses into its one file, so a new sibling there
       ;; breaks the chain and needs its own watch.
@@ -3323,7 +3323,7 @@ The same substitution rules apply to the header line."
 
 (ert-deftest tired-sync-watches-adds-and-removes ()
   "Inserted sections gain a watch and removed sections lose it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t) (added nil) (removed nil) (counter 0))
       (cl-letf (((symbol-function 'file-notify-add-watch)
                  (lambda (directory _aspects _callback)
@@ -3332,7 +3332,7 @@ The same substitution rules apply to the header line."
                 ((symbol-function 'file-notify-rm-watch)
                  (lambda (descriptor) (push descriptor removed))))
         (tired root)
-        (tired-tests--goto "sub")
+        (tired-test--goto "sub")
         (tired-insert-subdir)
         (should (member (expand-file-name "sub" root) added))
         ;; `sub/deep` collapses, so its own watch joins the list.
@@ -3344,7 +3344,7 @@ The same substitution rules apply to the header line."
 
 (ert-deftest tired-kill-buffer-removes-watches ()
   "Killing a Tired buffer removes its file notification watches."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t) (removed nil) (counter 0))
       (cl-letf (((symbol-function 'file-notify-add-watch)
                  (lambda (&rest _) (list 'fake (cl-incf counter))))
@@ -3364,32 +3364,32 @@ The same substitution rules apply to the header line."
 
 (ert-deftest tired-sync-watches-skips-a-remote-directory ()
   "A remote directory gains no watch while the option stays nil."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t)
           (tired-auto-revert-remote nil)
           (added nil))
-      (tired-tests--with-remote root added
+      (tired-test--with-remote root added
         (tired root)
         (should-not added)
         (should-not tired--watches)))))
 
 (ert-deftest tired-sync-watches-follows-the-remote-option ()
   "A user who opts in still gets a watch on a remote directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t)
           (tired-auto-revert-remote t)
           (added nil))
-      (tired-tests--with-remote root added
+      (tired-test--with-remote root added
         (tired root)
         (should (member (directory-file-name root) added))))))
 
 (ert-deftest tired-toggle-auto-revert-reports-the-remote-state ()
   "The toggle names the state that the buffer really reaches."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t)
           (tired-auto-revert-remote nil)
           (added nil))
-      (tired-tests--with-remote root added
+      (tired-test--with-remote root added
         (tired root)
         ;; A remote directory starts without watches even though the
         ;; global option holds.
@@ -3405,7 +3405,7 @@ The same substitution rules apply to the header line."
   "A mocked remote directory costs no watch, no collapse and no size walk.
 The test stubs `file-remote-p', so no TRAMP handler runs and nothing
 reaches the network."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/inner" root) t)
     (with-temp-file (expand-file-name "chain/inner/only.txt") (insert "x"))
     (let ((tired-auto-revert t)
@@ -3414,7 +3414,7 @@ reaches the network."
           (added nil)
           (reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
-      (tired-tests--with-remote root added
+      (tired-test--with-remote root added
         (cl-letf (((symbol-function 'directory-files-and-attributes)
                    (lambda (&rest args)
                      (setq reads (1+ reads))
@@ -3423,15 +3423,15 @@ reaches the network."
           (should-not added)
           (let ((entry (tired--entry-for-path (expand-file-name "chain" root))))
             (should-not (tired--collapsed-display-entry root entry)))
-          (should (equal "" (tired--size-cell (tired-tests--entry "chain"))))
+          (should (equal "" (tired--size-cell (tired-test--entry "chain"))))
           (setq reads 0)
-          (tired-tests--flush-sizes)
-          (should (equal "" (tired--size-cell (tired-tests--entry "chain"))))
+          (tired-test--flush-sizes)
+          (should (equal "" (tired--size-cell (tired-test--entry "chain"))))
           (should (= 0 reads)))))))
 
 (ert-deftest tired-file-change-coalesces-into-one-timer ()
   "A second event keeps the pending timer instead of adding another."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t))
       (tired root)
       (tired--file-changed nil)
@@ -3444,7 +3444,7 @@ reaches the network."
 
 (ert-deftest tired-auto-revert-refreshes-once-and-skips-minibuffer ()
   "The timer callback refreshes, except while a minibuffer is active."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t) (calls 0))
       (tired root)
       (let ((buffer (current-buffer)))
@@ -3460,7 +3460,7 @@ reaches the network."
 
 (ert-deftest tired-file-change-ignores-lockfiles ()
   "Emacs lock file events do not schedule a refresh."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-auto-revert t))
       (tired root)
       (tired--file-changed '(descriptor created "/tmp/.#alpha.txt"))
@@ -3468,13 +3468,13 @@ reaches the network."
 
 (ert-deftest tired-collapse-single-entry-chain ()
   "A chain of single-entry directories becomes one file row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/file.txt")
       (insert "abc"))
     (tired root)
-    (should (equal (car (tired-tests--names)) "chain/a/b/file.txt"))
-    (should-not (member "chain" (tired-tests--names)))
+    (should (equal (car (tired-test--names)) "chain/a/b/file.txt"))
+    (should-not (member "chain" (tired-test--names)))
     (let* ((row (seq-find
                  (lambda (row)
                    (equal (tired-entry-name (car row))
@@ -3485,7 +3485,7 @@ reaches the network."
       (should-not (tired-entry-dirp entry))
       (should (equal (tired-entry-path entry)
                      (expand-file-name "chain/a/b/file.txt" root))))
-    (tired-tests--goto "chain/a/b/file.txt")
+    (tired-test--goto "chain/a/b/file.txt")
     (tired-find-file)
     (should (equal (buffer-file-name)
                    (expand-file-name "chain/a/b/file.txt" root)))
@@ -3493,25 +3493,25 @@ reaches the network."
 
 (ert-deftest tired-collapse-requires-exactly-one-entry ()
   "A branch or an empty directory stops the chain at its own row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "branch/x" root) t)
     (with-temp-file (expand-file-name "branch/x/one.txt") (insert "1"))
     (with-temp-file (expand-file-name "branch/x/two.txt") (insert "2"))
     (make-directory (expand-file-name "empty" root))
     (tired root)
-    (should (member "branch/x" (tired-tests--names)))
-    (should (member "empty" (tired-tests--names)))
-    (should-not (member "branch" (tired-tests--names)))
-    (should-not (member "branch/x/one.txt" (tired-tests--names)))))
+    (should (member "branch/x" (tired-test--names)))
+    (should (member "empty" (tired-test--names)))
+    (should-not (member "branch" (tired-test--names)))
+    (should-not (member "branch/x/one.txt" (tired-test--names)))))
 
 (ert-deftest tired-collapse-into-a-directory-leaf ()
   "A chain that ends at a branch collapses into that directory row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
-    (tired-tests--write "chain/a/b/one.txt" "1")
-    (tired-tests--write "chain/a/b/two.txt" "2")
+    (tired-test--write "chain/a/b/one.txt" "1")
+    (tired-test--write "chain/a/b/two.txt" "2")
     (tired root)
-    (should (equal (car (tired-tests--names)) "chain/a/b"))
+    (should (equal (car (tired-test--names)) "chain/a/b"))
     (let ((entry (car (seq-find
                        (lambda (row)
                          (equal (tired-entry-name (car row)) "chain/a/b"))
@@ -3520,46 +3520,46 @@ reaches the network."
       (should (tired-entry-dirp entry))
       (should (equal (substring-no-properties (tired--name-cell entry))
                      "chain/a/b/")))
-    (tired-tests--goto "chain/a/b")
+    (tired-test--goto "chain/a/b")
     (tired-insert-subdir)
-    (should (member "one.txt" (tired-tests--names)))
-    (should (member "two.txt" (tired-tests--names)))))
+    (should (member "one.txt" (tired-test--names)))
+    (should (member "two.txt" (tired-test--names)))))
 
 (ert-deftest tired-collapse-into-an-empty-directory ()
   "A chain that ends at an empty directory collapses to that row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "solo/inner" root) t)
     (tired root)
-    (should (member "solo/inner" (tired-tests--names)))
-    (should-not (member "solo" (tired-tests--names)))
-    (tired-tests--goto "solo/inner")
+    (should (member "solo/inner" (tired-test--names)))
+    (should-not (member "solo" (tired-test--names)))
+    (tired-test--goto "solo/inner")
     (tired-insert-subdir)
-    (should (equal (tired-tests--names)
+    (should (equal (tired-test--names)
                    '("solo/inner" "sub" ".hidden" "link" "alpha.txt"
                      "beta.txt")))))
 
 (ert-deftest tired-collapse-stops-at-a-hidden-link ()
   "A hidden name in the middle of a chain cancels the collapse."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/.secret/b" root) t)
-    (tired-tests--write "chain/.secret/b/one.txt" "1")
-    (tired-tests--write "chain/.secret/b/two.txt" "2")
+    (tired-test--write "chain/.secret/b/one.txt" "1")
+    (tired-test--write "chain/.secret/b/two.txt" "2")
     (let ((tired-hidden-regexps '("^\\.secret\\'")))
       (tired root)
-      (should (member "chain" (tired-tests--names)))
-      (should-not (member "chain/.secret/b" (tired-tests--names)))
+      (should (member "chain" (tired-test--names)))
+      (should-not (member "chain/.secret/b" (tired-test--names)))
       ;; The chain result follows the toggle, not the first walk.
       (tired-toggle-hidden)
-      (should (member "chain/.secret/b" (tired-tests--names))))))
+      (should (member "chain/.secret/b" (tired-test--names))))))
 
 (ert-deftest tired-collapse-hidden-final-file ()
-  "A collapsed chain whose file is hidden follows the dotfile toggle."  (tired-tests--with-fixture
+  "A collapsed chain whose file is hidden follows the dotfile toggle."  (tired-test--with-fixture
     (make-directory (expand-file-name "secret/a" root) t)
     (with-temp-file (expand-file-name "secret/a/.hiddenfile") (insert "h"))
     (tired root)
-    (should (member "secret/a/.hiddenfile" (tired-tests--names)))
+    (should (member "secret/a/.hiddenfile" (tired-test--names)))
     (tired-toggle-dotfiles)
-    (should-not (member "secret/a/.hiddenfile" (tired-tests--names)))))
+    (should-not (member "secret/a/.hiddenfile" (tired-test--names)))))
 
 (ert-deftest tired-collapse-skips-a-remote-directory ()
   "A remote directory keeps its own row instead of a collapsed one.
@@ -3567,15 +3567,15 @@ The chain walk reads one directory per level, and a remote read
 costs a network round trip, so the row stays plain.  The row carries
 the network state that its directory read, so the listing is read
 again under the stub."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/inner" root) t)
-    (tired-tests--write "chain/inner/only.txt" "x")
+    (tired-test--write "chain/inner/only.txt" "x")
     (tired root)
     (should (tired--collapsed-display-entry
              root (tired--entry-for-path (expand-file-name "chain" root))))
     (let ((added nil)
           (tired-refresh-keeps-an-unchanged-listing nil))
-      (tired-tests--with-remote root added
+      (tired-test--with-remote root added
         (tired root)
         (should-not (tired--collapsed-display-entry
                      root
@@ -3584,7 +3584,7 @@ again under the stub."
 
 (ert-deftest tired-collapse-paints-the-path-and-the-file-apart ()
   "A collapsed row paints its directory part and its file part apart."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a" root) t)
     (with-temp-file (expand-file-name "chain/a/file.elc") (insert "abc"))
     (tired root)
@@ -3606,45 +3606,45 @@ again under the stub."
 
 (ert-deftest tired-toggle-collapse-shows-real-rows ()
   "C switches between the collapsed row and the directory row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/file.txt") (insert "abc"))
     (tired root)
-    (should (member "chain/a/b/file.txt" (tired-tests--names)))
+    (should (member "chain/a/b/file.txt" (tired-test--names)))
     (tired-toggle-collapse)
-    (should (member "chain" (tired-tests--names)))
-    (should-not (member "chain/a/b/file.txt" (tired-tests--names)))
+    (should (member "chain" (tired-test--names)))
+    (should-not (member "chain/a/b/file.txt" (tired-test--names)))
     (should (string-match-p "no collapse" (tired--mode-line)))
     (tired-toggle-collapse)
-    (should (member "chain/a/b/file.txt" (tired-tests--names)))))
+    (should (member "chain/a/b/file.txt" (tired-test--names)))))
 
 (ert-deftest tired-collapse-cache-clears-on-refresh ()
   "Refresh notices when a former chain gains a second entry."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/file.txt") (insert "abc"))
     (tired root)
-    (should (member "chain/a/b/file.txt" (tired-tests--names)))
+    (should (member "chain/a/b/file.txt" (tired-test--names)))
     (with-temp-file (expand-file-name "chain/a/b/other.txt") (insert "x"))
     (tired-refresh)
-    (should (member "chain/a/b" (tired-tests--names)))
-    (should-not (member "chain" (tired-tests--names)))
-    (should-not (member "chain/a/b/file.txt" (tired-tests--names)))))
+    (should (member "chain/a/b" (tired-test--names)))
+    (should-not (member "chain" (tired-test--names)))
+    (should-not (member "chain/a/b/file.txt" (tired-test--names)))))
 
 (ert-deftest tired-find-file-other-window-visits-the-entry ()
-  "The other-window command visits the entry at point."
-  (tired-tests--with-fixture
+  "`tired-find-file-other-window' visits the entry at point."
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (tired-find-file-other-window)
     (should (equal buffer-file-name
                    (expand-file-name "alpha.txt" root)))))
 
 (ert-deftest tired-find-file-other-window-splits-for-a-directory ()
   "A directory row splits the window the way Dired does."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (let (shown)
       (cl-letf (((symbol-function 'switch-to-buffer-other-window)
                  (lambda (buffer) (push buffer shown) buffer)))
@@ -3654,24 +3654,24 @@ again under the stub."
 
 (ert-deftest tired-toggle-subdir-rejects-a-file-without-subtree ()
   "TAB on a plain file reports that no subtree exists."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (should-error (tired-toggle-subdir) :type 'user-error)))
 
 (ert-deftest tired-goto-last-entry-lands-on-the-last-row ()
   "The last command lands on the last row, not on the empty line below."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (goto-char (point-min))
     (tired-goto-last-entry)
     (should (tired-entry-p (tired--row-at-point)))
     (should (equal (tired-entry-name (tired--row-at-point))
-                   (car (last (tired-tests--names)))))))
+                   (car (last (tired-test--names)))))))
 
 (ert-deftest tired-goto-last-entry-keeps-a-numeric-prefix ()
   "A count above one moves to that line, as the evil motion does."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-goto-last-entry 2)
     (should (= 2 (line-number-at-pos)))
@@ -3679,17 +3679,17 @@ again under the stub."
 
 (ert-deftest tired-goto-last-entry-remaps-end-of-buffer ()
   "M-> reaches the last row too."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq (key-binding (key-parse "M->"))
                 #'tired-goto-last-entry))))
 
 (ert-deftest tired-next-line-lands-on-the-name ()
   "The line motion stops on the name, past the depth indent."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-insert-subdir)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-next-line)
     (should (equal (tired-entry-name (tired--row-at-point))
                    "deep/leaf.txt"))
@@ -3698,9 +3698,9 @@ again under the stub."
 
 (ert-deftest tired-next-line-drops-the-column-of-the-old-row ()
   "A motion from the size column lands on the name of the next row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (end-of-line)
     (tired-next-line)
     (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))
@@ -3708,10 +3708,10 @@ again under the stub."
 
 (ert-deftest tired-previous-line-lands-on-the-name ()
   "The line motion up stops on the name of the row above."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-insert-subdir)
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (end-of-line)
     (tired-previous-line)
     (should (equal (tired-entry-name (tired--row-at-point)) "loop"))
@@ -3719,23 +3719,23 @@ again under the stub."
 
 (ert-deftest tired-next-line-takes-a-count ()
   "A count moves that many lines and keeps the name position."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-next-line 2)
     (should (equal (tired-entry-name (tired--row-at-point)) "link"))
     (should (= 0 (current-column)))))
 
 (ert-deftest tired-line-motions-keep-their-keys ()
   "The listing binds the two motions, as `dired' does."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (eq (key-binding (key-parse "n")) #'tired-next-line))
     (should (eq (key-binding (key-parse "p")) #'tired-previous-line))))
 
 (ert-deftest tired-file-sections-keep-no-key ()
   "TAB toggles the sections, so expand and collapse keep no key."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should-not (eq (key-binding (key-parse "e")) #'tired-expand-file))
     (should-not (eq (key-binding (key-parse "E")) #'tired-collapse-file))
@@ -3743,9 +3743,9 @@ again under the stub."
 
 (ert-deftest tired-thing-at-point-reads-the-row-name ()
   "A filename thing reads the path of the row under point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (should (equal (thing-at-point 'filename t)
                    (expand-file-name "alpha.txt" root)))
     (should (equal (thing-at-point 'existing-filename t)
@@ -3753,13 +3753,13 @@ again under the stub."
 
 (ert-deftest tired-thing-at-point-bounds-cover-the-name ()
   "The bounds stop before the size column and before the link arrow."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "alpha.txt")
+    (tired-test--goto "alpha.txt")
     (let ((bounds (bounds-of-thing-at-point 'filename)))
       (should (equal (buffer-substring (car bounds) (cdr bounds))
                      "alpha.txt")))
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (let ((bounds (bounds-of-thing-at-point 'filename)))
       (should (equal (buffer-substring (car bounds) (cdr bounds))
                      "link")))
@@ -3778,9 +3778,9 @@ again under the stub."
   "The target text after the arrow names the file that the link points at.
 The bounds cover the printed target alone, so an Embark target
 highlights the target text."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "link")
+    (tired-test--goto "link")
     (search-forward "alpha.txt")
     (should (equal (thing-at-point 'filename t)
                    (expand-file-name "alpha.txt" root)))
@@ -3799,10 +3799,10 @@ highlights the target text."
   "A shorthand sigil shortens the printed target alone.
 The thing answers the recorded target, and its bounds cover the
 printed text that holds the sigil."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-shorthand-rules '(("\\`alpha" . "@a/"))))
       (tired root)
-      (tired-tests--goto "link")
+      (tired-test--goto "link")
       (search-forward "@a/.txt")
       (should (equal (thing-at-point 'filename t)
                      (expand-file-name "alpha.txt" root)))
@@ -3812,30 +3812,30 @@ printed text that holds the sigil."
 
 (ert-deftest tired-thing-at-point-expands-a-relative-link-target ()
   "A relative target expands from the directory that holds the link."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-symbolic-link "../alpha.txt" (expand-file-name "sub/up"))
     (tired (expand-file-name "sub" root))
-    (tired-tests--goto "up")
+    (tired-test--goto "up")
     (search-forward "../alpha.txt")
     (should (equal (thing-at-point 'filename t)
                    (expand-file-name "alpha.txt" root)))))
 
 (ert-deftest tired-thing-at-point-reads-a-broken-link-target ()
   "A broken link still names the target that it records."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-symbolic-link "gone.txt" (expand-file-name "dangling"))
     (tired root)
-    (tired-tests--goto "dangling")
+    (tired-test--goto "dangling")
     (search-forward "gone.txt")
     (should (equal (thing-at-point 'filename t)
                    (expand-file-name "gone.txt" root)))))
 
 (ert-deftest tired-thing-at-point-follows-the-depth-indent ()
   "A nested row gives its name from the start of the name column."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (tired-insert-subdir)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-next-line)
     (should (equal (tired-entry-name (tired--row-at-point))
                    "deep/leaf.txt"))
@@ -3857,12 +3857,12 @@ printed text that holds the sigil."
 
 (ert-deftest tired-thing-at-point-reads-the-file-of-a-section ()
   "A section row names the file that holds it."
-  (tired-tests--with-fixture
-    (tired-tests--write "code.el" "(defun code-foo (a) a)\n")
+  (tired-test--with-fixture
+    (tired-test--write "code.el" "(defun code-foo (a) a)\n")
     (tired root)
-    (tired-tests--goto "code.el")
+    (tired-test--goto "code.el")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "defun code-foo")
+    (tired-test--goto-section "defun code-foo")
     (forward-char (current-indentation))
     (should (equal (thing-at-point 'filename t)
                    (expand-file-name "code.el" root)))
@@ -3872,7 +3872,7 @@ printed text that holds the sigil."
 
 (ert-deftest tired-thing-at-point-reads-a-chain-component ()
   "A collapsed row names the chain component under point."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/leaf.txt" root)
       (insert "leaf"))
@@ -3882,7 +3882,7 @@ printed text that holds the sigil."
                     (6 "a" "chain/a")
                     (8 "b" "chain/a/b")
                     (10 "leaf.txt" "chain/a/b/leaf.txt")))
-      (tired-tests--goto "chain/a/b/leaf.txt")
+      (tired-test--goto "chain/a/b/leaf.txt")
       (goto-char (+ (car (tired--name-region)) (nth 0 part)))
       (should (equal (thing-at-point 'filename t)
                      (expand-file-name (nth 2 part) root)))
@@ -3892,12 +3892,12 @@ printed text that holds the sigil."
 
 (ert-deftest tired-thing-at-point-answers-the-left-component-on-a-slash ()
   "Point on a slash answers the component that the slash closes."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/leaf.txt" root)
       (insert "leaf"))
     (tired root)
-    (tired-tests--goto "chain/a/b/leaf.txt")
+    (tired-test--goto "chain/a/b/leaf.txt")
     (search-forward "chain")
     (should (eq (char-after) ?/))
     (should (equal (thing-at-point 'filename t)
@@ -3909,12 +3909,12 @@ printed text that holds the sigil."
 
 (ert-deftest tired-embark-file-target-reads-the-name-of-the-row ()
   "The Embark target carries the thing value and the name bounds."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "chain/a/b" root) t)
     (with-temp-file (expand-file-name "chain/a/b/leaf.txt" root)
       (insert "leaf"))
     (tired root)
-    (tired-tests--goto "chain/a/b/leaf.txt")
+    (tired-test--goto "chain/a/b/leaf.txt")
     (goto-char (+ (car (tired--name-region)) 6))
     (let ((target (tired--embark-file-target)))
       (should (eq (car target) 'file))
@@ -3925,7 +3925,7 @@ printed text that holds the sigil."
 
 (ert-deftest tired-embark-target-installer-replaces-the-file-finders ()
   "The installer drops both built-in file finders and stays once."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (let ((embark-target-finders '(embark-target-file-at-point
                                    embark-target-buffer-at-point
@@ -3938,7 +3938,7 @@ printed text that holds the sigil."
 
 (ert-deftest tired-embark-targets-wait-for-a-late-embark-load ()
   "A listing that started before Embark takes the finder later."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should-not (local-variable-p 'embark-target-finders))
     (setq-local embark-target-finders '(embark-target-file-at-point
@@ -3954,49 +3954,49 @@ printed text that holds the sigil."
 
 (ert-deftest tired-subtree-bounds-covers-a-nested-row ()
   "A deep row answers the bounds of its depth-zero entry."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-collapse-single-child nil))
       (tired root)
-      (tired-tests--goto "sub")
+      (tired-test--goto "sub")
       (tired-insert-subdir)
-      (tired-tests--goto "deep")
+      (tired-test--goto "deep")
       (tired-insert-subdir)
-      (tired-tests--goto "leaf.txt")
+      (tired-test--goto "leaf.txt")
       (should (= 4 (current-indentation)))
       (should (equal (tired-subtree-bounds)
-                     (cons (tired-tests--line-start "sub")
-                           (tired-tests--line-start ".hidden"))))
+                     (cons (tired-test--line-start "sub")
+                           (tired-test--line-start ".hidden"))))
       (should (equal (bounds-of-thing-at-point 'tired-subtree)
                      (tired-subtree-bounds)))
       (should (equal (thing-at-point 'tired-subtree t)
                      (buffer-substring-no-properties
-                      (tired-tests--line-start "sub")
-                      (tired-tests--line-start ".hidden")))))))
+                      (tired-test--line-start "sub")
+                      (tired-test--line-start ".hidden")))))))
 
 (ert-deftest tired-subtree-bounds-covers-a-section-row ()
   "A section row answers the bounds of the file that holds it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "solo") t)
-    (tired-tests--write "solo/notes.org" "* one\n** two\n")
+    (tired-test--write "solo/notes.org" "* one\n** two\n")
     (tired (expand-file-name "solo" root))
-    (tired-tests--goto "notes.org")
+    (tired-test--goto "notes.org")
     (tired-toggle-subdir)
-    (tired-tests--goto-section "two")
+    (tired-test--goto-section "two")
     (should (equal (tired-subtree-bounds)
                    (cons (point-min) (point-max))))))
 
 (ert-deftest tired-subtree-bounds-of-the-line-below-the-last-row ()
   "Point below the last row answers the subtree of that row."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (goto-char (point-max))
     (should (equal (tired-subtree-bounds)
-                   (cons (tired-tests--line-start "beta.txt")
+                   (cons (tired-test--line-start "beta.txt")
                          (point-max))))))
 
 (ert-deftest tired-subtree-bounds-of-a-listing-without-a-row ()
   "An empty listing answers no bounds."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (make-directory (expand-file-name "empty") t)
     (tired (expand-file-name "empty" root))
     (should (equal [] tired--subtree-starts))
@@ -4004,7 +4004,7 @@ printed text that holds the sigil."
 
 (ert-deftest tired-name-edit-drops-the-subtree-positions ()
   "A name edit empties the vector that the line starts filled."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (> (length tired--subtree-starts) 0))
     (tired-edit-names)
@@ -4015,9 +4015,9 @@ printed text that holds the sigil."
 
 (ert-deftest tired-forward-thing-steps-by-subtree ()
   "`forward-thing' walks from one subtree to the next."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (forward-thing 'tired-subtree 1)
     (should (equal ".hidden" (tired-entry-name (tired--row-at-point))))
     (forward-thing 'tired-subtree 1)
@@ -4029,20 +4029,20 @@ printed text that holds the sigil."
 
 (ert-deftest tired-forward-thing-steps-from-a-nested-row ()
   "A nested row moves to the edge of its subtree."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (forward-thing 'tired-subtree 1)
     (should (equal ".hidden" (tired-entry-name (tired--row-at-point))))
-    (tired-tests--goto "inner.txt")
+    (tired-test--goto "inner.txt")
     (forward-thing 'tired-subtree -1)
     (should (= (point-min) (point)))))
 
 (ert-deftest tired-after-redraw-hook-runs-on-every-print ()
   "The hook runs once per print, and an unchanged refresh runs none."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((calls 0))
       (let ((tired-after-redraw-hook
              (list (lambda () (setq calls (1+ calls))))))
@@ -4075,13 +4075,13 @@ printed text that holds the sigil."
 (ert-deftest tired-delete-flags-the-targets-and-clears-the-selection ()
   "A delayed delete moves the selected rows into the flag set.
 The countdown starts once and the files stay on the disk."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-select-toggle)
-        (tired-tests--goto "beta.txt")
+        (tired-test--goto "beta.txt")
         (tired-select-toggle)
         (tired-delete)
         (should (equal (mapcar #'file-name-nondirectory
@@ -4089,17 +4089,17 @@ The countdown starts once and the files stay on the disk."
                        '("alpha.txt" "beta.txt")))
         (should-not tired--selection)
         (should (file-exists-p (expand-file-name "alpha.txt" root)))
-        (should (= 1 (length (tired-tests--delete-countdowns scheduled))))
-        (should (equal 3 (car (car (tired-tests--delete-countdowns
+        (should (= 1 (length (tired-test--delete-countdowns scheduled))))
+        (should (equal 3 (car (car (tired-test--delete-countdowns
                                     scheduled)))))))))
 
 (ert-deftest tired-delete-flag-paints-the-row-whole-line ()
   "A flagged row takes the flag face through a line overlay."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (should (equal (mapcar (lambda (overlay) (overlay-get overlay 'face))
                                (seq-filter
@@ -4110,11 +4110,11 @@ The countdown starts once and the files stay on the disk."
 
 (ert-deftest tired-redraw-paints-a-flagged-row ()
   "A redraw paints the flag again, because the print erases it."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (remove-overlays (point-min) (point-max) 'tired-flagged-deletion t)
         (tired--redraw)
@@ -4125,22 +4125,22 @@ The countdown starts once and the files stay on the disk."
 
 (ert-deftest tired-mode-line-reports-flagged-rows ()
   "The mode line names the rows that the countdown waits for."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (should (string-match-p "1 flagged for deletion"
                                 (tired--mode-line)))))))
 
-(ert-deftest tired-select-none-clears-every-deletion-flag ()
-  "Clear drops the flags and stops the countdown, so nothing deletes."
-  (tired-tests--with-fixture
+(ert-deftest tired-select-none-clears-every-flagged-row ()
+  "Nothing stays flagged for deletion after the command, so nothing deletes."
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (tired-select-none)
         (should-not tired--flagged-deletion)
@@ -4150,13 +4150,13 @@ The countdown starts once and the files stay on the disk."
 
 (ert-deftest tired-select-toggle-unflags-a-flagged-row ()
   "A toggle on a flagged row drops the flag and selects nothing."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-select-toggle)
         (should-not tired--flagged-deletion)
         (should-not tired--selection)
@@ -4165,52 +4165,52 @@ The countdown starts once and the files stay on the disk."
 
 (ert-deftest tired-select-all-skips-a-flagged-row ()
   "Select-all never selects a row that the countdown owns."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (tired-select-all)
         (should (= 4 (length tired--selection)))
         (should-not (member "alpha.txt"
-                            (tired-tests--target-names)))
+                            (tired-test--target-names)))
         (should (tired--flagged-deletion-p
                  (expand-file-name "alpha.txt" root)))))))
 
 (ert-deftest tired-select-invert-skips-a-flagged-row ()
   "Invert leaves a flagged row in the flag set alone."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (tired-select-invert)
         (should (= 4 (length tired--selection)))
         (should-not (member "alpha.txt"
-                            (tired-tests--target-names)))
+                            (tired-test--target-names)))
         (should (tired--flagged-deletion-p
                  (expand-file-name "alpha.txt" root)))))))
 
 (ert-deftest tired-region-skips-a-flagged-row ()
   "A region stands aside from a row that the countdown owns."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
-        (tired-tests--mark-row-range "alpha.txt" "beta.txt")
-        (should (equal (tired-tests--target-names) '("beta.txt")))))))
+        (tired-test--mark-row-range "alpha.txt" "beta.txt")
+        (should (equal (tired-test--target-names) '("beta.txt")))))))
 
 (ert-deftest tired-refresh-drops-a-flagged-path-that-left-the-disk ()
   "A flag whose path vanishes stops counting and stops the countdown."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
         (delete-file (expand-file-name "alpha.txt" root))
         (tired-refresh)
@@ -4219,32 +4219,32 @@ The countdown starts once and the files stay on the disk."
 
 (ert-deftest tired-narrow-keeps-a-flagged-row-visible ()
   "A narrow snapshot keeps the rows that wait for a deletion."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
-        (tired-tests--goto "beta.txt")
+        (tired-test--goto "beta.txt")
         (tired-select-toggle)
         (tired-narrow-to-selection)
-        (should (member "alpha.txt" (tired-tests--names)))
-        (should (member "beta.txt" (tired-tests--names)))))))
+        (should (member "alpha.txt" (tired-test--names)))
+        (should (member "beta.txt" (tired-test--names)))))))
 
 (ert-deftest tired-selection-change-restarts-the-countdown ()
   "Every selection change starts the countdown again from zero."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-delete-delay 3))
-      (tired-tests--with-delete-timers
+      (tired-test--with-delete-timers
         (tired root)
-        (tired-tests--goto "alpha.txt")
+        (tired-test--goto "alpha.txt")
         (tired-delete)
-        (should (= 1 (length (tired-tests--delete-countdowns scheduled))))
-        (tired-tests--goto "beta.txt")
+        (should (= 1 (length (tired-test--delete-countdowns scheduled))))
+        (tired-test--goto "beta.txt")
         (tired-select-toggle)
-        (should (= 2 (length (tired-tests--delete-countdowns scheduled))))
+        (should (= 2 (length (tired-test--delete-countdowns scheduled))))
         (should (memq timer cancelled))))))
 
-(provide 'tired-tests-core)
+(provide 'tired-core-test)
 
-;;; tired-tests-core.el ends here
+;;; tired-core-test.el ends here

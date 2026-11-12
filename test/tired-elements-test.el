@@ -1,4 +1,4 @@
-;;; tired-tests-elements.el --- ERT tests for the Elements column  -*- lexical-binding: t -*-
+;;; tired-elements-test.el --- ERT tests for the Elements column  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -30,17 +30,17 @@
 
 (require 'seq)
 
-(require 'tired-tests-fixtures)
+(require 'tired-test-helper)
 
-(defun tired-tests--elements-cell (name)
+(defun tired-test--elements-cell (name)
   "Return the Elements cell of the entry called NAME."
-  (aref (tired--row (tired-tests--entry name) 0) 2))
+  (aref (tired--row (tired-test--entry name) 0) 2))
 
 ;;; The column
 
 (ert-deftest tired-elements-column-sits-between-size-and-modified ()
   "The Elements column follows Size and leads Modified."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should (string-prefix-p "Size" (car (aref tabulated-list-format 1))))
     (should (string-prefix-p "Elements" (car (aref tabulated-list-format 2))))
@@ -48,13 +48,13 @@
     (should (string-prefix-p "Mode" (car (aref tabulated-list-format 4))))
     (should (= 10 (nth 1 (aref tabulated-list-format 2))))
     (should (nth 3 (aref tabulated-list-format 2)))
-    (should (string-match-p "Elements" (tired-tests--header-string)))))
+    (should (string-match-p "Elements" (tired-test--header-string)))))
 
 (ert-deftest tired-elements-column-click-sorts-the-listing ()
   "A click on the Elements header sorts by the column."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--click-header "Elements")
+    (tired-test--click-header "Elements")
     (should (eq tired--sort-key 'elements))
     (should (eq (tired--sort-state) 'elements-asc))))
 
@@ -62,7 +62,7 @@
   "A section row prints the count that its handler read.
 A section without a count keeps the cell empty, because a section is
 not a file."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (should (equal ""
                    (tired--elements-cell
                     (tired--section-create :label "x" :path "/x" :line 1))))
@@ -75,193 +75,193 @@ not a file."
 
 (ert-deftest tired-elements-directory-counts-immediate-children ()
   "A directory counts its immediate children and never a subtree."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "sub"))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "sub"))))
     (should (= 5 (tired-elements-directory root)))
-    (should (equal "3" (tired-tests--elements-cell "sub")))))
+    (should (equal "3" (tired-test--elements-cell "sub")))))
 
 (ert-deftest tired-elements-directory-counts-a-dotfile ()
   "Every name on disk counts, dotfiles included."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--flush-elements)
+    (tired-test--flush-elements)
     (let ((tired--hide-dotfiles t))
       (tired-refresh)
       (should (= 5 (tired-elements-directory root))))))
 
 (ert-deftest tired-elements-directory-count-ignores-the-filter ()
   "A filter changes the rows, not the count of a directory."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--flush-elements)
-    (let ((before (tired--elements-value (tired-tests--entry "sub"))))
+    (tired-test--flush-elements)
+    (let ((before (tired--elements-value (tired-test--entry "sub"))))
       (tired--apply-filter "inner")
-      (should (= before (tired--elements-value (tired-tests--entry "sub")))))))
+      (should (= before (tired--elements-value (tired-test--entry "sub")))))))
 
 (ert-deftest tired-elements-directory-returns-nil-for-a-file ()
   "A file row reaches the file dissectors, not the directory count."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (should-not (tired-elements-directory (expand-file-name "alpha.txt" root)))))
 
 ;;; JSON
 
 (ert-deftest tired-elements-json-counts-an-array-and-an-object ()
   "A top-level array counts its items and an object counts its keys."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
-    (tired-tests--write "b.json" "{\"a\":1,\"b\":2}")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
+    (tired-test--write "b.json" "{\"a\":1,\"b\":2}")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
-    (should (= 2 (tired--elements-value (tired-tests--entry "b.json"))))
-    (should (equal "3" (tired-tests--elements-cell "a.json")))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.json"))))
+    (should (= 2 (tired--elements-value (tired-test--entry "b.json"))))
+    (should (equal "3" (tired-test--elements-cell "a.json")))))
 
 (ert-deftest tired-elements-json-keeps-an-empty-array-at-zero ()
   "An empty container counts zero, and zero is a count."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[]")
-    (tired-tests--write "b.json" "{}")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[]")
+    (tired-test--write "b.json" "{}")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 0 (tired--elements-value (tired-tests--entry "a.json"))))
-    (should (= 0 (tired--elements-value (tired-tests--entry "b.json"))))
-    (should (equal "0" (tired-tests--elements-cell "a.json")))))
+    (tired-test--flush-elements)
+    (should (= 0 (tired--elements-value (tired-test--entry "a.json"))))
+    (should (= 0 (tired--elements-value (tired-test--entry "b.json"))))
+    (should (equal "0" (tired-test--elements-cell "a.json")))))
 
 (ert-deftest tired-elements-json-ignores-another-root ()
   "A scalar or a truncated file keeps an empty cell."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "42")
-    (tired-tests--write "b.json" "[1,2")
-    (tired-tests--write "c.json" "")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "42")
+    (tired-test--write "b.json" "[1,2")
+    (tired-test--write "c.json" "")
     (tired root)
-    (tired-tests--flush-elements)
-    (should-not (tired--elements-value (tired-tests--entry "a.json")))
-    (should-not (tired--elements-value (tired-tests--entry "b.json")))
-    (should-not (tired--elements-value (tired-tests--entry "c.json")))))
+    (tired-test--flush-elements)
+    (should-not (tired--elements-value (tired-test--entry "a.json")))
+    (should-not (tired--elements-value (tired-test--entry "b.json")))
+    (should-not (tired--elements-value (tired-test--entry "c.json")))))
 
 (ert-deftest tired-elements-json-counts-a-nested-container ()
   "A string, an escape and a nested container stay one top-level item."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[\"a\\\"b\",2,[3,4],{\"k\":5}]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[\"a\\\"b\",2,[3,4],{\"k\":5}]")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 4 (tired--elements-value (tired-tests--entry "a.json"))))))
+    (tired-test--flush-elements)
+    (should (= 4 (tired--elements-value (tired-test--entry "a.json"))))))
 
 (ert-deftest tired-elements-json-skips-a-file-above-the-limit ()
   "A file above `tired-elements-sync-limit' keeps an empty cell."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (let ((tired-elements-sync-limit 4))
       (tired root)
-      (tired-tests--flush-elements))
-    (should-not (tired--elements-value (tired-tests--entry "a.json")))))
+      (tired-test--flush-elements))
+    (should-not (tired--elements-value (tired-test--entry "a.json")))))
 
 ;;; Markdown
 
 (ert-deftest tired-elements-markdown-counts-the-top-level ()
   "Markdown counts the headings that the tree prints at depth zero."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.md" "## A\n# B\n## C\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.md" "## A\n# B\n## C\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.md"))))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.md"))))))
 
 (ert-deftest tired-elements-markdown-keeps-a-fenced-block-out ()
   "A heading inside a fence never counts."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.md" "# A\n\n```\n# hidden\n```\n\n# B\n")
-    (tired-tests--write "b.md" "~~~\n# hidden\n~~~\n# real\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.md" "# A\n\n```\n# hidden\n```\n\n# B\n")
+    (tired-test--write "b.md" "~~~\n# hidden\n~~~\n# real\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.md"))))
-    (should (= 1 (tired--elements-value (tired-tests--entry "b.md"))))))
+    (tired-test--flush-elements)
+    (should (= 2 (tired--elements-value (tired-test--entry "a.md"))))
+    (should (= 1 (tired--elements-value (tired-test--entry "b.md"))))))
 
 (ert-deftest tired-elements-markdown-counts-a-setext-heading ()
   "A setext underline counts under a paragraph line alone."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.md" "Title\n=====\n\nSub\n---\n")
-    (tired-tests--write "b.md" "---\n# A\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.md" "Title\n=====\n\nSub\n---\n")
+    (tired-test--write "b.md" "---\n# A\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 1 (tired--elements-value (tired-tests--entry "a.md"))))
-    (should (= 1 (tired--elements-value (tired-tests--entry "b.md"))))))
+    (tired-test--flush-elements)
+    (should (= 1 (tired--elements-value (tired-test--entry "a.md"))))
+    (should (= 1 (tired--elements-value (tired-test--entry "b.md"))))))
 
 (ert-deftest tired-elements-markdown-survives-a-chunk-boundary ()
   "A heading split across two chunks still counts."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.md" "text\n# A\ntext\n# B\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.md" "text\n# A\ntext\n# B\n")
     (let ((tired-elements-chunk-size 5))
       (tired root)
-      (tired-tests--flush-elements))
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.md"))))))
+      (tired-test--flush-elements))
+    (should (= 2 (tired--elements-value (tired-test--entry "a.md"))))))
 
 (ert-deftest tired-elements-markdown-returns-nil-for-a-plain-file ()
   "A file without a heading has no count."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.md" "text only\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.md" "text only\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should-not (tired--elements-value (tired-tests--entry "a.md")))))
+    (tired-test--flush-elements)
+    (should-not (tired--elements-value (tired-test--entry "a.md")))))
 
 ;;; CSV
 
 (ert-deftest tired-elements-csv-counts-uncommented-rows ()
   "A CSV file counts its rows and leaves a `#' row out.
 The header row counts, and a blank line stays out."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.csv" "name,qty\n# c\napple,2\n\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.csv" "name,qty\n# c\napple,2\n\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))
-    (should (equal "2" (tired-tests--elements-cell "a.csv")))))
+    (tired-test--flush-elements)
+    (should (= 2 (tired--elements-value (tired-test--entry "a.csv"))))
+    (should (equal "2" (tired-test--elements-cell "a.csv")))))
 
 (ert-deftest tired-elements-csv-keeps-a-quoted-newline-in-one-row ()
   "A quoted field holds a comma and a newline, so it never splits."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.csv" "id,note\n1,\"a\n# not a comment\"\n")
-    (tired-tests--write "b.csv" "\"a,b\",c\n")
-    (tired-tests--write "c.csv" "\"a\"\"b\",c\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.csv" "id,note\n1,\"a\n# not a comment\"\n")
+    (tired-test--write "b.csv" "\"a,b\",c\n")
+    (tired-test--write "c.csv" "\"a\"\"b\",c\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))
-    (should (= 1 (tired--elements-value (tired-tests--entry "b.csv"))))
-    (should (= 1 (tired--elements-value (tired-tests--entry "c.csv"))))))
+    (tired-test--flush-elements)
+    (should (= 2 (tired--elements-value (tired-test--entry "a.csv"))))
+    (should (= 1 (tired--elements-value (tired-test--entry "b.csv"))))
+    (should (= 1 (tired--elements-value (tired-test--entry "c.csv"))))))
 
 (ert-deftest tired-elements-csv-takes-crlf-and-a-last-row ()
   "A carriage return ends no row on its own, and the last row counts."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.csv" "a,b\r\n1,2\r\n3,4\r\n")
-    (tired-tests--write "b.csv" "a,b\n1,2")
+  (tired-test--with-fixture
+    (tired-test--write "a.csv" "a,b\r\n1,2\r\n3,4\r\n")
+    (tired-test--write "b.csv" "a,b\n1,2")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.csv"))))
-    (should (= 2 (tired--elements-value (tired-tests--entry "b.csv"))))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.csv"))))
+    (should (= 2 (tired--elements-value (tired-test--entry "b.csv"))))))
 
 (ert-deftest tired-elements-csv-counts-an-empty-file-as-zero ()
   "An empty CSV file holds zero rows, and zero is a count."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.csv" "")
-    (tired-tests--write "b.csv" "# only a comment\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.csv" "")
+    (tired-test--write "b.csv" "# only a comment\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 0 (tired--elements-value (tired-tests--entry "a.csv"))))
-    (should (= 0 (tired--elements-value (tired-tests--entry "b.csv"))))
-    (should (equal "0" (tired-tests--elements-cell "a.csv")))))
+    (tired-test--flush-elements)
+    (should (= 0 (tired--elements-value (tired-test--entry "a.csv"))))
+    (should (= 0 (tired--elements-value (tired-test--entry "b.csv"))))
+    (should (equal "0" (tired-test--elements-cell "a.csv")))))
 
 (ert-deftest tired-elements-csv-survives-a-chunk-boundary ()
   "A quoted field and a comment cross a chunk boundary."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.csv" "name,qty\n# c\n1,\"a\nb\"\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.csv" "name,qty\n# c\n1,\"a\nb\"\n")
     (let ((tired-elements-chunk-size 3))
       (tired root)
-      (tired-tests--flush-elements))
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.csv"))))))
+      (tired-test--flush-elements))
+    (should (= 2 (tired--elements-value (tired-test--entry "a.csv"))))))
 
 ;;; Parquet
 
-(defun tired-tests--leb128 (value)
+(defun tired-test--leb128 (value)
   "Return VALUE as a list of unsigned LEB128 bytes."
   (let (bytes)
     (while (> value 127)
@@ -269,17 +269,17 @@ The header row counts, and a blank line stays out."
       (setq value (ash value -7)))
     (nreverse (push value bytes))))
 
-(defun tired-tests--parquet-footer (rows)
+(defun tired-test--parquet-footer (rows)
   "Return a minimal Thrift `FileMetaData' footer with ROWS."
   (apply #'unibyte-string
          (append
-          (list #x15) (tired-tests--leb128 2)     ; field 1, version 1
+          (list #x15) (tired-test--leb128 2)     ; field 1, version 1
           (list #x19 #x1C)                        ; field 2, schema of 1
           (list #x18 #x01 ?x #x00)                ; SchemaElement {name "x"}
-          (list #x16) (tired-tests--leb128 (* 2 rows))
+          (list #x16) (tired-test--leb128 (* 2 rows))
           (list #x00))))
 
-(defun tired-tests--parquet-content (footer &optional tail-magic)
+(defun tired-test--parquet-content (footer &optional tail-magic)
   "Return a Parquet file body with FOOTER and TAIL-MAGIC."
   (let ((length (length footer)))
     (concat "PAR1" footer
@@ -287,7 +287,7 @@ The header row counts, and a blank line stays out."
                             (logand (ash length -8) #xff) 0 0)
             (or tail-magic "PAR1"))))
 
-(defmacro tired-tests--write-bytes (name content)
+(defmacro tired-test--write-bytes (name content)
   "Write CONTENT, a unibyte string, to NAME inside `root'."
   (declare (indent 1) (debug t))
   `(let ((coding-system-for-write 'no-conversion))
@@ -297,37 +297,37 @@ The header row counts, and a blank line stays out."
 
 (ert-deftest tired-elements-parquet-counts-the-rows ()
   "A Parquet file counts the rows of its footer."
-  (tired-tests--with-fixture
-    (tired-tests--write-bytes "a.parquet"
-      (tired-tests--parquet-content (tired-tests--parquet-footer 42)))
+  (tired-test--with-fixture
+    (tired-test--write-bytes "a.parquet"
+      (tired-test--parquet-content (tired-test--parquet-footer 42)))
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 42 (tired--elements-value (tired-tests--entry "a.parquet"))))
-    (should (equal "42" (tired-tests--elements-cell "a.parquet")))))
+    (tired-test--flush-elements)
+    (should (= 42 (tired--elements-value (tired-test--entry "a.parquet"))))
+    (should (equal "42" (tired-test--elements-cell "a.parquet")))))
 
 (ert-deftest tired-elements-parquet-keeps-a-foreign-file-out ()
   "A bad tail magic, a short file and an impossible length count nothing."
-  (tired-tests--with-fixture
-    (tired-tests--write-bytes "a.parquet"
-      (tired-tests--parquet-content (tired-tests--parquet-footer 7) "PARE"))
-    (tired-tests--write-bytes "b.parquet" "PAR1")
-    (tired-tests--write-bytes "c.parquet"
+  (tired-test--with-fixture
+    (tired-test--write-bytes "a.parquet"
+      (tired-test--parquet-content (tired-test--parquet-footer 7) "PARE"))
+    (tired-test--write-bytes "b.parquet" "PAR1")
+    (tired-test--write-bytes "c.parquet"
       (concat "PAR1" "x" (unibyte-string 200 0 0 0) "PAR1"))
     (tired root)
-    (tired-tests--flush-elements)
-    (should-not (tired--elements-value (tired-tests--entry "a.parquet")))
-    (should-not (tired--elements-value (tired-tests--entry "b.parquet")))
-    (should-not (tired--elements-value (tired-tests--entry "c.parquet")))))
+    (tired-test--flush-elements)
+    (should-not (tired--elements-value (tired-test--entry "a.parquet")))
+    (should-not (tired--elements-value (tired-test--entry "b.parquet")))
+    (should-not (tired--elements-value (tired-test--entry "c.parquet")))))
 
 (ert-deftest tired-elements-parquet-survives-a-chunk-boundary ()
   "A footer larger than one chunk parses over several steps."
-  (tired-tests--with-fixture
-    (tired-tests--write-bytes "a.parquet"
-      (tired-tests--parquet-content (tired-tests--parquet-footer 1234)))
+  (tired-test--with-fixture
+    (tired-test--write-bytes "a.parquet"
+      (tired-test--parquet-content (tired-test--parquet-footer 1234)))
     (let ((tired-elements-chunk-size 4))
       (tired root)
-      (tired-tests--flush-elements))
-    (should (= 1234 (tired--elements-value (tired-tests--entry "a.parquet"))))))
+      (tired-test--flush-elements))
+    (should (= 1234 (tired--elements-value (tired-test--entry "a.parquet"))))))
 
 (ert-deftest tired-elements-parquet-skips-every-schema-field ()
   "The skipper walks a schema of every Thrift type."
@@ -337,14 +337,14 @@ The header row counts, and a blank line stays out."
                         (list #x19 #x1C)                  ; schema of 1
                         (list #x18 #x01 ?x)               ; name "x"
                         (list #x15 #x06)                  ; i32 3
-                        (list #x16) (tired-tests--leb128 600) ; i64 300
+                        (list #x16) (tired-test--leb128 600) ; i64 300
                         (list #x17 0 0 0 0 0 0 0 0)       ; double
                         (list #x19 #x25 #x02 #x04)        ; list<i32> 2
                         (list #x1B #x01 #x58 #x0E #x01 ?y) ; map<i32,binary>
                         (list #x1C #x00)                  ; nested struct
                         (list #x11)                       ; bool true
                         (list #x00)                       ; end SchemaElement
-                        (list #x16) (tired-tests--leb128 200000) ; rows 100000
+                        (list #x16) (tired-test--leb128 200000) ; rows 100000
                         (list #x00)))))
     (should (= 100000 (tired--parquet-count footer))))
   (should (eq 'eof (condition-case nil
@@ -362,88 +362,88 @@ The header row counts, and a blank line stays out."
 
 (ert-deftest tired-elements-sections-count-the-top-level ()
   "Every other name counts the sections at depth zero."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.org" "* A\n** B\n* C\n")
-    (tired-tests--write "b.el" "(defun a () 1)\n\n(defvar b 2)\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.org" "* A\n** B\n* C\n")
+    (tired-test--write "b.el" "(defun a () 1)\n\n(defvar b 2)\n")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.org"))))
-    (should (= 2 (tired--elements-value (tired-tests--entry "b.el"))))))
+    (tired-test--flush-elements)
+    (should (= 2 (tired--elements-value (tired-test--entry "a.org"))))
+    (should (= 2 (tired--elements-value (tired-test--entry "b.el"))))))
 
 (ert-deftest tired-elements-sections-stay-out-of-a-large-file ()
   "A file above the sync limit keeps an empty cell."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.org" "* A\n* B\n")
+  (tired-test--with-fixture
+    (tired-test--write "a.org" "* A\n* B\n")
     (let ((tired-elements-sync-limit 0))
       (tired root)
-      (tired-tests--flush-elements))
-    (should-not (tired--elements-value (tired-tests--entry "a.org")))))
+      (tired-test--flush-elements))
+    (should-not (tired--elements-value (tired-test--entry "a.org")))))
 
 (ert-deftest tired-elements-sections-return-nil-without-a-handler ()
   "A file that no handler claims has no count."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (should-not (tired-elements-sections (expand-file-name "alpha.txt" root)))))
 
 ;;; The cache
 
 (ert-deftest tired-elements-cache-serves-a-second-redraw ()
   "A fresh count queues no job on the next redraw."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
-    (tired-tests--flush-elements)
+    (tired-test--flush-elements)
     (tired-refresh)
-    (should-not (tired-tests--queued-jobs 'elements))))
+    (should-not (tired-test--queued-jobs 'elements))))
 
 (ert-deftest tired-elements-cache-follows-the-file ()
   "A changed file reaches the column as a new count."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
-    (tired-tests--write "a.json" "[1,2]")
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.json"))))
+    (tired-test--write "a.json" "[1,2]")
     (tired-refresh)
-    (should (= 1 (length (tired-tests--queued-jobs 'elements))))
-    (tired-tests--flush-elements)
-    (should (= 2 (tired--elements-value (tired-tests--entry "a.json"))))))
+    (should (= 1 (length (tired-test--queued-jobs 'elements))))
+    (tired-test--flush-elements)
+    (should (= 2 (tired--elements-value (tired-test--entry "a.json"))))))
 
 (ert-deftest tired-elements-cache-follows-the-hook-value ()
   "An edited hook drops the counts that it produced."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.json"))))
     (let ((tired-elements-functions
            (cons (lambda (path)
                    (when (string-suffix-p ".json" path) 9))
                  tired-elements-functions)))
       (tired-refresh)
-      (tired-tests--flush-elements)
-      (should (= 9 (tired--elements-value (tired-tests--entry "a.json")))))))
+      (tired-test--flush-elements)
+      (should (= 9 (tired--elements-value (tired-test--entry "a.json")))))))
 
 (ert-deftest tired-elements-clear-cache-drops-every-count ()
   "The command empties the cache and queues the shown rows again."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.json"))))
     (tired-elements-clear-cache)
-    (should-not (tired--elements-value (tired-tests--entry "a.json")))
+    (should-not (tired--elements-value (tired-test--entry "a.json")))
     (should tired--queue-jobs)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "a.json"))))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "a.json"))))))
 
 (ert-deftest tired-elements-cache-keeps-a-persistent-count ()
   "A count under a rule lands in the permanent table and stays."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (let ((tired-persistent-directories
            (list (concat "\\`" (regexp-quote root)))))
       (tired root)
-      (tired-tests--flush-elements)
+      (tired-test--flush-elements)
       (let ((key (tired--elements-key (expand-file-name "a.json" root))))
         (should (gethash key tired--elements-cache-permanent))
         (should-not (gethash key tired--elements-cache))
@@ -454,11 +454,11 @@ The header row counts, and a blank line stays out."
         (tired--elements-prune)
         (should (gethash key tired--elements-cache-permanent))
         (should (= 3 (tired--elements-value
-                      (tired-tests--entry "a.json"))))))))
+                      (tired-test--entry "a.json"))))))))
 
 (ert-deftest tired-elements-clear-cache-has-no-listing-binding ()
   "No key and no menu entry runs `tired-elements-clear-cache'."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (should-not (where-is-internal #'tired-elements-clear-cache
                                   tired-mode-map))
@@ -466,20 +466,20 @@ The header row counts, and a blank line stays out."
 
 (ert-deftest tired-elements-remote-path-keeps-the-cell-empty ()
   "A remote row costs no network round trip."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
     (cl-letf (((symbol-function 'file-remote-p)
                (lambda (_name &rest _) "/ssh:host:")))
-      (should-not (tired--elements-stamp (tired-tests--entry "sub")))
-      (should-not (tired--elements-value (tired-tests--entry "sub")))
-      (should-not (tired--elements-value (tired-tests--entry "alpha.txt"))))))
+      (should-not (tired--elements-stamp (tired-test--entry "sub")))
+      (should-not (tired--elements-value (tired-test--entry "sub")))
+      (should-not (tired--elements-value (tired-test--entry "alpha.txt"))))))
 
 ;;; The queue
 
 (ert-deftest tired-elements-budget-stops-a-pass ()
   "A spent budget leaves the job in the queue."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (let ((tired-elements-budget 0)
           (tired-directory-size-budget 0))
       (tired root)
@@ -493,7 +493,7 @@ The header row counts, and a blank line stays out."
 
 (ert-deftest tired-elements-queue-gives-way-after-a-step ()
   "Two jobs that need more than one step interleave."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let* ((calls nil)
            (step (lambda (job)
                    (push (tired--elements-job-path job) calls)
@@ -519,8 +519,8 @@ The header row counts, and a blank line stays out."
 
 (ert-deftest tired-elements-queue-covers-the-window-alone ()
   "A redraw queues the rows of the window, not the whole listing."
-  (tired-tests--with-fixture
-    (dotimes (i 20) (tired-tests--write (format "f%02d.txt" i) "x"))
+  (tired-test--with-fixture
+    (dotimes (i 20) (tired-test--write (format "f%02d.txt" i) "x"))
     (let ((buffer (tired root))
           (tired-elements-lookahead 0))
       (with-current-buffer buffer
@@ -533,15 +533,15 @@ The header row counts, and a blank line stays out."
                     ((symbol-function 'window-start)
                      (lambda (&rest _) (point-min))))
             (tired--elements-queue)))
-        (should (= 3 (length (tired-tests--queued-jobs 'elements))))
+        (should (= 3 (length (tired-test--queued-jobs 'elements))))
         (should (< 3 (length (tired--visible-rows))))))))
 
 (ert-deftest tired-elements-directory-uses-the-size-walk-count ()
   "The size walk answers the child count, so no directory read follows."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (let ((tired-directory-size t))
       (tired root)
-      (tired-tests--flush-sizes))
+      (tired-test--flush-sizes))
     (should (= 3 (tired--child-count (expand-file-name "sub" root))))
     (let ((reads 0)
           (original (symbol-function 'directory-files)))
@@ -555,44 +555,44 @@ The header row counts, and a blank line stays out."
 
 (ert-deftest tired-elements-scroll-queues-a-revealed-row ()
   "A scroll queues the counts of the rows that it reveals."
-  (tired-tests--with-fixture
-    (dotimes (i 5) (tired-tests--write (format "f%d.txt" i) "x"))
+  (tired-test--with-fixture
+    (dotimes (i 5) (tired-test--write (format "f%d.txt" i) "x"))
     (let ((buffer (tired root)))
       (with-current-buffer buffer
-        (tired-tests--flush-elements)
-        (should-not (tired-tests--queued-jobs 'elements))
+        (tired-test--flush-elements)
+        (should-not (tired-test--queued-jobs 'elements))
         (clrhash tired--elements-cache)
         (tired--elements-queue-shown)
-        (should (tired-tests--queued-jobs 'elements))))))
+        (should (tired-test--queued-jobs 'elements))))))
 
 (ert-deftest tired-elements-queue-holds-one-job-per-path ()
   "A second queue pass adds no second job for the same path."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
-    (let ((count (length (tired-tests--queued-jobs 'elements))))
+    (let ((count (length (tired-test--queued-jobs 'elements))))
       (tired-refresh)
-      (should (= count (length (tired-tests--queued-jobs 'elements)))))
-    (tired-tests--flush-elements)
+      (should (= count (length (tired-test--queued-jobs 'elements)))))
+    (tired-test--flush-elements)
     (tired-refresh)
-    (should-not (tired-tests--queued-jobs 'elements))))
+    (should-not (tired-test--queued-jobs 'elements))))
 
 (ert-deftest tired-elements-dissector-error-finishes-the-job ()
   "A dissector that signals leaves no count and stops no queue."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (let ((tired-elements-functions
-           (list (lambda (_path) (error "boom"))
+           (list (lambda (_path) (error "Boom"))
                  #'tired-elements-json)))
       (tired root)
-      (tired-tests--flush-elements))
-    (should-not (tired--elements-value (tired-tests--entry "a.json")))
+      (tired-test--flush-elements))
+    (should-not (tired--elements-value (tired-test--entry "a.json")))
     (should-not tired--queue-jobs)))
 
 (ert-deftest tired-elements-reprint-repaints-a-shown-buffer ()
   "One finished count repaints its buffer once."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
     (let ((count 0))
       (cl-letf (((symbol-function 'tired--redraw)
@@ -608,12 +608,12 @@ The header row counts, and a blank line stays out."
   "A shown directory counts from its entry table and reads nothing.
 The insert reads the children of the directory into the table, so the
 count of that directory needs no second `directory-files' call."
-  (tired-tests--with-fixture
+  (tired-test--with-fixture
     (tired root)
-    (tired-tests--goto "sub")
+    (tired-test--goto "sub")
     (tired-insert-subdir)
-    (tired-tests--flush-elements)
-    (should (= 3 (tired--elements-value (tired-tests--entry "sub"))))
+    (tired-test--flush-elements)
+    (should (= 3 (tired--elements-value (tired-test--entry "sub"))))
     (cl-letf (((symbol-function 'tired--directory-names)
                (lambda (&rest _) (error "Unexpected directory read"))))
       (should (= 3 (tired-elements-directory
@@ -654,19 +654,19 @@ count of that directory needs no second `directory-files' call."
 
 (ert-deftest tired-elements-sort-puts-an-unknown-count-last ()
   "A row without a count lists after a row with one, both ways."
-  (tired-tests--with-fixture
-    (tired-tests--write "a.json" "[1,2,3]")
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "[1,2,3]")
     (tired root)
-    (tired-tests--flush-elements)
+    (tired-test--flush-elements)
     (tired--sort-by-column 'elements)
-    (let ((names (tired-tests--names)))
+    (let ((names (tired-test--names)))
       (should (< (seq-position names "a.json")
                  (seq-position names "alpha.txt"))))
     (tired--sort-by-column 'elements 'reverse)
-    (let ((names (tired-tests--names)))
+    (let ((names (tired-test--names)))
       (should (< (seq-position names "a.json")
                  (seq-position names "alpha.txt"))))))
 
-(provide 'tired-tests-elements)
+(provide 'tired-elements-test)
 
-;;; tired-tests-elements.el ends here
+;;; tired-elements-test.el ends here
