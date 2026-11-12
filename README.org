@@ -30,6 +30,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
   prefix selects one by position, and `mode-asc' joins the list on
   request
 - Insert subdirectories as nested, indented sections
+- Expand the whole tree on open when every row fits the window body,
+  through `tired-expand-all-if-fits', which starts on
 - Expand a file into sections: org headings, Emacs Lisp top-level
   forms, Rust items, Python defs and classes, and Markdown headings
   through tree-sitter, SQLite tables and columns through the
@@ -1122,6 +1124,19 @@ expands the same way and keeps its symlink face and its = -> target=
 suffix, so the children rows appear below a symlink row.  The listing
 never descends through a symlink twice, so a link back to a directory
 that already appears in the listing shows no children.
+
+When `tired-expand-all-if-fits' holds, which it does by default, the
+listing tries a whole-tree expansion as soon as a window shows it.
+Every directory row inserts its children, and the listing keeps the
+rows only when the whole result fits the window body without a
+scroll.  A tree that would scroll stays as it is, so the screen never
+scrolls unless the user asks.  The check divides the body pixels by
+one default line and then measures the printed rows, so the font, a
+`line-spacing' value and a tall face all count.  The trial reads a
+directory only until the row budget runs out, so a large tree costs at
+most one window of reads.  A remote directory and a directory that
+fails to read stay collapsed.  The attempt runs once per buffer, so a
+collapse that the user makes later stays in place.
 
 * File sections
 

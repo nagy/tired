@@ -20,7 +20,8 @@ reasons.
   `tired-magit-status`, `tired-clear-caches`), the
   evil hook
 - `tired-core.el` — entries, section framework, display, selection,
-  redraw, watches, the size caches, `tired-mode`, and the point
+  redraw, watches, the size caches, the whole-tree fit check,
+  `tired-mode`, and the point
   accessors `tired-directory-at-point`, `tired-path-at-point`,
   `tired-with-directory-at-point` and `tired-run-at-point`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Python, Go,
@@ -188,6 +189,19 @@ carries no cookie at all: `tired-noselect` runs the mode.
   `switch-to-buffer-other-window`, never a display action, because an
   action that only reuses a window finds none on a one-window frame and
   pops a new frame.
+- The whole-tree expansion runs once per buffer through
+  `tired--expand-all-in-buffer`, and both entry commands attempt it
+  after `tired--show-buffer` picks a window.  `tired-noselect` sets
+  `tired--expand-fits-pending` when no window shows the listing, and
+  the `window-buffer-change-functions` entry finishes that attempt
+  through a timer, because `tired-noselect` redraws before
+  `find-file` displays the buffer.  A trial that overflows and a print
+  that stands taller restore `tired--tables` and `tired--inserted`, so
+  a failed attempt leaves no partial tree.  Measure the budget as
+  `tired--row-budget` does, with body pixels and `default-line-height`,
+  never with canonical lines.  The trial reads a directory only until
+  the budget passes, so keep the LIMIT and `tired--row-overflow` of
+  `tired--display-rows`.  See `docs/adr/0027`.
 - A helper whose value comes from its arguments alone carries
   `(declare (pure t) (side-effect-free t))`.  A helper that reads state
   or the file system, but writes nothing, carries
@@ -204,10 +218,18 @@ before you write a test.
 
 - Batch Emacs runs no idle timer and no reprint timer.
   `tired-tests--with-fixture` binds a private element cache and an empty
-  idle queue, stubs the two schedulers and binds
-  `tired-delete-delay` to nil.  `tired-tests--flush-sizes` and
+  idle queue, stubs the two schedulers, binds
+  `tired-delete-delay` to nil and binds `tired-expand-all-if-fits` to
+  nil, because the fixture tree fits a window.  A test of the expansion
+  binds the option to t.  `tired-tests--flush-sizes` and
   `tired-tests--flush-elements` both run the queue and then the reprint.
   A test that needs the real scheduler stubs `run-with-idle-timer`.
+- Batch Emacs runs no `window-buffer-change-functions` entry during
+  redisplay, so a test of the deferred expansion calls
+  `tired--window-buffer-changed` and then `tired--expand-all-timer`
+  itself.  Batch Emacs lays text out at one pixel per line, so
+  `window-text-pixel-size` answers a row count and the printed fit
+  check stays exact.
 - Batch Emacs opens a window for `tired`.  A test that needs a hidden
   listing binds `tired-tests--with-deferred-sizes`, which stubs
   `tired--size-window-p`.  Bind `tired-tests--window-shown` to t inside

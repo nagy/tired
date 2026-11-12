@@ -152,6 +152,17 @@
 ;; - `tired-noselect' redraws before a window exists, so it queues no
 ;;   size walk.  A `window-buffer-change-functions' entry schedules the
 ;;   reprint through a timer, because redisplay runs that hook.
+;; - The whole-tree expansion tries once per buffer.  It inserts one
+;;   directory at a time, walks with the row budget as the LIMIT of
+;;   `tired--display-rows', and restores `tired--tables' and
+;;   `tired--inserted' when the walk overflows or when the printed
+;;   pixels pass the body of the window.  The budget divides the body
+;;   pixels by `default-line-height', so `line-spacing' and the frame
+;;   font reach it, and a face that stands taller needs the printed
+;;   check.  `tired-noselect' sets `tired--expand-fits-pending' when no
+;;   window shows the listing, and the window hook finishes the attempt
+;;   through a zero delay timer.  See
+;;   `docs/adr/0027-expand-a-whole-tree-that-fits.md'.
 ;; - A printed row carries `mouse-face' on its name alone, and
 ;;   `tabulated-list-mode' turns a click there into a link click unless
 ;;   `follow-link' says no.  `tired-mode-map' binds `follow-link' to
@@ -466,6 +477,17 @@ the chain, file or directory.  The row shows the path relative to
 the listed directory, uses the attributes of the leaf, and keeps the
 directory's position in the listing.  The row acts as the leaf for
 open, selection and copy, and a directory leaf still expands."
+  :type 'boolean)
+
+(defcustom tired-expand-all-if-fits t
+  "When non-nil, insert every subdirectory that the window can hold.
+The listing tries the whole tree when a window first shows it, and
+it keeps the expanded rows only when they fit the window body with
+no scroll.  A tree that would scroll stays as it is.  A remote
+directory stays collapsed, because each level costs a network round
+trip.  The attempt runs once per buffer, so a collapse that the user
+makes later stays in place.  See
+`docs/adr/0027-expand-a-whole-tree-that-fits.md'."
   :type 'boolean)
 
 (defcustom tired-name-column-min-width 20
@@ -887,6 +909,19 @@ list.  A changed time re-parses the file.")
 
 (defvar-local tired--folded nil
   "Hash set of `(PATH . LINE)' keys for folded sections.")
+
+(defvar-local tired--expand-fits-done nil
+  "Non-nil when the whole-tree expansion of this buffer finished a try.
+The listing tries once per buffer lifetime, so a collapse that the
+user makes later stays in place.")
+
+(defvar-local tired--expand-fits-pending nil
+  "Non-nil while the whole-tree expansion waits for a window.
+`tired-noselect' redraws before `display-buffer' picks a window, so
+`window-buffer-change-functions' finishes the attempt.")
+
+(defvar-local tired--expand-fits-timer nil
+  "Pending timer that finishes a whole-tree expansion, or nil.")
 
 (defvar-local tired--name-edit nil
   "Non-nil while the listing shows editable name cells.
@@ -1753,7 +1788,7 @@ so two sections of one file stay distinct."
       (tired--section-cell row)
     (tired--name-cell row)))
 
-(defun tired--display-rows (&optional visible-only)
+(defun tired--display-rows (&optional visible-only limit)
   "Return (ROW . DEPTH) conses for the whole listing.
 ROW is a `tired-entry' or a `tired-section'.  Children of inserted
 directories follow the row of their parent and indent by DEPTH.  The
@@ -1764,11 +1799,20 @@ that leads to a single entry chain collapses into one row for the
 last entry of the chain, and the row takes the sort place that its
 printed size, time and mode earn.
 Such a row still shows the sections of its file, and still shows the
-children of its directory, when the user expands it."
+children of its directory, when the user expands it.
+LIMIT is a row count that a caller can hold, or nil.  A walk that
+passes LIMIT throws `tired--row-overflow' with nil, so a caller
+measures a listing that fills the window without building the rest
+of it.  The caller discards the rows that unwound."
   (let ((rows nil)
+        (count 0)
         (seen (make-hash-table :test #'equal)))
     (cl-labels
-        ((walk (directory depth)
+        ((emit (row)
+           (push row rows)
+           (when (and limit (> (setq count (1+ count)) limit))
+             (throw 'tired--row-overflow nil)))
+         (walk (directory depth)
            (let ((key (file-truename directory)))
              (unless (gethash key seen)
                (puthash key t seen)
@@ -1797,9 +1841,9 @@ children of its directory, when the user expands it."
                      (when (or (not visible-only)
                                (and (tired--in-narrow-p display)
                                     (or name-visible shown)))
-                       (push (cons display depth) rows))
+                       (emit (cons display depth)))
                      (dolist (row shown)
-                       (push row rows)))
+                       (emit row)))
                    (when (and (not hidden)
                               (tired--directory-entry-p display)
                               (tired--inserted-p
@@ -2584,11 +2628,16 @@ revealed.  The core keeps no count itself, so it calls
              (tired--size-window-p))
     (funcall tired--elements-queue-function)))
 
-(defun tired--window-buffer-changed (_window)
-  "Redraw the listing after a window starts to show it.
+(defun tired--window-buffer-changed (window)
+  "Redraw the listing after WINDOW starts to show it.
 A redraw that no window shows queues no directory size walk and no
 element count, so the first redisplay of the buffer queues both.
-Redisplay runs this hook, so the reprint goes through a timer."
+Redisplay runs this hook, so the reprint goes through a timer.  A
+listing that waits for its whole-tree expansion starts that attempt
+here, because `find-file' displays the buffer after
+`tired-noselect' returns."
+  (when tired--expand-fits-pending
+    (tired--schedule-expand-all window))
   (when (or tired--size-deferred tired--elements-deferred)
     (tired--schedule-size-redraw 0)))
 
@@ -4140,6 +4189,154 @@ Read the children and leave the redraw to the caller."
     (puthash directory t tired--inserted)
     (puthash directory (tired--read-entries directory) tired--tables)))
 
+;;; Whole-tree expansion
+
+(defun tired--row-budget (window)
+  "Return the number of listing rows that fit the body of WINDOW.
+Divide the body pixel height by the height of one default line, so
+a `line-spacing' value and the font of the frame reach the answer.
+A face that stands taller than the default face still fits fewer
+rows, and `tired--listing-fits-p' catches that case after the
+print."
+  (let ((height (window-body-height window t))
+        (line (with-selected-frame (window-frame window)
+                (default-line-height))))
+    (if (and (numberp height) (numberp line) (> line 0))
+        (max 0 (floor height line))
+      0)))
+
+(defun tired--expandable-row-p (row)
+  "Return non-nil when the whole-tree trial expands ROW.
+A remote directory stays collapsed, because each level of it costs
+a network round trip."
+  (declare (side-effect-free t))
+  (let ((entry (car row)))
+    (and (tired--directory-entry-p entry)
+         (not (tired--entry-remote-p entry))
+         (not (tired--inserted-p (tired-entry-path entry))))))
+
+(defun tired--insert-directory-quiet (entry)
+  "Insert the children of directory ENTRY and return its path.
+Return nil when the read fails, and leave `tired--inserted' as it
+was, so the row stays collapsed and a refresh never retries a
+directory that the trial could not read."
+  (let ((directory (tired-entry-path entry)))
+    (condition-case nil
+        (progn
+          (tired--insert-directory entry)
+          (directory-file-name (expand-file-name directory)))
+      (error
+       (remhash (directory-file-name (expand-file-name directory))
+                tired--inserted)
+       nil))))
+
+(defun tired--trial-key (row)
+  "Return the directory key that the trial reads for ROW."
+  (declare (side-effect-free t))
+  (directory-file-name (expand-file-name (tired-entry-path (car row)))))
+
+(defun tired--expand-all-fits-p (limit)
+  "Expand every directory row while the listing stays within LIMIT rows.
+Return non-nil when the whole tree fits, and leave the listing
+expanded.  Return nil when a prefix of the expansion prints more
+than LIMIT rows, because a fuller expansion prints at least as many
+rows.  The caller restores `tired--tables' and `tired--inserted'
+then, so a failed trial leaves no row behind."
+  (catch 'tired--row-overflow
+    (let ((refused nil)
+          (more t))
+      (while more
+        (let* ((rows (tired--display-rows t limit))
+               (row (seq-find
+                     (lambda (candidate)
+                       (and (tired--expandable-row-p candidate)
+                            (not (member (tired--trial-key candidate)
+                                         refused))))
+                     rows)))
+          (if (null row)
+              (setq more nil)
+            (unless (tired--insert-directory-quiet (car row))
+              (push (tired--trial-key row) refused)))))
+      t)))
+
+(defun tired--listing-fits-p (window)
+  "Return non-nil when the printed listing fits the body of WINDOW.
+Measure the printed pixels, so a face that stands taller than the
+default face reaches the answer.  WINDOW must show the listing."
+  (<= (cdr (window-text-pixel-size window (point-min) (point-max)))
+      (window-body-height window t)))
+
+(defun tired--expand-all-in-buffer (buffer window)
+  "Insert every subdirectory of BUFFER when the whole listing fits WINDOW.
+Leave BUFFER as it is when the expanded rows would scroll the body
+of WINDOW, and try once per buffer lifetime, so a collapse that the
+user makes later stays.  WINDOW must show BUFFER."
+  (when (and tired-expand-all-if-fits
+             (buffer-live-p buffer)
+             (window-live-p window)
+             (eq (window-buffer window) buffer))
+    (with-current-buffer buffer
+      (when (and (derived-mode-p 'tired-mode)
+                 (not tired--expand-fits-done))
+        (setq tired--expand-fits-done t)
+        (setq tired--expand-fits-pending nil)
+        (let ((tables (copy-hash-table tired--tables))
+              (inserted (copy-hash-table tired--inserted))
+              (keep nil))
+          (unwind-protect
+              (when (tired--expand-all-fits-p (tired--row-budget window))
+                (tired--redraw window)
+                (if (tired--listing-fits-p window)
+                    (progn
+                      (setq tired--listing-stamps (tired--shown-stamps))
+                      (setq keep t))
+                  ;; A face stands taller than the budget expected, so
+                  ;; drop the tree and print the collapsed listing.
+                  (setq tired--tables tables)
+                  (setq tired--inserted inserted)
+                  (tired--redraw window)
+                  (setq keep t)))
+            (unless keep
+              (setq tired--tables tables)
+              (setq tired--inserted inserted))))))))
+
+(defun tired--expand-all-when-shown ()
+  "Try the whole-tree expansion once a window shows the listing.
+`tired-noselect' redraws before `display-buffer' picks a window, so
+the first display finishes the attempt through a timer when no
+window shows the listing yet."
+  (when (and tired-expand-all-if-fits
+             (not tired--expand-fits-done))
+    (let ((window (car (get-buffer-window-list (current-buffer) nil t))))
+      (if window
+          (tired--expand-all-in-buffer (current-buffer) window)
+        (setq tired--expand-fits-pending t)))))
+
+(defun tired--schedule-expand-all (window)
+  "Arrange one whole-tree attempt for WINDOW after this redisplay.
+Redisplay runs the window hook that calls this function, and a
+reprint must wait for that hook to return."
+  (unless (timerp tired--expand-fits-timer)
+    (setq tired--expand-fits-timer
+          (run-at-time 0 nil #'tired--expand-all-timer
+                       (current-buffer) window))))
+
+(defun tired--expand-all-timer (buffer window)
+  "Try the whole-tree expansion of BUFFER in WINDOW."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq tired--expand-fits-timer nil)
+      (when (and tired--expand-fits-pending
+                 (window-live-p window)
+                 (eq (window-buffer window) buffer))
+        (tired--expand-all-in-buffer buffer window)))))
+
+(defun tired--cancel-expand-all-timer ()
+  "Cancel the whole-tree attempt that waits for a display."
+  (when (timerp tired--expand-fits-timer)
+    (cancel-timer tired--expand-fits-timer)
+    (setq tired--expand-fits-timer nil)))
+
 (defun tired--expand-path (path)
   "Record PATH as expanded, so its sections show.
 Signal a user error when no handler claims PATH, or when the handler
@@ -5153,6 +5350,9 @@ The directory contents come from `directory-files' and
   (setq-local tired--revert-timer nil)
   (setq-local tired--size-timer nil)
   (setq-local tired--size-deferred nil)
+  (setq-local tired--expand-fits-done nil)
+  (setq-local tired--expand-fits-pending nil)
+  (setq-local tired--expand-fits-timer nil)
   (setq-local tired--collapse-cache (make-hash-table :test #'equal))
   (setq-local tired--expanded (make-hash-table :test #'equal))
   (setq-local tired--sections (make-hash-table :test #'equal))
@@ -5161,6 +5361,7 @@ The directory contents come from `directory-files' and
   (add-hook 'kill-buffer-hook #'tired--stop-watching nil t)
   (add-hook 'kill-buffer-hook #'tired--queue-forget-current nil t)
   (add-hook 'kill-buffer-hook #'tired--stop-delete-timer nil t)
+  (add-hook 'kill-buffer-hook #'tired--cancel-expand-all-timer nil t)
   (setq-local tabulated-list-format (tired--format))
   (setq-local tabulated-list-entries #'tired--tabulated-entries)
   ;; Emacs draws the sort arrow in the padding, and every Tired column

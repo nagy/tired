@@ -55,7 +55,9 @@
   "Run BODY inside a fresh directory that holds test entries.
 The variable `root' is bound to the temporary directory.  The
 fixture contains a subdirectory, regular files, a hidden file and
-a symlink, and removes every Tired buffer it opened."
+a symlink, and removes every Tired buffer it opened.  It binds
+`tired-expand-all-if-fits' to nil, so a listing stays collapsed;
+a test of the expansion binds the option to t."
   (declare (indent 0) (debug t))
   `(let* ((root (file-name-as-directory (make-temp-file "tired-tests-" t)))
           (default-directory root)
@@ -69,6 +71,10 @@ a symlink, and removes every Tired buffer it opened."
           (tired--size-always t)
           (tired-persistent-directories nil)
           (tired-directory-size-budget nil)
+          ;; The fixture tree fits a window, so a test that opens a
+          ;; listing would expand it.  A test of that expansion binds
+          ;; the option to t.
+          (tired-expand-all-if-fits nil)
           ;; A deletion that waits would outlive the test, so the
           ;; suite deletes at once unless a test asks for the delay.
           (tired-delete-delay nil)

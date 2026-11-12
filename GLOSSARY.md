@@ -258,6 +258,14 @@ Show the sections of a file under its row.  Insert shows the children
 of a directory, and expand shows the sections of a file.
 _Avoid_: Open, unfold, drill, zoom
 
+**Whole-tree expansion**:
+The one attempt that inserts every directory of the listing when a
+window first shows it.  `tired-expand-all-if-fits' gates the attempt,
+and the listing keeps the rows only when the printed result fits the
+window body without a scroll.  A remote directory, a directory that
+fails to read and a buffer that already tried stay collapsed.
+_Avoid_: Auto-expand, expand everything, deep scan
+
 **Handler**:
 A function in `tired-file-handlers' that turns one file into sections.
 _Avoid_: Parser, provider, extractor

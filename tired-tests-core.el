@@ -2670,6 +2670,195 @@ and on a nested row it put it inside the indent."
     (tired-insert-subdir)
     (should (= 8 (length (tired-tests--names))))))
 
+(defmacro tired-tests--with-remote (root added &rest body)
+  "Treat every path below ROOT as remote and record watches in ADDED."
+  (declare (indent 2) (debug t))
+  `(cl-letf (((symbol-function 'file-remote-p)
+              (lambda (path &rest _) (string-prefix-p ,root path)))
+             ((symbol-function 'file-notify-add-watch)
+              (lambda (directory &rest _) (push directory ,added) nil)))
+     ,@body))
+
+(defun tired-tests--tree-with-files (root count)
+  "Create COUNT directories under ROOT, each with two files.
+Two files keep a directory from collapsing into a single row, so
+every directory prints one row and adds two rows when it expands."
+  (dotimes (index count)
+    (let ((directory (expand-file-name (format "dir%03d" index) root)))
+      (make-directory directory)
+      (with-temp-file (expand-file-name "one.txt" directory) (insert "1"))
+      (with-temp-file (expand-file-name "two.txt" directory) (insert "2")))))
+
+(ert-deftest tired-expand-all-is-a-user-option ()
+  "The whole-tree expansion is a user option that starts on."
+  (should (custom-variable-p 'tired-expand-all-if-fits))
+  (should (default-value 'tired-expand-all-if-fits))
+  (should (stringp (documentation-property 'tired-expand-all-if-fits
+                                           'variable-documentation))))
+
+(ert-deftest tired-expand-all-inserts-every-directory-when-it-fits ()
+  "A tree that fits the window expands on the first display."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t))
+      (tired root)
+      (should (tired--inserted-p (expand-file-name "sub" root)))
+      ;; The link back to the root expands to no new row.
+      (should (tired--inserted-p (expand-file-name "sub/loop" root)))
+      (should (equal (tired-tests--names)
+                     '("sub" "deep/leaf.txt" "loop" "inner.txt"
+                       ".hidden" "link" "alpha.txt" "beta.txt"))))))
+
+(ert-deftest tired-expand-all-leaves-a-tall-tree-collapsed ()
+  "A tree that would scroll the window stays as it is."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t))
+      (tired-tests--tree-with-files root 8)
+      (tired root)
+      (let* ((base (length (tired--display-rows t)))
+             (height (window-body-height)))
+        ;; The collapsed listing fits the window, and the full tree
+        ;; would not, so only the expansion can decide the answer.
+        (should (= 13 base))
+        (should (<= base height))
+        (should (> (+ base 16) height))
+        (should (zerop (hash-table-count tired--inserted)))
+        (should (= base (length (tired--display-rows t))))))))
+
+(ert-deftest tired-expand-all-leaves-a-longer-base-listing-collapsed ()
+  "A listing that already scrolls stays collapsed."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t))
+      (tired-tests--tree-with-files root 30)
+      (tired root)
+      (should (> (length (tired--display-rows t)) (window-body-height)))
+      (should (zerop (hash-table-count tired--inserted)))
+      (should (= 35 (length (tired--display-rows t)))))))
+
+(ert-deftest tired-expand-all-reads-only-a-prefix-of-a-huge-tree ()
+  "The trial stops reading directories when the budget passes."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t)
+          (tired-collapse-single-child nil)
+          (reads 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (tired-tests--tree-with-files root 200)
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest arguments)
+                   (setq reads (1+ reads))
+                   (apply original arguments))))
+        (tired root)
+        (should (zerop (hash-table-count tired--inserted)))
+        ;; One read serves the listing, and no read reaches a child.
+        (should (= 1 reads))))))
+
+(ert-deftest tired-expand-all-fits-p-stops-at-the-limit ()
+  "The trial accepts a full fit and rejects one row over the limit."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((base (length (tired--display-rows t)))
+          (tables (copy-hash-table tired--tables))
+          (inserted (copy-hash-table tired--inserted)))
+      ;; The fixture expands to eight rows.
+      (should (tired--expand-all-fits-p 8))
+      (should (= 8 (length (tired--display-rows t))))
+      ;; A failed trial leaves a prefix, so the caller restores it.
+      (setq tired--tables tables)
+      (setq tired--inserted inserted)
+      (let ((tables (copy-hash-table tired--tables))
+            (inserted (copy-hash-table tired--inserted)))
+        (should-not (tired--expand-all-fits-p 7))
+        (setq tired--tables tables)
+        (setq tired--inserted inserted))
+      (should (= base (length (tired--display-rows t)))))))
+
+(ert-deftest tired-expand-all-budget-reads-the-window-and-the-line ()
+  "The row budget divides the body pixels by one default line."
+  (tired-tests--with-fixture
+    (tired root)
+    (let ((window (selected-window)))
+      (should (= (floor (window-body-height window t)
+                        (default-line-height))
+                 (tired--row-budget window))))))
+
+(ert-deftest tired-expand-all-honours-the-option ()
+  "A nil option keeps the tree collapsed."
+  (tired-tests--with-fixture
+    (tired root)
+    (should (zerop (hash-table-count tired--inserted)))
+    (should-not tired--expand-fits-done)))
+
+(ert-deftest tired-expand-all-drops-a-tree-that-a-tall-row-scrolls ()
+  "A printed listing taller than the body goes back to collapsed."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t))
+      (cl-letf (((symbol-function 'tired--listing-fits-p) #'ignore))
+        (tired root)
+        (should (zerop (hash-table-count tired--inserted)))
+        (should (equal (tired-tests--names)
+                       '("sub" ".hidden" "link" "alpha.txt"
+                         "beta.txt")))))))
+
+(ert-deftest tired-expand-all-skips-a-directory-that-a-read-fails ()
+  "A directory that fails to read stays collapsed, and the trial goes on."
+  (tired-tests--with-fixture
+    (make-directory (expand-file-name "other" root))
+    (with-temp-file (expand-file-name "other/one.txt") (insert "1"))
+    (with-temp-file (expand-file-name "other/two.txt") (insert "2"))
+    (let ((tired-expand-all-if-fits t)
+          (broken (expand-file-name "sub" root))
+          (original (symbol-function 'directory-files-and-attributes)))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (directory &rest arguments)
+                   (if (equal (directory-file-name
+                               (expand-file-name directory))
+                              (directory-file-name broken))
+                       (signal 'file-error
+                               (list "Reading directory" directory))
+                     (apply original directory arguments)))))
+        (tired root)
+        (should-not (tired--inserted-p broken))
+        (should (tired--inserted-p (expand-file-name "other" root)))))))
+
+(ert-deftest tired-expand-all-skips-a-remote-directory ()
+  "A remote directory stays collapsed, and the attempt still runs."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t)
+          (added nil))
+      (tired-tests--with-remote root added
+        (tired root)
+        (should (zerop (hash-table-count tired--inserted)))
+        (should tired--expand-fits-done)))))
+
+(ert-deftest tired-expand-all-tries-once-per-buffer ()
+  "A collapse that the user makes after the attempt stays collapsed."
+  (tired-tests--with-fixture
+    (let ((tired-expand-all-if-fits t))
+      (tired root)
+      (should (tired--inserted-p (expand-file-name "sub" root)))
+      (tired-tests--goto "sub")
+      (tired-remove-subdir)
+      (should-not (tired--inserted-p (expand-file-name "sub" root)))
+      (tired--expand-all-in-buffer (current-buffer) (selected-window))
+      (should-not (tired--inserted-p (expand-file-name "sub" root)))
+      (should tired--expand-fits-done))))
+
+(ert-deftest tired-expand-all-waits-for-a-window ()
+  "A listing that no window shows finishes the attempt on display."
+  (tired-tests--with-fixture
+    (let* ((tired-expand-all-if-fits t)
+           (buffer (tired-noselect root)))
+      (with-current-buffer buffer
+        (should tired--expand-fits-pending)
+        (should (zerop (hash-table-count tired--inserted)))
+        (set-window-buffer (selected-window) buffer)
+        (tired--window-buffer-changed (selected-window))
+        (should (timerp tired--expand-fits-timer))
+        (cancel-timer tired--expand-fits-timer)
+        (setq tired--expand-fits-timer nil)
+        (tired--expand-all-timer buffer (selected-window))
+        (should (tired--inserted-p (expand-file-name "sub" root)))
+        (should-not tired--expand-fits-pending)))))
+
 (ert-deftest tired-selection-targets-cover-inserted-entries ()
   "Selection and targets work inside inserted sections."
   (tired-tests--with-fixture
@@ -3165,15 +3354,6 @@ The same substitution rules apply to the header line."
           (should (= 1 (hash-table-count tired--watches)))
           (kill-buffer buffer)
           (should (= 1 (length removed))))))))
-
-(defmacro tired-tests--with-remote (root added &rest body)
-  "Treat every path below ROOT as remote and record watches in ADDED."
-  (declare (indent 2) (debug t))
-  `(cl-letf (((symbol-function 'file-remote-p)
-              (lambda (path &rest _) (string-prefix-p ,root path)))
-             ((symbol-function 'file-notify-add-watch)
-              (lambda (directory &rest _) (push directory ,added) nil)))
-     ,@body))
 
 (ert-deftest tired-auto-revert-remote-is-a-user-option ()
   "The remote watch switch starts off and carries a docstring."

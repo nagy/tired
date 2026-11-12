@@ -163,7 +163,8 @@
 The buffer name depends on DIRECTORY, so a second call reuses the
 same buffer.  The buffer gets DIRECTORY as `default-directory' and
 as `list-buffers-directory', so `list-buffers' names the directory
-in its file column."
+in its file column.  The buffer also tries the whole-tree expansion
+once a window shows it, as `tired-expand-all-if-fits' says."
   (let ((directory (file-name-as-directory (expand-file-name directory))))
     (unless (file-directory-p directory)
       (user-error "Not a directory: %s" directory))
@@ -183,6 +184,7 @@ in its file column."
         ;; variable for its file column.
         (setq list-buffers-directory directory)
         (tired-refresh)
+        (tired--expand-all-when-shown)
         ;; `recentf-mode' records files that a buffer visits, and a
         ;; Tired buffer visits a directory.
         (when (bound-and-true-p recentf-mode)
@@ -227,8 +229,10 @@ command is the short way to open a listing, in the manner of
 `dired'.  The listing goes through `tired-display-buffer-action'."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
-  (tired--show-buffer (tired-noselect directory)
-                      tired-display-buffer-action))
+  (let ((buffer (tired--show-buffer (tired-noselect directory)
+                                    tired-display-buffer-action)))
+    (tired--expand-all-in-buffer buffer (selected-window))
+    buffer))
 
 ;;;###autoload
 (defun tired-other-window (directory)
@@ -239,7 +243,9 @@ the command must split the current window, the user options
 the split runs horizontally or vertically."
   (interactive
    (list (read-directory-name "Directory: " nil default-directory t)))
-  (switch-to-buffer-other-window (tired-noselect directory)))
+  (let ((buffer (switch-to-buffer-other-window (tired-noselect directory))))
+    (tired--expand-all-in-buffer buffer (selected-window))
+    buffer))
 
 (declare-function project-current "project" (&optional maybe-prompt directory))
 
