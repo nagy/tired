@@ -77,10 +77,11 @@
 ;;   local variable and a class attribute stay out.
 ;; - The Go handler keeps a declaration that sits at the top level
 ;;   alone.  A method indents under the type that the file declares above
-;;   it, through `tired--go-type-starts', which fills on first use.  A
-;;   method declared before its type stays at level zero, because an
-;;   indent with no parent row above it reads as a child of the row
-;;   before it.
+;;   it, through `tired--go-type-starts', which fills on first use.  The
+;;   method also names the line of that type row as its parent, so the
+;;   listing keeps source order and a function between the two rows still
+;;   leaves the fold on the type.  A method declared before its type takes
+;;   no parent and stays at level zero.
 ;; - The Emacs Lisp handler skips whitespace and comments with
 ;;   `forward-comment' and drops a form that
 ;;   `tired--elisp-hidden-heads' names.  The dropped form keeps its
@@ -467,6 +468,16 @@ appears."
   (let ((filter (plist-get spec :filter)))
     (or (null filter) (funcall filter node))))
 
+(defun tired--treesit-parent (node spec)
+  "Return the parent line that SPEC names for NODE, or nil.
+SPEC may name a `:parent' function, which receives NODE and returns
+the line of the section row that holds it.  A grammar that nests one
+declaration inside another needs no such function, because its level
+follows the walk.  A grammar that places a child away from its
+parent, as Go does for a method and its type, does."
+  (when-let* ((function (plist-get spec :parent)))
+    (funcall function node)))
+
 (defun tired--treesit-walk (node spec depth)
   "Return the section plists of NODE and its children under SPEC.
 DEPTH is the current nesting depth.  A node type listed in
@@ -481,6 +492,7 @@ exceeds it."
                      (list (list :label (tired--treesit-label node kind spec)
                                  :line (tired--treesit-line node spec)
                                  :level (tired--treesit-level node spec depth)
+                                 :parent (tired--treesit-parent node spec)
                                  :kind kind))))
              (next-depth (if (member (treesit-node-type node)
                                      (plist-get spec :containers))
@@ -496,8 +508,8 @@ exceeds it."
 SPEC is a plist with `:language', an optional `:mode', an optional
 `:require', `:kinds', optional `:containers', optional `:fields',
 optional `:filter', optional `:label', optional `:level', optional
-`:line' and optional `:max-depth'.  Return nil when the grammar is
-missing, so the caller keeps a plain file row."
+`:parent', optional `:line' and optional `:max-depth'.  Return nil
+when the grammar is missing, so the caller keeps a plain file row."
   (require 'treesit)
   (let ((language (plist-get spec :language))
         ;; A fenced Markdown code block names another language, and a
@@ -745,6 +757,18 @@ above it.  Every other declaration sits at level zero."
       1
     0))
 
+(defun tired--go-node-parent (node)
+  "Return the line of the Go type that holds the method NODE.
+Return nil for a declaration that names no type above it, so a method
+that precedes its type stays at level zero.  The listing keeps source
+order, so a function may sit between the type row and the method row,
+and only a parent line keeps the fold on the type."
+  (when (equal (treesit-node-type node) "method_declaration")
+    (when-let* ((name (tired--go-receiver-name node))
+                (start (tired--go-type-start name)))
+      (when (< start (treesit-node-start node))
+        (line-number-at-pos start)))))
+
 (defconst tired--go-section-spec
   '(:language go
     :mode go-ts-mode
@@ -756,7 +780,8 @@ above it.  Every other declaration sits at level zero."
             ("var_spec" . var))
     :filter tired--go-node-shown-p
     :label tired--go-section-label
-    :level tired--go-node-level)
+    :level tired--go-node-level
+    :parent tired--go-node-parent)
   "Tree-sitter section spec for a Go file.")
 
 (defun tired-file-sections-go (_path)

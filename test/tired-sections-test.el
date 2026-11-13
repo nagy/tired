@@ -445,6 +445,48 @@
                    '(("func (c *Config) Label" . 1)
                      ("type Config" . 1))))))
 
+(ert-deftest tired-fold-of-a-go-function-hides-no-method ()
+  "A function above a method folds alone, because the method names the type."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
+  (tired-test--with-fixture
+    (tired-test--write "main.go"
+                        (concat "package main\n\n"
+                                "type FOO struct {\n\tName string\n}\n\n"
+                                "func MustParse(s string) FOO { return FOO{} }\n\n"
+                                "func (f FOO) Base() FOO { return f }\n"))
+    (tired root)
+    (tired-test--goto "main.go")
+    (tired-toggle-subdir)
+    (tired-test--goto-section "func MustParse")
+    (tired-toggle-subdir)
+    (should (equal (tired-test--sections)
+                   '(("type FOO" . 1)
+                     ("func MustParse" . 1)
+                     ("func (f FOO) Base" . 2))))))
+
+(ert-deftest tired-fold-of-a-go-type-hides-a-method-below-a-function ()
+  "A type folds the methods that name it, even from above another row."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))
+  (tired-test--with-fixture
+    (tired-test--write "main.go"
+                        (concat "package main\n\n"
+                                "type FOO struct {\n\tName string\n}\n\n"
+                                "func MustParse(s string) FOO { return FOO{} }\n\n"
+                                "func (f FOO) Base() FOO { return f }\n"))
+    (tired root)
+    (tired-test--goto "main.go")
+    (tired-toggle-subdir)
+    (tired-test--goto-section "type FOO")
+    (tired-toggle-subdir)
+    (should (equal (tired-test--sections)
+                   '(("type FOO" . 1)
+                     ("func MustParse" . 1))))
+    (tired-toggle-subdir)
+    (should (equal (tired-test--sections)
+                   '(("type FOO" . 1)
+                     ("func MustParse" . 1)
+                     ("func (f FOO) Base" . 2))))))
+
 (ert-deftest tired-go-section-labels-take-mode-faces ()
   "A Go label takes its keyword from the source text."
   (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'go t)))

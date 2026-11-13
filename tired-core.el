@@ -192,6 +192,12 @@
 ;;   `tired-section' structs.  The result caches by modification time.  A
 ;;   section row takes its count from the `count' slot and never through
 ;;   `tired-elements-functions', because a dissector reads the file again.
+;; - A section that names a parent line takes its depth and its fold from
+;;   that parent row, and a section without one falls back to `:level'.
+;;   The line is the parent identity, because the fold set keys on the
+;;   same line, so a handler needs no second key.  `:level' alone cannot
+;;   name a parent that sits above another row: the Go handler indents a
+;;   method under a type that a function may separate from it.
 ;; - `tired--paint-row-help' runs after `tabulated-list-print' and gives
 ;;   every printed line its `help-echo'.  `tired--click-row' reads the row
 ;;   under a click from the buffer of the clicked window.  A menu click
@@ -764,7 +770,8 @@ code that needs the answer asks `file-remote-p' once."
 LABEL is the display string without indentation.  PATH is the
 absolute file name that holds the section.  LINE is 1-based.  COLUMN
 is 0-based, or nil.  LEVEL is the nesting level that the handler
-declared.  KIND is a symbol such as `heading' or `function'.  ACTION
+declared.  PARENT is the line of the section row that holds this one,
+or nil.  KIND is a symbol such as `heading' or `function'.  ACTION
 is nil for a plain visit, or a function, or a cons of a function and
 its arguments.  COUNT is an optional number that the Elements column
 prints, or nil for an empty cell."
@@ -773,6 +780,7 @@ prints, or nil for an empty cell."
   line
   column
   level
+  parent
   kind
   action
   count)
@@ -1631,13 +1639,14 @@ and the discarded buffer never prompts on kill."
 (defun tired--section-plist (item path)
   "Return ITEM as a `tired-section' struct for PATH.
 ITEM is a plist with `:label' and `:line', plus the optional keys
-`:column', `:level', `:kind', `:action' and `:count'."
+`:column', `:level', `:parent', `:kind', `:action' and `:count'."
   (tired--section-create
    :label (or (plist-get item :label) "")
    :path path
    :line (or (plist-get item :line) 1)
    :column (plist-get item :column)
    :level (or (plist-get item :level) 0)
+   :parent (plist-get item :parent)
    :kind (or (plist-get item :kind) 'section)
    :action (plist-get item :action)
    :count (plist-get item :count)))
@@ -1745,22 +1754,47 @@ takes the face of the section kind."
 (defun tired--section-rows (entry depth)
   "Return (SECTION . DEPTH) conses for the sections of ENTRY.
 DEPTH is the depth of the file row, so every section indents below
-it.  The level of the first section is the base, and a deeper
-section adds one indent per extra level.  A folded section hides its
-children."
+it.  A section that names its parent line indents one level under
+that parent row, and a folded section hides every later row that
+names it as a parent, whatever row sits between them.  A section
+without a parent line falls back to the level of the first section as
+the base, and a deeper section adds one indent per extra level."
   (let* ((sections (tired-file-sections (tired-entry-path entry)))
          (base (and sections (tired-section-level (car sections))))
-         (hidden nil)
+         (by-line (make-hash-table :test #'eql))
+         (depths (make-hash-table :test #'eq))
+         (folded-chain (make-hash-table :test #'eq))
+         (levels nil)
          rows)
     (dolist (section sections)
-      (let ((level (tired-section-level section)))
-        (when (and hidden (<= level hidden))
-          (setq hidden nil))
-        (unless hidden
-          (when (tired--section-folded-p section)
-            (setq hidden level))
-          (push (cons section (+ depth 1 (max 0 (- level (or base 0)))))
-                rows))))
+      (unless (gethash (tired-section-line section) by-line)
+        (puthash (tired-section-line section) section by-line)))
+    (dolist (section sections)
+      (let* ((level (tired-section-level section))
+             (parent (and (tired-section-parent section)
+                          (gethash (tired-section-parent section) by-line)))
+             ;; A parent that the walk met later names no row above this
+             ;; one, so the level fallback keeps the row in place.
+             (parent-depth (and parent (gethash parent depths)))
+             (folded (tired--section-folded-p section)))
+        (while (and levels (>= (caar levels) level))
+          (pop levels))
+        (let* ((row-depth (if parent-depth
+                              (1+ parent-depth)
+                            (+ depth 1 (max 0 (- level (or base 0))))))
+               ;; A row that names a parent takes the fold of that parent
+               ;; alone.  The level stack speaks for the rows that name
+               ;; no parent, and its nearest shallower row can sit
+               ;; between a parent and its child.
+               (hidden (if parent
+                           (gethash parent folded-chain)
+                         (seq-some #'cdr levels))))
+          (puthash section row-depth depths)
+          (puthash section (or hidden folded) folded-chain)
+          (unless hidden
+            (push (cons section row-depth) rows))
+          (unless parent
+            (push (cons level folded) levels)))))
     (nreverse rows)))
 
 (defun tired--row-path (row)
@@ -5335,6 +5369,7 @@ The directory contents come from `directory-files' and
 
 \\{tired-mode-map}"
   :group 'tired
+  :interactive nil
   ;; The mode runs before the directory is known, so it must not set
   ;; `default-directory' or `list-buffers-directory':
   ;; `tired-noselect' owns both.

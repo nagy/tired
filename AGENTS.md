@@ -141,6 +141,13 @@ carries no cookie at all: `tired-noselect` runs the mode.
   by path alone, so change them only through `tired--set-selection` and
   `tired--set-narrowed`.  A region over a section row reaches that row's
   file instead, through `tired--display-entry-table`.
+- A section names its parent through `:parent`, the line of the parent
+  row, and `tired--section-rows` builds the depth and the fold chain from
+  that line alone.  Set it only where the rows leave source order, as the
+  Go handler does for a method and its type.  A handler whose rows nest
+  through the tree-sitter walk keeps `:level` and names no parent.  The
+  level stack ignores a row that names a parent, and a parent line that
+  names a later row falls back to the level rule.  See `docs/adr/0028`.
 - A name cell carries `face` and `font-lock-face`.  `tired--section-cell`
   mirrors the faces of a handler label the same way.  A name face
   inherits its `dired-` partner, and `tired-selected-face` inherits

@@ -1143,7 +1143,9 @@ collapse that the user makes later stays in place.
 Press =TAB= on a file row to show the sections that a handler
 extracts from that file.  =TAB= again collapses them.  Sections follow
 the file row and indent below it.  A section with child sections folds
-on =TAB=.
+on =TAB=.  A fold hides the rows that the section holds, and no row
+that sits outside it, so a method stays visible when a function above
+it folds.
 
 Ten handlers ship with the package:
 
@@ -1152,7 +1154,7 @@ Ten handlers ship with the package:
 | Org (=.org=)  | Every heading, indented by its outline level, colored as =org-mode= colors the title |
 | Emacs Lisp    | Every top-level form, named by its head and argument, colored as =emacs-lisp-mode= colors the source.  A =declare-function= form stays out, because it speaks to the byte compiler alone |
 | Rust (=.rs=)  | Functions, structs, enums, traits, impl blocks, modules, constants, statics and macros, with the methods of an impl block nested under it.  The row repeats the source prefix, so a function reads =fn= or =async fn=, and each word carries the face of its source |
-| Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it.  A declaration inside a function body stays out.  The row repeats the source prefix, so a function reads =func=, and each word carries the face of its source |
+| Go (=.go=)    | Functions, methods, types, constants and variables.  A method indents under the type that the file declares above it, and folds with that type even when a function sits between the two rows.  A declaration inside a function body stays out.  The row repeats the source prefix, so a function reads =func=, and each word carries the face of its source |
 | Python (=.py=, =.pyi=) | Classes and defs, indented by the class or def that holds them.  Nested defs and inner classes show at their own depth.  A module-level assignment becomes a variable row.  A decorated def shows its decorators and =RET= visits the first decorator.  A class attribute and a local variable stay out.  The row repeats the source prefix, so a function reads =def= or =async def= |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column, and a column row paints its name, its type and its constraints |
