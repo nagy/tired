@@ -2143,14 +2143,22 @@ Paint SPANS over the result when SPANS holds entries."
         (tired--paint-name-spans string spans)
       string)))
 
-(defun tired--shorthand-target (target)
-  "Return TARGET with the first rule of `tired-shorthand-rules' applied.
+(defun tired-shorten-path (path)
+  "Return PATH with the first rule of `tired-shorthand-rules' applied.
 The sigil of a matching rule replaces the matched text, and the rest
-of TARGET stays.  A rule that matches nothing leaves TARGET alone."
+of PATH stays.  A rule that matches nothing leaves PATH alone.  The
+result is for display only, so read the real path from the entry.
+Another package calls this function to shorten the paths that it
+prints."
   (catch 'done
-    (dolist (rule tired-shorthand-rules target)
-      (when (string-match (car rule) target)
-        (throw 'done (replace-match (cdr rule) t t target))))))
+    (dolist (rule tired-shorthand-rules path)
+      (when (string-match (car rule) path)
+        (throw 'done (replace-match (cdr rule) t t path))))))
+
+(defun tired--shorthand-target (target)
+  "Return TARGET shortened as `tired-shorten-path' shortens it.
+The symlink suffix keeps this name, because it shows a link target."
+  (tired-shorten-path target))
 
 (defconst tired--link-arrow " -> "
   "Text that separates the name of a symbolic link from its target.")

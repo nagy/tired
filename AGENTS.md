@@ -105,6 +105,11 @@ carries no cookie at all: `tired-noselect` runs the mode.
 
 ## Cross-file rules
 
+- `tired-shorten-path` is the one shortening engine.  It reads
+  `tired-shorthand-rules`, and it returns display text alone, so no
+  caller reads its result as a path.  The symlink suffix reaches it
+  through `tired--shorthand-target`, and another package reaches it
+  through a `fboundp` guard.
 - Every function has a docstring, and `checkdoc`, `relint` and byte
   compilation with `byte-compile-error-on-warn` pass.  A
   `define-minor-mode` form defines a defcustom, so it needs

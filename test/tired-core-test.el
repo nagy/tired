@@ -1299,6 +1299,21 @@ The first rule that matches wins, and the rest of the target stays."
     (should (string-match-p " -> alpha\\.txt\\'"
                             (tired--name-cell (tired-test--entry "link"))))))
 
+(ert-deftest tired-shorten-path-applies-the-first-matching-rule ()
+  "`tired-shorten-path' applies the first matching rule alone.
+A list with no match and a nil list return the path unchanged, and
+the symlink helper delegates to the public function."
+  (let ((tired-shorthand-rules '(("\\`/nix/store/" . "store/")
+                                 ("\\`/nix/store" . "second/"))))
+    (should (equal (tired-shorten-path "/nix/store/abc-source/x")
+                   "store/abc-source/x"))
+    (should (equal (tired--shorthand-target "/nix/store/abc-source/x")
+                   "store/abc-source/x")))
+  (let ((tired-shorthand-rules '(("\\`nomatch" . "@x/"))))
+    (should (equal (tired-shorten-path "/a/b") "/a/b")))
+  (let ((tired-shorthand-rules nil))
+    (should (equal (tired-shorten-path "/a/b") "/a/b"))))
+
 (ert-deftest tired-mode-map-offers-a-menu ()
   "The mode map holds a Tired menu bar entry.
 The menu names the file commands that a reader cannot find from the
