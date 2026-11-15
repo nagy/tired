@@ -3807,8 +3807,23 @@ highlights the target text."
       (should (eq (car target) 'file))
       (should (equal (cadr target) (expand-file-name "alpha.txt" root)))
       (should (equal (buffer-substring-no-properties
-                      (nth 2 target) (nth 3 target))
+                      (car (cddr target)) (cdr (cddr target)))
                      "alpha.txt")))))
+
+(ert-deftest tired-embark-file-target-ends-in-a-dotted-pair ()
+  "The Embark file target reads `(TYPE TARGET START . END)'.
+The target ends in a cons of the two positions, because Embark
+reads the target only when it ends in a dotted pair.  A proper
+list of four elements hands `(END)' to `make-overlay'."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-test--goto "alpha.txt")
+    (let* ((target (tired--embark-file-target))
+           (bounds (cddr target)))
+      (should (consp bounds))
+      (should (integer-or-marker-p (car bounds)))
+      (should (integer-or-marker-p (cdr bounds)))
+      (should-not (proper-list-p target)))))
 
 (ert-deftest tired-thing-at-point-reads-a-shortened-link-target ()
   "A shorthand sigil shortens the printed target alone.
@@ -3935,7 +3950,7 @@ printed text that holds the sigil."
       (should (eq (car target) 'file))
       (should (equal (cadr target) (expand-file-name "chain/a" root)))
       (should (equal (buffer-substring-no-properties
-                      (nth 2 target) (nth 3 target))
+                      (car (cddr target)) (cdr (cddr target)))
                      "a")))))
 
 (ert-deftest tired-embark-target-installer-replaces-the-file-finders ()

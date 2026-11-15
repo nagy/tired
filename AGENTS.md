@@ -176,7 +176,11 @@ carries no cookie at all: `tired-noselect` runs the mode.
   and drops the two built-in file finders.  The swap runs from
   `tired-mode-hook` and from `after-load-functions`, so both load
   orders work, and it checks `boundp` because Embark stays optional.
-  One finder per row keeps `embark-act` unambiguous.
+  One finder per row keeps `embark-act` unambiguous.  The finder
+  answers `(file PATH START . END)`, a dotted pair, because Embark
+  reads the bounds as `(cdr (cdr TARGET))`.  A proper list of four
+  elements hands `(END)` to `make-overlay`, and `embark-act` dies with
+  `wrong-type-argument integer-or-marker-p`.
 - A library that paints overlays on the printed rows uses
   `tired-after-redraw-hook` and no call from `tired-core`.  A body of the
   hook never runs a view command, because the redraw calls the hook.

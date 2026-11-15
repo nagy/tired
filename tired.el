@@ -362,10 +362,12 @@ through the evil map machinery, which puts them back."
   "Return the Embark file target for the row at point, or nil.
 The target carries the bounds of the name, or of the link target
 when point rests on the text after the arrow, so Embark highlights
-the text that answers the path."
+the text that answers the path.  Embark reads the bounds as
+`(TYPE TARGET START . END)', so a proper list of four elements
+hands it `(END)' where it wants a position."
   (when-let* ((path (tired--filename-at-point))
               (bounds (tired--filename-bounds)))
-    (list 'file path (car bounds) (cdr bounds))))
+    (cons 'file (cons path bounds))))
 
 (defun tired--install-embark-targets ()
   "Point `embark-target-finders' at the Tired file target.
