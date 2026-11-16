@@ -128,7 +128,7 @@ carries no cookie at all: `tired-noselect` runs the mode.
   shadows it.  Evil shadows `i`, `e`, `E` and `TAB` in visual state, so
   that table never names a subdir, expand, collapse or toggle command.
 - Some commands carry no binding on purpose: `tired-clear-caches`,
-  `tired-edit-names`, `tired-commit-edits`, `tired-abort-edits`,
+  `tired-delete-now`, `tired-edit-names`, `tired-commit-edits`, `tired-abort-edits`,
   `tired-insert-subdir`, `tired-expand-file`, `tired-collapse-file`,
   `tired-project` and `tired-magit-status` take `M-x` and the menu
   alone.  `tired-undo` and

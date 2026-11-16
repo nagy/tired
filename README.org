@@ -464,6 +464,12 @@ Set the option to nil to delete at once, as before:
   (setq tired-delete-delay nil)
 #+end_src
 
+=M-x tired-delete-now= deletes the targets at once whatever the
+option holds.  The command keeps a pending flag set alone, so a row
+that already waits for the countdown keeps its flag.  It carries no
+key, because a stray key must not reach an immediate removal, and the
+file section of the menu bar names it.
+
 A command that removes the row at point keeps point in place.  A
 collapsed chain row that still shows a path under the removed leaf
 keeps its line.  Otherwise point takes the row below the nearest row

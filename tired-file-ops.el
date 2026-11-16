@@ -99,6 +99,11 @@
 ;;   `tired--forward-past-flags', never through one `forward-line',
 ;;   because a flag of a selection would otherwise leave point on the
 ;;   second flagged row.
+;; - `tired-delete', `tired-delete-now' and `tired-delete-flagged' share
+;;   `tired--delete-targets', so the trash move, the single undo action
+;;   and the report line stay in one place.  `tired-delete-now' ignores
+;;   `tired-delete-delay' and never touches the flag set, because the
+;;   option governs the next `tired-delete' alone.
 
 ;;; Code:
 
@@ -1064,19 +1069,36 @@ that failed.  One undo action holds the whole commit, so
      (lambda () (tired--undo-delete trashed))
      (lambda () (tired--redo-delete trashed)))))
 
-(defun tired-delete-flagged (paths)
-  "Delete PATHS, the rows that a delayed `tired-delete' flagged.
-Keep the transient selection, because a flagged row never joined it,
-and let the usual refresh drop the rows that left the disk.  One undo
-action covers the removal and one line reports it."
+(defun tired--delete-targets (&optional paths keep-selection)
+  "Move PATHS into the trash and push one undo action.
+A nil PATHS reads the targets of the command.  KEEP-SELECTION non-nil
+leaves the transient selection as it stands, because the countdown
+owns its rows and the user never selected them.  One undo action
+restores every removed path, and one line reports the removal."
   (let ((trashed nil))
     (tired--apply-to-targets
      "Deleted" "trash"
      (lambda (path)
        (push (cons (tired--trash-move path) path) trashed))
-     (copy-sequence paths)
-     t)
+     paths
+     keep-selection)
     (tired--record-delete trashed)))
+
+(defun tired-delete-flagged (paths)
+  "Delete PATHS, the rows that a delayed `tired-delete' flagged.
+Keep the transient selection, because a flagged row never joined it,
+and let the usual refresh drop the rows that left the disk.  One undo
+action covers the removal and one line reports it."
+  (tired--delete-targets (copy-sequence paths) t))
+
+(defun tired-delete-now ()
+  "Delete the targets at once, whatever `tired-delete-delay' holds.
+The command reads the targets the way `tired-delete' does, moves them
+into the trash and prints one line.  It leaves a deletion flag set
+alone, because the countdown still owns those rows, and it asks no
+question.  A later `tired-undo' moves the paths back."
+  (interactive)
+  (tired--delete-targets))
 
 (defun tired-delete ()
   "Delete the targets, or flag them for a delayed deletion.
@@ -1100,12 +1122,7 @@ leaves the move to `tired--apply-to-targets'."
       (progn
         (tired--flag-deletion (mapcar #'tired-entry-path (tired--targets)))
         (tired--forward-past-flags))
-    (let ((trashed nil))
-      (tired--apply-to-targets
-       "Deleted" "trash"
-       (lambda (path)
-         (push (cons (tired--trash-move path) path) trashed)))
-      (tired--record-delete trashed))))
+    (tired--delete-targets)))
 
 (defun tired--creation-directory ()
   "Return the directory that creation commands start from.

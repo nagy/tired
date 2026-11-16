@@ -294,6 +294,7 @@
 (declare-function tired-copy "tired-file-ops" (directory))
 (declare-function tired-delete "tired-file-ops" nil)
 (declare-function tired-delete-flagged "tired-file-ops" (paths))
+(declare-function tired-delete-now "tired-file-ops" nil)
 (declare-function tired-do-shell-command "tired-file-ops" (command))
 (declare-function tired-mkdir "tired-file-ops" (directory))
 (declare-function tired-move "tired-file-ops" (destination))
@@ -5203,6 +5204,9 @@ into `context-menu-functions' locally."
           (list 'menu-item "Move" (funcall command #'tired-move)))
         (define-key-after menu [tired-delete]
           (list 'menu-item "Delete" (funcall command #'tired-delete)))
+        (define-key-after menu [tired-delete-now]
+          (list 'menu-item "Delete at Once"
+                (funcall command #'tired-delete-now)))
         (define-key-after menu [tired-separator-2] menu-bar-separator)
         (define-key-after menu [tired-refresh]
           '(menu-item "Refresh" tired-refresh))))
@@ -5353,6 +5357,9 @@ command that needs an entry stays insensitive on an empty row."
     ["Delete" tired-delete
      :active (tired--selection-targets)
      :help "Move the targets into the session trash"]
+    ["Delete at once" tired-delete-now
+     :active (tired--selection-targets)
+     :help "Move the targets into the session trash, without the delay"]
     ["Shell command" tired-do-shell-command
      :active (tired--selection-targets)]
     "--"

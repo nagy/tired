@@ -1588,6 +1588,51 @@ needs no `M-x' visit."
         (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
         (should-not tired--flagged-deletion)))))
 
+(ert-deftest tired-delete-now-deletes-at-once-despite-the-delay ()
+  "The command removes the target at once and pushes one undo action."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-test--with-delete-timers
+          (tired root)
+          (tired-test--goto "alpha.txt")
+          (tired-delete-now)
+          (should-not (file-exists-p (expand-file-name "alpha.txt" root)))
+          (should-not (tired-test--delete-countdowns scheduled))
+          (should-not tired--flagged-deletion)
+          (should (equal (mapcar #'car tired--undo-actions)
+                         '("delete of 1 entry")))
+          (tired-undo)
+          (should (file-regular-p (expand-file-name "alpha.txt" root))))))))
+
+(ert-deftest tired-delete-now-keeps-a-pending-deletion ()
+  "A row that waits for the countdown stays flagged and stays on disk."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (let ((tired-delete-delay 3))
+        (tired-test--with-delete-timers
+          (tired root)
+          (tired-test--goto "alpha.txt")
+          (tired-delete)
+          (tired-test--goto "beta.txt")
+          (tired-delete-now)
+          (should-not (file-exists-p (expand-file-name "beta.txt" root)))
+          (should (file-regular-p (expand-file-name "alpha.txt" root)))
+          (should (tired--flagged-deletion-p
+                   (expand-file-name "alpha.txt" root)))
+          (should (= 2 (length (tired-test--delete-countdowns
+                                scheduled)))))))))
+
+(ert-deftest tired-delete-now-reaches-the-user-through-m-x-alone ()
+  "No key runs an immediate deletion, and the menu names it."
+  (tired-test--with-fixture
+    (tired root)
+    (should (commandp #'tired-delete-now))
+    (should (eq (lookup-key tired-mode-map (kbd "D")) #'tired-delete))
+    (let ((keys (where-is-internal #'tired-delete-now tired-mode-map)))
+      (should (= 1 (length keys)))
+      (should (equal 'menu-bar (aref (car keys) 0))))))
+
 (ert-deftest tired-delete-delay-keeps-the-files-until-the-countdown-ends ()
   "A delayed delete flags the row, keeps the file and stores no undo yet."
   (tired-test--with-fixture
