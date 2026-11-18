@@ -274,6 +274,8 @@
 ;;   `tired-previous-line' clear that value, but `tired--beginning-of-name'
 ;;   must not, because a redraw calls that helper.
 ;; - A row must be a vector: Emacs 31 calls `aref' on it.
+;; - The docstring of `tired-mode' names no key map: `define-derived-mode'
+;;   appends `\\{tired-mode-map}' after the hook sentence.
 
 ;;; Code:
 
@@ -5380,9 +5382,7 @@ command that needs an entry stays insensitive on an empty row."
 (define-derived-mode tired-mode tabulated-list-mode "Tired"
   "Major mode for editing a directory as a tabulated list.
 The directory contents come from `directory-files' and
-`file-attributes', never from parsing `ls -l' output.
-
-\\{tired-mode-map}"
+`file-attributes', never from parsing `ls -l' output."
   :group 'tired
   :interactive nil
   ;; The mode runs before the directory is known, so it must not set
