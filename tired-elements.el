@@ -200,6 +200,7 @@ A remote path returns nil, because every read there costs one
 network round trip.  A symbolic link reads the attributes of its
 target, so the count of a link describes the file that the link
 shows."
+  (declare (side-effect-free t))
   (let ((path (tired-entry-path entry)))
     (if (file-remote-p path)
         nil

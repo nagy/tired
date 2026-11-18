@@ -252,6 +252,7 @@ because a new action invalidates every undone one."
   "Return one line that names VERB of DESCRIPTION and COUNT.
 VERB holds a past tense such as Undid, and COUNT holds the
 number of paths that moved, or nil when the verb reports none."
+  (declare (side-effect-free t))
   (format "%s %s%s"
           verb description
           (if (integerp count)
@@ -929,6 +930,7 @@ alone."
   "Return (ENTRY . NAME) conses for every row whose name changed.
 A row whose name the user deleted counts as changed to an empty
 name, so the commit refuses it."
+  (declare (side-effect-free t))
   (let (changes)
     (dolist (record tired--name-edit-regions)
       (let* ((entry (nth 0 record))
@@ -1128,6 +1130,7 @@ leaves the move to `tired--apply-to-targets'."
   "Return the directory that creation commands start from.
 The entry at point decides: a directory row starts inside that
 directory, every other row starts at the shown directory."
+  (declare (side-effect-free t))
   (let ((entry (tired--row-at-point)))
     (if (and (tired-entry-p entry)
              (file-directory-p (tired-entry-path entry)))

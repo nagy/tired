@@ -1008,6 +1008,7 @@ directory stay two jobs."
 
 (defun tired--queue-job (kind key)
   "Return the queued job of KIND that holds KEY, or nil."
+  (declare (side-effect-free t))
   (when key
     (gethash (cons kind key) tired--queue-index)))
 
@@ -1189,11 +1190,13 @@ a remote one, and nil to ask `file-remote-p' for this row."
   "Return non-nil when the symbolic link at PATH does not resolve.
 A circular link counts as broken.  The user option
 `tired-check-symlinks' turns the check off."
+  (declare (side-effect-free t))
   (and tired-check-symlinks
        (not (ignore-errors (file-exists-p (file-truename path))))))
 
 (defun tired--in-narrow-p (entry)
   "Return non-nil when ENTRY is inside the narrow snapshot."
+  (declare (side-effect-free t))
   (or (not tired--narrowed)
       (and (hash-table-p tired--narrowed-set)
            (gethash (tired-entry-path entry) tired--narrowed-set))))
@@ -1207,6 +1210,7 @@ A circular link counts as broken.  The user option
 
 (defun tired--hidden-p (entry)
   "Return non-nil when the listing holds ENTRY back as hidden."
+  (declare (side-effect-free t))
   (and (not tired--show-hidden)
        (tired--hidden-name-p (tired-entry-name entry))))
 
@@ -1214,6 +1218,7 @@ A circular link counts as broken.  The user option
   "Return non-nil when NAME, one link of a collapsed chain, stays hidden.
 The link carries its own name and no path, so a dotfile rule that
 reads the last component matches here as it does on a real row."
+  (declare (side-effect-free t))
   (or (and (not tired--show-hidden)
            (tired--hidden-name-p name))
       (and tired--hide-dotfiles
@@ -1221,6 +1226,7 @@ reads the last component matches here as it does on a real row."
 
 (defun tired--name-visible-p (entry)
   "Return non-nil when ENTRY passes the hidden, dotfile and name filters."
+  (declare (side-effect-free t))
   (let ((case-fold-search t))
     (and (not (tired--hidden-p entry))
          (or (not tired--hide-dotfiles)
@@ -1233,6 +1239,7 @@ reads the last component matches here as it does on a real row."
 
 (defun tired--entry-visible-p (entry)
   "Return non-nil when ENTRY passes the narrow, dotfile and name filters."
+  (declare (side-effect-free t))
   (and (tired--in-narrow-p entry)
        (tired--name-visible-p entry)))
 
@@ -1452,6 +1459,7 @@ a caller reads the file that the row stands for."
 
 (defun tired--directory-names (directory)
   "Return the entry names of DIRECTORY, or nil when unreadable."
+  (declare (side-effect-free t))
   (ignore-errors
     (seq-remove (lambda (name) (member name '("." "..")))
                 (directory-files directory nil nil t))))
@@ -1516,6 +1524,7 @@ every collapsed chain and every expanded file."
 (defun tired--listing-changed-p ()
   "Return non-nil when a path that the listing reads did change.
 A buffer that never read the disk counts as changed."
+  (declare (side-effect-free t))
   (not (equal (tired--shown-stamps) tired--listing-stamps)))
 
 (defun tired--single-entry-leaf (directory)
@@ -1615,6 +1624,7 @@ directory per level, and every read costs a network round trip."
 (defun tired-file-handler (path)
   "Return the section handler that `tired-file-handlers' selects for PATH.
 Return nil when no rule matches PATH."
+  (declare (side-effect-free t))
   (let ((name (expand-file-name path)))
     (cdr (seq-find (lambda (rule) (string-match-p (car rule) name))
                    tired-file-handlers))))
@@ -1643,6 +1653,7 @@ and the discarded buffer never prompts on kill."
   "Return ITEM as a `tired-section' struct for PATH.
 ITEM is a plist with `:label' and `:line', plus the optional keys
 `:column', `:level', `:parent', `:kind', `:action' and `:count'."
+  (declare (side-effect-free t))
   (tired--section-create
    :label (or (plist-get item :label) "")
    :path path
@@ -1703,6 +1714,7 @@ same line fold together and no other row collides with them."
 
 (defun tired--section-folded-p (section)
   "Return non-nil when SECTION hides its child sections."
+  (declare (side-effect-free t))
   (and (hash-table-p tired--folded)
        (gethash (tired--section-key section) tired--folded)))
 
@@ -1751,6 +1763,7 @@ out."
 A handler may return a label that already carries the faces of its
 major mode.  Such a part keeps its face, and every part without one
 takes the face of the section kind."
+  (declare (side-effect-free t))
   (tired--paint-missing-face (tired-section-label section)
                             (tired--section-face section)))
 
@@ -1813,6 +1826,7 @@ the file from a section row."
   "Return the identity of ROW inside the listing.
 An entry keys on its path.  A section keys on its path and its line,
 so two sections of one file stay distinct."
+  (declare (side-effect-free t))
   (when row
     (cond
      ((tired-section-p row) (tired--section-key row))
@@ -1953,6 +1967,7 @@ answers the same bounds as its depth-zero entry.  Point below the
 last row answers the subtree of that row.  A listing without a row
 answers nil, and so does a listing in a name edit, because an edit
 moves the line starts that this function reads."
+  (declare (side-effect-free t))
   (when-let* ((index (tired--subtree-index (point))))
     (cons (aref tired--subtree-starts index)
           (if (< (1+ index) (length tired--subtree-starts))
@@ -2010,6 +2025,7 @@ belongs to a face list."
   "Return the whole-name face for NAME from `tired-name-faces'.
 The first rule that matches NAME wins.  A rule with an integer third
 element paints a submatch only, so it stays out of this search."
+  (declare (side-effect-free t))
   (seq-some (lambda (rule)
               (and (not (tired--rule-subexp rule))
                    (string-match-p (car rule) name)
@@ -2065,6 +2081,7 @@ walk dims it one pass later.  A remote directory counts as
 non-empty, because its walk costs one round trip per file.  A
 directory that `tired-directory-size-exclude' names counts as
 non-empty too, because no walk reads it."
+  (declare (side-effect-free t))
   (and (stringp directory)
        (not (tired--size-skip-p directory entry))
        (let ((total (tired--directory-total directory)))
@@ -2383,6 +2400,7 @@ as well, so a rule that left the list stops after one refresh."
   "Return non-nil when a window shows the listing.
 A test binds `tired--size-always', because batch Emacs shows no
 buffer in a window."
+  (declare (side-effect-free t))
   (or tired--size-always
       (and (get-buffer-window-list (current-buffer) nil t) t)))
 
@@ -2594,6 +2612,7 @@ rule match.  A refresh drops the totals that
 walk for a directory without a young total.  A refresh also queues a
 walk of every directory that it shows, so a live total never hides a
 change that the refresh just read from the disk."
+  (declare (side-effect-free t))
   (let ((key (tired--size-key directory)))
     (let ((hit (or (gethash key tired--size-cache-permanent)
                    (gethash key tired--size-cache))))
@@ -2840,6 +2859,7 @@ marker through the Emacs options.  `tabulated-list-mode' supplies a
 buffer-local `glyphless-char-display' table, so a text terminal frame
 shows `tabulated-list-tty-sort-indicator-asc' or
 `tabulated-list-tty-sort-indicator-desc' in its place."
+  (declare (side-effect-free t))
   (if tired--sort-flip
       tabulated-list-gui-sort-indicator-desc
     tabulated-list-gui-sort-indicator-asc))
@@ -2913,6 +2933,7 @@ print the buffer name."
   "Return the listing state shown in the header line.
 The buffer name already names the directory, so the header line
 holds the state alone and stays empty without one."
+  (declare (side-effect-free t))
   (let ((parts '()))
     (when tired--narrowed
       (push "[narrowed]" parts))
@@ -3005,6 +3026,7 @@ region count changes with no redraw."
 The mode line reports the number of rows in the region, and point
 motion inside an active region changes that number with no redraw
 and no mark hook, so the cache keys on this signature."
+  (declare (side-effect-free t))
   (when (region-active-p)
     (list (region-beginning) (region-end))))
 
@@ -3018,6 +3040,7 @@ inside an active region reaches the mode line without a redraw."
 (defun tired--row-at-point ()
   "Return the row at point, or nil when there is none.
 The row is a `tired-entry' or a `tired-section'."
+  (declare (side-effect-free t))
   (let ((id (tabulated-list-get-id)))
     (and (or (tired-entry-p id) (tired-section-p id)) id)))
 
@@ -3188,6 +3211,7 @@ A section row names the file that holds it, and a collapsed row names
 the chain component under point.  Point on no row names the directory
 that the buffer lists.  The answer covers the whole line, so point on
 the size, date or mode column still names the row."
+  (declare (side-effect-free t))
   (or (cdr-safe (tired--chain-name-at-point))
       (when-let* ((row (tired--row-at-point)))
         (tired--row-path row))
@@ -3203,6 +3227,7 @@ names the chain component under point.  Point on no row names the
 directory that the buffer lists.  The answer ends with a slash, and a
 row whose path left the disk answers the directory that holds it.
 The command `tired-path-at-point' answers the file itself."
+  (declare (side-effect-free t))
   (if-let* ((path (tired-path-at-point)))
       (if (file-directory-p path)
           (file-name-as-directory path)
@@ -3229,6 +3254,7 @@ reaches the user."
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
+  (declare (side-effect-free t))
   (and (tired-entry-p entry)
        (hash-table-p tired--selection-set)
        (gethash (tired-entry-path entry) tired--selection-set)))
@@ -3354,6 +3380,7 @@ the headings of a file reaches that file alone."
 
 (defun tired--entry-for-path (path)
   "Return the listed entry for PATH, or nil."
+  (declare (side-effect-free t))
   (let* ((directory (file-name-directory path))
          (table (tired--table directory))
          (entry (and table (gethash (file-name-nondirectory path) table))))
@@ -3376,6 +3403,7 @@ A flagged path stays out, because a delayed `tired-delete' owns it."
 
 (defun tired--prune-selection (selection)
   "Return SELECTION without paths that are no longer listed."
+  (declare (side-effect-free t))
   (seq-filter #'tired--entry-for-path selection))
 
 (defun tired--apply-selection-overlays ()
@@ -3651,6 +3679,7 @@ edit to a file inside that directory."
 A remote directory needs `tired-auto-revert-remote' as well as
 `tired-auto-revert', because every watch there costs a network
 round trip and some TRAMP methods refuse one."
+  (declare (side-effect-free t))
   (and tired-auto-revert
        (or tired-auto-revert-remote
            (not (file-remote-p (or tired--directory
@@ -4308,6 +4337,7 @@ then, so a failed trial leaves no row behind."
   "Return non-nil when the printed listing fits the body of WINDOW.
 Measure the printed pixels, so a face that stands taller than the
 default face reaches the answer.  WINDOW must show the listing."
+  (declare (side-effect-free t))
   (<= (cdr (window-text-pixel-size window (point-min) (point-max)))
       (window-body-height window t)))
 
@@ -4700,6 +4730,7 @@ An active region joins the selection first."
   "Return the sort state of the listing, or nil.
 The value stays nil when `tired-sort-states' leaves out the
 current column or the current direction."
+  (declare (side-effect-free t))
   (let ((parts (cons tired--sort-key (and tired--sort-flip t))))
     (seq-find (lambda (state)
                 (equal (tired--sort-state-parts state) parts))
@@ -4899,6 +4930,7 @@ commands."
   "Return the name of ENTRY that `tired-copy-name' copies.
 A full path takes the abbreviation of `abbreviate-file-name', so a
 path under the home directory starts with a tilde."
+  (declare (side-effect-free t))
   (if tired--copy-name-absolute
       (abbreviate-file-name (tired-entry-path entry))
     (tired-entry-name entry)))
@@ -5126,6 +5158,7 @@ highlights a name, and this predicate keeps that highlight from
 turning a click into a link.  A Tired row needs one click to move
 point, a second click to toggle the row and a drag to make a region,
 so no click opens an entry.  The middle button opens a row instead."
+  (declare (pure t) (side-effect-free t))
   nil)
 
 (defun tired-browse-url-of-file (&optional secondary)

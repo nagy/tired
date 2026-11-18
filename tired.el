@@ -155,6 +155,7 @@
 
 (defun tired--buffer-name (directory)
   "Return the Tired buffer name for DIRECTORY."
+  (declare (side-effect-free t))
   (format "Tired: %s" (abbreviate-file-name directory)))
 
 ;;;###autoload

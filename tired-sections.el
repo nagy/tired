@@ -305,6 +305,7 @@ out too, because it speaks to the byte compiler alone.  A form that
   "Return KIND as a string that carries `font-lock-keyword-face'.
 A row whose source text holds no prefix of its own uses this string,
 so its kind word still reads like a keyword of the major mode."
+  (declare (side-effect-free t))
   (propertize (symbol-name kind) 'face 'font-lock-keyword-face))
 
 (defun tired--treesit-collapse-space (string)
@@ -352,6 +353,7 @@ holds no text."
   "Return PREFIX and NAME as one label, separated by a space.
 Return NAME alone without a PREFIX, so a name that starts a row takes
 no leading space."
+  (declare (pure t) (side-effect-free t))
   (if (and prefix (> (length prefix) 0))
       (concat prefix " " name)
     name))
@@ -360,6 +362,7 @@ no leading space."
   "Return the position where the prefix text of NODE starts.
 Skip a visibility modifier, so a row never shows `pub' and a
 multi-line `pub(in path)' costs no line break."
+  (declare (side-effect-free t))
   (if-let* ((visibility
              (seq-find (lambda (child)
                          (equal (treesit-node-type child)
@@ -422,6 +425,7 @@ does."
   "Return the text of the first field of NODE that FIELDS names.
 Return nil when NODE carries none of the fields.  The text keeps the
 faces that the buffer fontification gave it."
+  (declare (side-effect-free t))
   (seq-some (lambda (field)
               (when-let* ((child (treesit-node-child-by-field-name
                                   node field)))
@@ -430,6 +434,7 @@ faces that the buffer fontification gave it."
 
 (defun tired--treesit-kind (node spec)
   "Return the section kind that SPEC declares for NODE, or nil."
+  (declare (side-effect-free t))
   (alist-get (treesit-node-type node) (plist-get spec :kinds)
              nil nil #'equal))
 
@@ -531,6 +536,7 @@ when the grammar is missing, so the caller keeps a plain file row."
   "Return the heading level of the Markdown NODE.
 An ATX heading counts its hash markers.  A setext heading takes
 level 1 from an `=' underline and level 2 from any other underline."
+  (declare (side-effect-free t))
   (if (equal (treesit-node-type node) "atx_heading")
       (length (treesit-node-text (treesit-node-child node 0) t))
     (if (seq-some (lambda (child)
@@ -543,6 +549,7 @@ level 1 from an `=' underline and level 2 from any other underline."
   "Return the text of the Markdown heading NODE without its marker.
 KIND stays unused.  The text keeps the faces that
 `markdown-ts-mode' gives it."
+  (declare (side-effect-free t))
   (let ((content (or (treesit-node-child-by-field-name
                       node "heading_content")
                      node)))
@@ -579,6 +586,7 @@ redraw."
   "Return the start of NODE, or of the decorators above it.
 A `decorated_definition' holds its decorators and the definition, so
 a decorated def starts at its first decorator."
+  (declare (side-effect-free t))
   (let ((parent (treesit-node-parent node)))
     (if (and parent
              (equal (treesit-node-type parent) "decorated_definition"))
@@ -588,6 +596,7 @@ a decorated def starts at its first decorator."
 (defun tired--python-section-line (node)
   "Return the line that the Python section NODE starts on.
 A decorated definition takes the line of its first decorator."
+  (declare (side-effect-free t))
   (line-number-at-pos (tired--python-definition-start node)))
 
 (defun tired--python-assignment-label (node kind)
@@ -623,6 +632,7 @@ keeps its decorators.  Each part keeps the face that
   "Return non-nil when NODE belongs in a Python listing.
 Keep every class and def.  Keep an assignment only at the top level
 of the file, so a local variable and a class attribute stay out."
+  (declare (side-effect-free t))
   (if (equal (treesit-node-type node) "assignment")
       (let* ((statement (treesit-node-parent node))
              (root (and statement
@@ -692,6 +702,7 @@ type declarations once."
   "Return the receiver type name of the Go method declaration NODE.
 Drop a pointer star and a type argument list, so a method of `*Set[T]'
 names the type `Set'.  Return nil when NODE names no receiver type."
+  (declare (side-effect-free t))
   (when-let* ((receiver (treesit-node-child-by-field-name node "receiver"))
               (parameter (seq-find (lambda (child)
                                      (equal (treesit-node-type child)
@@ -705,6 +716,7 @@ names the type `Set'.  Return nil when NODE names no receiver type."
 (defun tired--go-name-texts (node)
   "Return the declared names of the Go constant or variable spec NODE.
 Each name keeps the faces that the buffer fontification gave it."
+  (declare (side-effect-free t))
   (let (names)
     (dotimes (index (treesit-node-child-count node t))
       (let ((child (treesit-node-child node index t)))
@@ -739,6 +751,7 @@ A constant and a variable name every name that one spec declares."
   "Return non-nil when NODE belongs in a Go listing.
 Keep a declaration at the top level of the file, and drop the one
 inside a function body or a nested block."
+  (declare (side-effect-free t))
   (let* ((parent (treesit-node-parent node))
          (container (and parent (treesit-node-parent parent))))
     (or (null parent)
@@ -823,6 +836,7 @@ A table with any other name stays out, so `[patch.crates-io]' and
 
 (defun tired--toml-key-node (node)
   "Return the key node of the TOML pair or table NODE, or nil."
+  (declare (side-effect-free t))
   (seq-find (lambda (child)
               (member (treesit-node-type child)
                       '("bare_key" "quoted_key" "dotted_key")))
@@ -832,6 +846,7 @@ A table with any other name stays out, so `[patch.crates-io]' and
   "Return the key text of the TOML pair or table NODE.
 Strip the quotes of a quoted key, so a quoted crate name reads like
 a bare one."
+  (declare (side-effect-free t))
   (when-let* ((child (tired--toml-key-node node)))
     (if (equal (treesit-node-type child) "quoted_key")
         (tired--toml-unquote (treesit-node-text child t))
@@ -842,6 +857,7 @@ a bare one."
 Strip the quotes of a quoted key, so a quoted crate name reads like a
 bare one.  The text keeps the faces that the buffer fontification
 gave it."
+  (declare (side-effect-free t))
   (when-let* ((child (tired--toml-key-node node)))
     (if (equal (treesit-node-type child) "quoted_key")
         (tired--toml-unquote (treesit-node-text child))
@@ -849,6 +865,7 @@ gave it."
 
 (defun tired--toml-pair-value (node)
   "Return the value node of the TOML pair NODE, or nil."
+  (declare (side-effect-free t))
   (seq-find (lambda (child)
               (not (member (treesit-node-type child)
                            '("bare_key" "quoted_key" "dotted_key"
@@ -857,6 +874,7 @@ gave it."
 
 (defun tired--toml-field-node (table name)
   "Return the value node of the pair NAME in the TOML inline table TABLE."
+  (declare (side-effect-free t))
   (when-let* ((pair (seq-find (lambda (child)
                                 (and (equal (treesit-node-type child) "pair")
                                      (equal (tired--toml-key child) name)))
@@ -865,6 +883,7 @@ gave it."
 
 (defun tired--toml-field-text (table name)
   "Return the plain value text of the pair NAME in the TOML inline table TABLE."
+  (declare (side-effect-free t))
   (when-let* ((value (tired--toml-field-node table name)))
     (treesit-node-text value t)))
 
@@ -872,6 +891,7 @@ gave it."
   "Return non-nil when NODE belongs in a Cargo manifest listing.
 Keep the four tables that `tired--cargo-tables' names and the pairs
 inside them, so a pair of another table stays out."
+  (declare (side-effect-free t))
   (pcase (treesit-node-type node)
     ((or "table" "table_array_element")
      (member (tired--toml-key node) tired--cargo-tables))
@@ -883,6 +903,7 @@ inside them, so a pair of another table stays out."
 VALUE holds either a version string or an inline table with a
 `version' key.  Return nil when VALUE names no version.  The text
 keeps the faces that the buffer fontification gave it."
+  (declare (side-effect-free t))
   (pcase (and value (treesit-node-type value))
     ("string" (tired--toml-unquote (treesit-node-text value)))
     ("inline_table"
@@ -956,6 +977,7 @@ a dependency start in one place."
   "Return the label of the Cargo table NODE.
 The label names the table and counts its entries.  The name keeps the
 faces that the buffer fontification gave it."
+  (declare (side-effect-free t))
   (concat (or (tired--toml-key-label node) "")
           (format " (%d)"
                   (seq-count (lambda (child)
@@ -1239,6 +1261,7 @@ and a name that leaves the archive."
 (defun tired--tar-end-block-p (position)
   "Return non-nil when the block at POSITION holds no member.
 An archive ends with a block of NUL bytes."
+  (declare (side-effect-free t))
   (not (string-match-p "[^\0]"
                        (buffer-substring-no-properties
                         position (+ position tired--tar-block)))))
@@ -1302,6 +1325,7 @@ buffer must hold the raw bytes of the archive."
 (defun tired--tar-member-label (entry)
   "Return the row label for the archive member ENTRY.
 A directory keeps a trailing slash, and a link names its target."
+  (declare (side-effect-free t))
   (let ((name (plist-get entry :name))
         (type (plist-get entry :type))
         (link (plist-get entry :link)))
