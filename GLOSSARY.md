@@ -259,12 +259,21 @@ of a directory, and expand shows the sections of a file.
 _Avoid_: Open, unfold, drill, zoom
 
 **Whole-tree expansion**:
-The one attempt that inserts every directory of the listing when a
-window first shows it.  `tired-expand-all-if-fits' gates the attempt,
-and the listing keeps the rows only when the printed result fits the
-window body without a scroll.  A remote directory, a directory that
-fails to read and a buffer that already tried stay collapsed.
+The one attempt that fills the listing with directories when a window
+first shows it.  `tired-expand-all-if-fits' gates the attempt, and the
+fill goes one depth level at a time, so a subtree takes no rows from
+its siblings.  The listing keeps the rows that fit the window body
+without a scroll.  A remote directory, a hidden directory, a directory
+that fails to read and a buffer that already tried stay collapsed.
 _Avoid_: Auto-expand, expand everything, deep scan
+
+**Cut tree**:
+A listing that holds a prefix of the whole-tree expansion, because the
+row budget or the printed check stopped the fill.
+`tired--expand-fits-cut' sets a `tree cut` part in the mode line,
+because a collapsed row of a cut tree reads like a collapsed row of a
+small tree.
+_Avoid_: Partial tree, pruned listing, truncated tree
 
 **Handler**:
 A function in `tired-file-handlers' that turns one file into sections.

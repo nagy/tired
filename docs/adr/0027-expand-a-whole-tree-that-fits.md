@@ -1,5 +1,11 @@
 # Expand a whole tree only when it fits the window
 
+Status: superseded in part by
+[ADR 0031](0031-fill-the-window-by-level-and-mark-the-cut.md).  The
+listing now fills the window by depth level and marks the cut tree,
+so the rule below holds for the reasons of the budget and the printed
+check alone, and no longer holds for a tree that would scroll.
+
 A user who wants density asks for every subdirectory to appear on the
 screen, and no scroll bar that the user did not ask for.  The listing
 therefore tries a whole-tree expansion when a window first shows it.
@@ -7,7 +13,10 @@ therefore tries a whole-tree expansion when a window first shows it.
 listing keeps the new rows only when the whole result fits the window
 body.  A tree that would scroll stays as it is, because a partial
 fill hides the shape of the tree and leaves the user with a listing
-that neither fits nor shows everything.
+that neither fits nor shows everything.  The row budget and the
+printed check below still hold, and
+[ADR 0031](0031-fill-the-window-by-level-and-mark-the-cut.md)
+reverses the all-or-nothing part alone.
 
 The fit check has two steps.  The trial walks the listing with a row
 budget and inserts one directory at a time, so it reads a directory
@@ -36,16 +45,13 @@ shows the buffer, and the `window-buffer-change-functions` entry
 finishes that attempt through a zero delay timer, because `find-file`
 displays the buffer after `tired-noselect` returns.
 
-Alternatives were rejected: expanding as deep as the window takes
-hides which subtrees the user lost; re-running on a resize fights a
-user who collapsed a row and then grew the frame; expanding file
-sections parses every file before the cheap check has a chance;
-and a trial that builds a clone of the listing costs a second full
-print on every entry.
+Alternatives were rejected: re-running on a resize fights a user who
+collapsed a row and then grew the frame; expanding file sections
+parses every file before the cheap check has a chance; and a trial
+that builds a clone of the listing costs a second full print on every
+entry.
 
 Consequences: `tired--display-rows` carries an optional row limit that
-throws `tired--row-overflow`.  A failed trial restores
-`tired--tables` and `tired--inserted`, so it leaves no row behind.  A
-theme with tall rows costs one extra print and then stays collapsed.
-The shared test fixture binds the option to nil, so a listing in a test
-stays collapsed until a test of the expansion binds it to t.
+throws `tired--row-overflow`, and ADR 0031 builds its fill on that
+limit.  The shared test fixture binds the option to nil, so a listing
+in a test stays collapsed until a test of the expansion binds it to t.

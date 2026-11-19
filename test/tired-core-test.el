@@ -2892,25 +2892,70 @@ every directory prints one row and adds two rows when it expands."
       (should (tired--inserted-p (expand-file-name "sub" root)))
       ;; The link back to the root expands to no new row.
       (should (tired--inserted-p (expand-file-name "sub/loop" root)))
+      (should-not tired--expand-fits-cut)
       (should (equal (tired-test--names)
                      '("sub" "deep/leaf.txt" "loop" "inner.txt"
                        ".hidden" "link" "alpha.txt" "beta.txt"))))))
 
-(ert-deftest tired-expand-all-leaves-a-tall-tree-collapsed ()
-  "A tree that would scroll the window stays as it is."
+(ert-deftest tired-expand-all-fills-a-tall-tree-to-the-budget ()
+  "A tree that would scroll fills the window and marks the cut."
   (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
       (tired-test--tree-with-files root 8)
       (tired root)
-      (let* ((base (length (tired--display-rows t)))
+      (let* ((base 13)
              (height (window-body-height)))
         ;; The collapsed listing fits the window, and the full tree
         ;; would not, so only the expansion can decide the answer.
-        (should (= 13 base))
         (should (<= base height))
         (should (> (+ base 16) height))
-        (should (zerop (hash-table-count tired--inserted)))
-        (should (= base (length (tired--display-rows t))))))))
+        ;; Each directory adds two rows, so the fill stops on the row
+        ;; that passes the budget and keeps the rows below it.
+        (should (= (+ base (* 2 (/ (- height base) 2)))
+                   (length (tired--display-rows t))))
+        (should (= (/ (- height base) 2)
+                   (hash-table-count tired--inserted)))
+        (should tired--expand-fits-cut)
+        (should (string-match-p "tree cut" (tired--mode-line)))))))
+
+(ert-deftest tired-expand-all-takes-a-level-before-a-subtree ()
+  "A fill takes a sibling before the children of a row that it read.
+Only a level fill reads the next depth after every row of the
+current depth, so the sibling never loses its rows to a subtree."
+  (tired-test--with-fixture
+    (make-directory (expand-file-name "a/a1" root) t)
+    (tired-test--write "a/a1/one.txt" "1")
+    (tired-test--write "a/a1/two.txt" "2")
+    (make-directory (expand-file-name "b" root))
+    (tired-test--write "b/one.txt" "1")
+    (tired-test--write "b/two.txt" "2")
+    (let ((tired-collapse-single-child nil)
+          (budget nil))
+      (tired root)
+      ;; The budget holds the rows of `a' and of `b', and the rows of
+      ;; the children of `a' pass it.
+      (setq budget (+ (length (tired--display-rows t)) 3))
+      (should (<= budget (window-body-height)))
+      (let ((tired-expand-all-if-fits t))
+        (cl-letf (((symbol-function 'tired--row-budget)
+                   (lambda (_window) budget)))
+          (tired--expand-all-in-buffer (current-buffer) (selected-window))))
+      (should (tired--inserted-p (expand-file-name "a" root)))
+      (should (tired--inserted-p (expand-file-name "b" root)))
+      (should-not (tired--inserted-p (expand-file-name "a/a1" root)))
+      (should (= budget (length (tired--display-rows t))))
+      (should tired--expand-fits-cut))))
+
+(ert-deftest tired-expand-all-skips-a-directory-that-a-rule-hides ()
+  "A hidden directory stays collapsed, whether or not the listing shows it."
+  (tired-test--with-fixture
+    (tired root)
+    (let ((tired-expand-all-if-fits t)
+          (tired-hidden-regexps '("^sub$"))
+          (tired--show-hidden t))
+      (tired--expand-all-in-buffer (current-buffer) (selected-window))
+      (should-not (tired--inserted-p (expand-file-name "sub" root)))
+      (should-not tired--expand-fits-cut))))
 
 (ert-deftest tired-expand-all-leaves-a-longer-base-listing-collapsed ()
   "A listing that already scrolls stays collapsed."
@@ -2939,25 +2984,28 @@ every directory prints one row and adds two rows when it expands."
         ;; One read serves the listing, and no read reaches a child.
         (should (= 1 reads))))))
 
-(ert-deftest tired-expand-all-fits-p-stops-at-the-limit ()
-  "The trial accepts a full fit and rejects one row over the limit."
+(ert-deftest tired-expand-by-level-keeps-the-rows-that-fit ()
+  "The fill keeps a tree that fits and leaves no cut behind."
   (tired-test--with-fixture
     (tired root)
-    (let ((base (length (tired--display-rows t)))
-          (tables (copy-hash-table tired--tables))
-          (inserted (copy-hash-table tired--inserted)))
-      ;; The fixture expands to eight rows.
-      (should (tired--expand-all-fits-p 8))
+    (let ((result (tired--expand-by-level 8)))
+      ;; The fixture prints eight rows with the directories read.
       (should (= 8 (length (tired--display-rows t))))
-      ;; A failed trial leaves a prefix, so the caller restores it.
-      (setq tired--tables tables)
-      (setq tired--inserted inserted)
-      (let ((tables (copy-hash-table tired--tables))
-            (inserted (copy-hash-table tired--inserted)))
-        (should-not (tired--expand-all-fits-p 7))
-        (setq tired--tables tables)
-        (setq tired--inserted inserted))
-      (should (= base (length (tired--display-rows t)))))))
+      (should (consp (car result)))
+      (should-not (cdr result))
+      (should (tired--inserted-p (expand-file-name "sub" root))))))
+
+(ert-deftest tired-expand-by-level-drops-the-insert-that-passes ()
+  "An insert that passes the limit leaves the listing again."
+  (tired-test--with-fixture
+    (tired root)
+    (let* ((base (length (tired--display-rows t)))
+           (result (tired--expand-by-level base)))
+      ;; One insert passes the limit, so the listing keeps its base rows.
+      (should (= base (length (tired--display-rows t))))
+      (should (zerop (hash-table-count tired--inserted)))
+      (should (null (car result)))
+      (should (cdr result)))))
 
 (ert-deftest tired-expand-all-budget-reads-the-window-and-the-line ()
   "The row budget divides the body pixels by one default line."
@@ -2976,12 +3024,14 @@ every directory prints one row and adds two rows when it expands."
     (should-not tired--expand-fits-done)))
 
 (ert-deftest tired-expand-all-drops-a-tree-that-a-tall-row-scrolls ()
-  "A printed listing taller than the body goes back to collapsed."
+  "A printed listing taller than the body drops the rows of the fill."
   (tired-test--with-fixture
     (let ((tired-expand-all-if-fits t))
-      (cl-letf (((symbol-function 'tired--listing-fits-p) #'ignore))
+      (cl-letf (((symbol-function 'tired--printed-overflow)
+                 (lambda (_window) 5)))
         (tired root)
         (should (zerop (hash-table-count tired--inserted)))
+        (should-not tired--expand-fits-cut)
         (should (equal (tired-test--names)
                        '("sub" ".hidden" "link" "alpha.txt"
                          "beta.txt")))))))
@@ -3046,6 +3096,21 @@ every directory prints one row and adds two rows when it expands."
         (tired--expand-all-timer buffer (selected-window))
         (should (tired--inserted-p (expand-file-name "sub" root)))
         (should-not tired--expand-fits-pending)))))
+
+(ert-deftest tired-expand-all-ignores-a-window-that-leaves-the-listing ()
+  "A window that moved to another buffer schedules no expansion."
+  (tired-test--with-fixture
+    (let* ((tired-expand-all-if-fits t)
+           (buffer (tired-noselect root))
+           (window (selected-window)))
+      (with-current-buffer buffer
+        (should tired--expand-fits-pending)
+        (with-temp-buffer
+          (set-window-buffer window (current-buffer))
+          (with-current-buffer buffer
+            (tired--window-buffer-changed window)))
+        (should-not (timerp tired--expand-fits-timer))
+        (should tired--expand-fits-pending)))))
 
 (ert-deftest tired-selection-targets-cover-inserted-entries ()
   "Selection and targets work inside inserted sections."

@@ -20,7 +20,7 @@ reasons.
   `tired-magit-status`, `tired-clear-caches`), the
   evil hook
 - `tired-core.el` — entries, section framework, display, selection,
-  redraw, watches, the size caches, the whole-tree fit check,
+  redraw, watches, the size caches, the whole-tree level fill,
   `tired-mode`, and the point
   accessors `tired-directory-at-point`, `tired-path-at-point`,
   `tired-with-directory-at-point` and `tired-run-at-point`
@@ -221,13 +221,24 @@ carries no cookie at all: `tired-noselect` runs the mode.
   `tired--expand-fits-pending` when no window shows the listing, and
   the `window-buffer-change-functions` entry finishes that attempt
   through a timer, because `tired-noselect` redraws before
-  `find-file` displays the buffer.  A trial that overflows and a print
-  that stands taller restore `tired--tables` and `tired--inserted`, so
-  a failed attempt leaves no partial tree.  Measure the budget as
-  `tired--row-budget` does, with body pixels and `default-line-height`,
-  never with canonical lines.  The trial reads a directory only until
-  the budget passes, so keep the LIMIT and `tired--row-overflow` of
-  `tired--display-rows`.  See `docs/adr/0027`.
+  `find-file` displays the buffer.  The fill goes one depth level at a
+  time through `tired--expand-by-level`, so `tired--frontier-rows`
+  takes the shallowest expandable rows and no deep subtree takes the
+  rows of its siblings.  The fill journals the key of every insert,
+  newest first, so `tired--drop-fill-tail` undoes an insert with two
+  `remhash` calls and a print that stands taller drops rows from the
+  same journal.  A quit or an error restores `tired--tables` and
+  `tired--inserted` as they stood before the attempt.  Measure the
+  budget as `tired--row-budget` does, with body pixels and
+  `default-line-height`, never with canonical lines.  The fill reads a
+  directory only until the budget passes, so keep the LIMIT and
+  `tired--row-overflow` of `tired--display-rows`.  A fill that leaves a
+  directory out sets `tired--expand-fits-cut`, and the mode line
+  reports the cut tree.  A hidden directory stays collapsed during the
+  fill, and `tired--trial-hidden-p` reads `tired-hidden-regexps` and
+  `tired-hide-dotfiles` alone, never `tired--hidden-p`, so
+  `tired-toggle-hidden` changes no fill.  See `docs/adr/0027` and
+  `docs/adr/0031`.
 - A helper whose value comes from its arguments alone carries
   `(declare (pure t) (side-effect-free t))`.  A helper that reads state
   or the file system, but writes nothing, carries
