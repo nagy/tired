@@ -668,7 +668,12 @@ cell empties until the walk fills it again.
 A listing that no window shows queues no walk, because the size column
 and the empty-directory mark read the memo table alone.  The first
 display of the listing queues the walks, and Tired does them in the
-idle state, one directory per step.  One pass stops when
+idle state.  One step reads one directory, one batch of names or one
+directory frame, so a keystroke stops a pass at the next step.  A
+directory above 2000 names takes its attributes 64 names at a time,
+so no single call holds Emacs for a whole directory.  That batch costs
+about three times as much per name as the one whole-directory read
+that a smaller directory takes.  One pass stops when
 =tired-directory-size-budget= seconds end, and the next idle pass
 continues:
 

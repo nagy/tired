@@ -110,7 +110,8 @@
 ;; - The size walk reads the size memo alone and never blocks a redraw.
 ;;   Key that memo with `tired--size-key', never with `file-truename'.
 ;;   Do not add a `post-gc-hook' clear: one walk triggers several
-;;   collections.
+;;   collections.  The walk itself rides the idle queue, so it takes
+;;   one step per name list, batch or frame.
 ;; - `tired--subtree-starts' is a vector of buffer positions that one
 ;;   print filled, so `tired-subtree-bounds' costs one search and no
 ;;   line read.  `tired-mode' registers `tired-subtree' in the two
@@ -234,6 +235,13 @@
 ;;   tree costs one pass.  `tired--size-queue' queues the topmost visible
 ;;   directory row of a chain alone and skips a remote directory, an
 ;;   excluded one and one with a young total.
+;; - One size step reads one name list, one batch of
+;;   `tired--size-walk-batch' attributes, or one frame, so the idle
+;;   queue tests its budget and pending input between reads.  A
+;;   directory above `tired--size-walk-single-read-limit' takes the
+;;   batched path, because `directory-files-and-attributes' holds the
+;;   interpreter for its whole loop.  That path costs about three
+;;   times the whole-directory read per name.  See `docs/adr/0029'.
 ;; - A path that `tired-persistent-directories' matches takes no watch, so
 ;;   no event reports a new child there and a fresh total reaches the
 ;;   listing through `tired-refresh' alone.
@@ -2345,14 +2353,42 @@ redraw.")
 (defconst tired--size-redraw-delay 0.3
   "Idle seconds before a redraw queues a deferred directory size.")
 
+(defconst tired--size-walk-batch 64
+  "Names that one directory size step reads the attributes of.
+The idle queue tests its budget and pending input between steps, so
+this count bounds the delay that one step adds to a keystroke.")
+
+(defconst tired--size-walk-single-read-limit 2000
+  "Largest directory that one directory size step reads whole.
+Up to this count a step reads with one
+`directory-files-and-attributes' call, which costs the least per
+entry.  A larger directory takes its names alone and then one
+`file-attributes' call per batch of `tired--size-walk-batch', which
+costs more per entry and never holds the interpreter for a whole
+directory.  See `docs/adr/0029'.")
+
 (cl-defstruct (tired--size-walk (:constructor tired--size-walk-create))
   "State of one resumable directory size walk.
 STAMP holds the `float-time' at which the walk started, so every
 directory that the walk reaches carries one cache age.  STACK holds
 the frames of the walk, the deepest first.  A frame is a plist with
-`:directory', `:scanned' and `:total'."
+`:directory', `:phase', `:pending', `:count', `:total' and
+`:names'."
   stamp
   stack)
+
+(defun tired--size-walk-frame (directory)
+  "Return a fresh size walk frame for DIRECTORY.
+`:phase' names the step that the frame needs next, `:pending' holds
+the names that still wait for their attributes, `:count' counts the
+names that the frame saw, `:total' sums the bytes of its regular
+files and `:names' holds the child directories that it visits."
+  (list :directory (expand-file-name directory)
+        :phase 'read
+        :pending nil
+        :count 0
+        :total 0
+        :names nil))
 
 (defun tired--size-key (directory)
   "Return the `tired--size-cache' key for DIRECTORY.
@@ -2420,22 +2456,20 @@ A KEY that matches `tired-persistent-directories' lands in
                tired--size-cache-permanent
              tired--size-cache)))
 
-(defun tired--size-walk-scan (walk)
-  "Read the children of the head frame of WALK.
-Count every regular file in the total of the frame and record the
-subdirectories that the frame still visits.  Keep the order of the
-directory.  Skip symbolic links, so a link cycle cannot loop.  An
-unreadable directory counts as empty."
-  (let* ((stack (tired--size-walk-stack walk))
-         (frame (car stack))
-         (directory (plist-get frame :directory))
-         (total 0)
-         (names 0)
-         children)
-    (dolist (pair (ignore-errors
-                   (directory-files-and-attributes directory nil nil t)))
+(defun tired--size-walk-fold (frame pairs)
+  "Return FRAME with the attributes of PAIRS folded into it.
+PAIRS holds (NAME . ATTRIBUTES) conses.  Add the size of a regular
+file, queue a child directory unless `tired-directory-size-exclude'
+names it, and count every name, so the Elements column reads no
+directory of its own.  Skip symbolic links, so a link cycle cannot
+loop."
+  (let ((directory (plist-get frame :directory))
+        (total (plist-get frame :total))
+        (count (plist-get frame :count))
+        (children (plist-get frame :names)))
+    (dolist (pair pairs)
       (unless (member (car pair) '("." ".."))
-        (setq names (1+ names))
+        (setq count (1+ count))
         (let ((type (file-attribute-type (cdr pair))))
           (cond
            ((eq t type)
@@ -2445,11 +2479,69 @@ unreadable directory counts as empty."
               (unless (tired--size-excluded-p child)
                 (push child children))))
            ((stringp type) nil)
-           (t (setq total (+ total (or (file-attribute-size (cdr pair)) 0))))))))
-    (puthash (tired--size-key directory) names tired--child-cache)
-    (setcar stack (plist-put (plist-put (plist-put frame :total total)
-                                        :names (nreverse children))
-                             :scanned t))))
+           (t (setq total (+ total
+                             (or (file-attribute-size (cdr pair)) 0))))))))
+    (plist-put (plist-put (plist-put frame :total total) :count count)
+               :names children)))
+
+(defun tired--size-walk-scanned (frame)
+  "Return FRAME ready to visit its children, with its count recorded.
+The count lands in `tired--child-cache', so the Elements column reads
+no directory of its own."
+  (puthash (tired--size-key (plist-get frame :directory))
+           (plist-get frame :count)
+           tired--child-cache)
+  (plist-put frame :phase 'visit))
+
+(defun tired--size-walk-read (walk)
+  "Read the names of the head frame of WALK and fold them in.
+A directory above `tired--size-walk-single-read-limit' keeps its
+names alone, and the frame then reads one batch of attributes per
+step, so no single C call holds the interpreter for a whole
+directory.  A smaller directory reads with one
+`directory-files-and-attributes' call, which costs the least per
+entry.  An unreadable directory counts as empty."
+  (let* ((stack (tired--size-walk-stack walk))
+         (frame (car stack))
+         (directory (plist-get frame :directory))
+         (names (seq-remove (lambda (name) (member name '("." "..")))
+                            (ignore-errors
+                              (directory-files directory nil nil t)))))
+    (setcar stack
+            (if (> (length names) tired--size-walk-single-read-limit)
+                (plist-put (plist-put frame :phase 'stat) :pending names)
+              (tired--size-walk-scanned
+               (tired--size-walk-fold
+                frame
+                (ignore-errors
+                  (directory-files-and-attributes directory nil nil t))))))
+    :more))
+
+(defun tired--size-walk-stat (walk)
+  "Read the attributes of one batch of the head frame of WALK.
+The frame moves to its visit phase once its names run out, so the
+walk then queues the child directories that its batches found."
+  (let* ((stack (tired--size-walk-stack walk))
+         (frame (car stack))
+         (directory (plist-get frame :directory))
+         (pending (plist-get frame :pending))
+         (batch nil))
+    (dotimes (_ tired--size-walk-batch)
+      (when pending
+        (push (car pending) batch)
+        (setq pending (cdr pending))))
+    (setcar stack
+            (tired--size-walk-fold
+             (plist-put frame :pending pending)
+             (mapcar (lambda (name)
+                       (cons name
+                             (ignore-errors
+                               (file-attributes
+                                (expand-file-name name directory)))))
+                     (nreverse batch))))
+    (when (null pending)
+      (setcar stack (tired--size-walk-scanned (car stack))))
+    :more))
 
 (defun tired--size-walk-visit (walk)
   "Push the next child directory of the head frame of WALK."
@@ -2458,11 +2550,7 @@ unreadable directory counts as empty."
          (names (plist-get frame :names)))
     (setcar stack (plist-put frame :names (cdr names)))
     (setf (tired--size-walk-stack walk)
-          (cons (list :directory (car names)
-                      :scanned nil
-                      :total 0
-                      :names nil)
-                stack))))
+          (cons (tired--size-walk-frame (car names)) stack))))
 
 (defun tired--size-walk-close (walk)
   "Close the head frame of WALK and add its total to the parent.
@@ -2484,16 +2572,19 @@ at its root."
         :more))))
 
 (defun tired--size-walk-step (job)
-  "Advance the walk of JOB by one directory.
+  "Advance the walk of JOB by one directory, batch or frame.
 Return `:more' while a frame waits and `:done' after the root total
-lands in the cache."
+lands in the cache.  The caller tests its budget between steps, so
+one step stays small: a name read, one batch of attributes, one
+child frame, or one close."
   (let* ((walk (tired--job-data job))
          (stack (tired--size-walk-stack walk)))
     (cond
      ((null stack) :done)
-     ((not (plist-get (car stack) :scanned))
-      (tired--size-walk-scan walk)
-      :more)
+     ((eq (plist-get (car stack) :phase) 'read)
+      (tired--size-walk-read walk))
+     ((eq (plist-get (car stack) :phase) 'stat)
+      (tired--size-walk-stat walk))
      ((plist-get (car stack) :names)
       (tired--size-walk-visit walk)
       :more)
@@ -2559,10 +2650,7 @@ refresh never restarts itself."
       :owners (list (current-buffer))
       :data (tired--size-walk-create
              :stamp (float-time)
-             :stack (list (list :directory (expand-file-name directory)
-                                :scanned nil
-                                :total 0
-                                :names nil)))))))
+             :stack (list (tired--size-walk-frame directory)))))))
 
 (defun tired--size-ancestor-p (key directories)
   "Return non-nil when a directory above KEY waits for a walk.

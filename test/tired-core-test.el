@@ -1625,10 +1625,16 @@ No walk reads it, so the empty-directory mark cannot know its size."
   "One walk reads each nested directory once, and a second pass reads nothing."
   (tired-test--with-fixture
     (let ((tired-directory-size t)
+          (listed 0)
           (calls 0)
+          (original-names (symbol-function 'directory-files))
           (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
-      (cl-letf (((symbol-function 'directory-files-and-attributes)
+      (cl-letf (((symbol-function 'directory-files)
+                 (lambda (&rest args)
+                   (setq listed (1+ listed))
+                   (apply original-names args)))
+                ((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
                    (setq calls (1+ calls))
                    (apply original args))))
@@ -1637,9 +1643,11 @@ No walk reads it, so the empty-directory mark cannot know its size."
                           (expand-file-name "sub" root))))
         ;; The child and its grandchild, once each.  The link back to
         ;; the root stays unfollowed.
+        (should (= 2 listed))
         (should (= 2 calls))
         (tired--redraw)
         (tired-test--flush-sizes)
+        (should (= 2 listed))
         (should (= 2 calls))))))
 
 (ert-deftest tired--size-key-needs-no-truename ()
@@ -1936,6 +1944,61 @@ hidden."
           (should (eq :more (tired--size-walk-advance job)))
           (should (eq :done (tired--size-walk-advance job)))
           (should (= 2 reads)))))))
+
+(ert-deftest tired--size-walk-chunks-a-large-directory ()
+  "A directory above the limit takes one batch of attributes per step."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired--size-walk-single-read-limit 0)
+          (tired--size-walk-batch 2)
+          (attributes 0)
+          (whole 0)
+          (original-batch (symbol-function 'directory-files-and-attributes))
+          (original (symbol-function 'file-attributes)))
+      (tired root)
+      (let ((job (tired--queue-job
+                  'size (tired--size-key (expand-file-name "sub" root)))))
+        (should job)
+        (cl-letf (((symbol-function 'directory-files-and-attributes)
+                   (lambda (&rest args)
+                     (setq whole (1+ whole))
+                     (apply original-batch args)))
+                  ((symbol-function 'file-attributes)
+                   (lambda (&rest args)
+                     (setq attributes (1+ attributes))
+                     (apply original args))))
+          ;; The read step takes the names alone, so no attribute read
+          ;; holds the interpreter for the whole directory.
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (= 0 whole))
+          (should (= 0 attributes))
+          ;; Two names per batch, and `sub' holds three.
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (= 2 attributes))
+          (should (eq :more (tired--size-walk-advance job)))
+          (should (= 3 attributes))
+          (should (= 0 whole))
+          ;; The frame now visits its child and closes.
+          (while (eq :more (tired--size-walk-advance job)))
+          (should (= 4 attributes))
+          (should (= 0 whole))))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root)))))))
+
+(ert-deftest tired--queue-pass-stops-when-input-waits ()
+  "Pending input stops a pass, so a walk never holds a keystroke."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (key (tired--size-key (expand-file-name "sub" root))))
+      (tired root)
+      (cl-letf (((symbol-function 'input-pending-p) (lambda () t)))
+        (tired--queue-run)
+        (should (tired--queue-job 'size key))
+        (should-not (tired--directory-total (expand-file-name "sub" root))))
+      (tired--queue-run)
+      (should-not (tired--queue-job 'size key))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root)))))))
 
 (ert-deftest tired-refresh-drops-a-running-size-walk ()
   "A refresh drops the walk that a stale directory started."
