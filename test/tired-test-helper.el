@@ -68,6 +68,13 @@ a test of the expansion binds the option to t."
           (tired--size-cache (make-hash-table :test #'equal))
           (tired--size-cache-permanent (make-hash-table :test #'equal))
           (tired--size-cache-rules nil)
+          ;; The session table of `tired-persistent-files' and its
+          ;; compiled matcher are global too.  Empty them, so a rule
+          ;; from one test reaches no walk of the next.
+          (tired--persistent-file-cache (make-hash-table :test #'equal))
+          (tired--persistent-file-rules :none)
+          (tired--persistent-file-regexp nil)
+          (tired-persistent-files nil)
           (tired--size-always t)
           (tired-persistent-directories nil)
           (tired-directory-size-budget nil)

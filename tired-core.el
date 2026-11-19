@@ -242,6 +242,13 @@
 ;;   batched path, because `directory-files-and-attributes' holds the
 ;;   interpreter for its whole loop.  That path costs about three
 ;;   times the whole-directory read per name.  See `docs/adr/0029'.
+;; - `tired-persistent-files' keeps the size of a file whose name
+;;   carries its hash, so a warm walk of a Git object directory pays
+;;   one name read per directory and no attribute read.  The table
+;;   holds regular files alone, so a hit answers "file, N bytes" and
+;;   never a subtree.  Join the rules into one alternation per walk
+;;   and use no `:set' hook, because a `setq' on the option must reach
+;;   the next walk.  See `docs/adr/0030'.
 ;; - A path that `tired-persistent-directories' matches takes no watch, so
 ;;   no event reports a new child there and a fresh total reaches the
 ;;   listing through `tired-refresh' alone.
@@ -297,6 +304,10 @@
 (require 'subr-x)
 (require 'tabulated-list)
 (require 'thingatpt)
+
+;; `rx' builds the default rules of `tired-persistent-files', and the
+;; compile expands them, so the library never loads at run time.
+(eval-when-compile (require 'rx))
 
 ;; `tired-mode-map' binds commands that `tired-file-ops' defines.  The
 ;; declaration keeps the keymap free of a load-time dependency on the
@@ -564,6 +575,31 @@ because no change arrives there: a new child reaches the listing
 through `tired-refresh' alone.  The permanent tables hold one entry
 per directory and per file that a read reached, for the session.
 Leave the value nil to keep the memory bound of the cache windows."
+  :type '(repeat regexp))
+
+(defcustom tired-persistent-files
+  (list
+   ;; A loose object: objects/ab/cdef..., 38 hex digits for SHA-1 and
+   ;; 62 for SHA-256.
+   (rx ".git/objects/" (= 2 (any "0-9a-f")) "/"
+       (or (= 38 (any "0-9a-f")) (= 62 (any "0-9a-f"))) string-end)
+   ;; A pack file and its side files.
+   (rx ".git/objects/pack/pack-"
+       (or (= 40 (any "0-9a-f")) (= 64 (any "0-9a-f"))) "."
+       (or "idx" "pack" "rev" "bitmap" "mtimes" "keep" "promisor")
+       string-end))
+  "List of regexps that name files whose attributes never change.
+A file that matches keeps its size in a session table, and no size
+walk reads that attribute again.  The name of a content-addressed
+file carries its hash, so a repository that gains new objects never
+changes a file that it already holds.  Each regexp matches the
+absolute file name, so a rule can name the hash of such a file, as
+the two default rules do for a Git object and a Git pack file.  A
+directory and a symbolic link never enter the table, so a hit names
+a regular file alone.  The rule states that the file never changes:
+a path that a build rewrote keeps the old size until the user runs
+`tired-clear-caches'.  The table holds one row per file that a walk
+reached, for the whole session."
   :type '(repeat regexp))
 
 (defcustom tired-size-cache-ttl 60
@@ -1291,6 +1327,47 @@ alone."
 `tired-persistent-directories' holds the rules."
   (declare (side-effect-free t))
   (tired--directory-matches-p directory tired-persistent-directories))
+
+(defvar tired--persistent-file-cache (make-hash-table :test #'equal)
+  "Session table of the sizes of `tired-persistent-files'.
+The key holds the absolute name of a regular file and the value its
+size in bytes.  A size walk that reaches such a name adds the value
+and reads no attribute, so a Git object directory costs one name
+read per directory after its first walk.  A directory and a
+symbolic link never enter the table, so a hit names a regular file
+alone.  `tired-clear-caches' empties the table.")
+
+(defvar tired--persistent-file-rules :none
+  "Value of `tired-persistent-files' that the matcher holds.
+The symbol `:none' differs from every list, so the first call builds
+the matcher.")
+
+(defvar tired--persistent-file-regexp nil
+  "Combined alternation of `tired-persistent-files', or nil.")
+
+(defun tired--persistent-file-matcher ()
+  "Return the combined matcher of `tired-persistent-files', or nil.
+Rebuild it when the option changed, so a `setq' reaches the next
+walk.  One alternative serves a whole walk, so a name costs one
+match."
+  (unless (equal tired--persistent-file-rules tired-persistent-files)
+    (setq tired--persistent-file-rules
+          (copy-sequence tired-persistent-files))
+    (setq tired--persistent-file-regexp
+          (and tired-persistent-files
+               (mapconcat (lambda (rule) (concat "\\(?:" rule "\\)"))
+                          tired-persistent-files "\\|"))))
+  tired--persistent-file-regexp)
+
+(defun tired--persistent-file-size (path rules)
+  "Return the session size of PATH in bytes, or nil.
+RULES holds the matcher of `tired-persistent-files', or nil when the
+option names no file.  A nil answer means that the walk reads the
+attributes of PATH itself."
+  (declare (side-effect-free t))
+  (and rules
+       (string-match-p rules path)
+       (gethash path tired--persistent-file-cache)))
 
 (defun tired--size-excluded-p (directory)
   "Return non-nil when DIRECTORY matches `tired-directory-size-exclude'.
@@ -2372,8 +2449,8 @@ directory.  See `docs/adr/0029'.")
 STAMP holds the `float-time' at which the walk started, so every
 directory that the walk reaches carries one cache age.  STACK holds
 the frames of the walk, the deepest first.  A frame is a plist with
-`:directory', `:phase', `:pending', `:count', `:total' and
-`:names'."
+`:directory', `:phase', `:pending', `:count', `:total',
+`:names' and `:rules'."
   stamp
   stack)
 
@@ -2382,13 +2459,15 @@ the frames of the walk, the deepest first.  A frame is a plist with
 `:phase' names the step that the frame needs next, `:pending' holds
 the names that still wait for their attributes, `:count' counts the
 names that the frame saw, `:total' sums the bytes of its regular
-files and `:names' holds the child directories that it visits."
+files, `:names' holds the child directories that it visits and
+`:rules' holds the matcher of `tired-persistent-files'."
   (list :directory (expand-file-name directory)
         :phase 'read
         :pending nil
         :count 0
         :total 0
-        :names nil))
+        :names nil
+        :rules nil))
 
 (defun tired--size-key (directory)
   "Return the `tired--size-cache' key for DIRECTORY.
@@ -2406,12 +2485,13 @@ round trip per path component."
        (<= (- (float-time) (cdr value)) tired-size-cache-ttl)))
 
 (defun tired--size-cache-clear ()
-  "Drop every cached directory size.
+  "Drop every cached directory size and persistent file size.
 Empty `tired--size-cache-permanent' as well, so a directory under a
 rule walks its subtree again."
   (clrhash tired--size-cache)
   (clrhash tired--size-cache-permanent)
-  (clrhash tired--child-cache))
+  (clrhash tired--child-cache)
+  (clrhash tired--persistent-file-cache))
 
 (defun tired--size-cache-prune ()
   "Drop every cached total that `tired-size-cache-ttl' expired.
@@ -2462,15 +2542,21 @@ PAIRS holds (NAME . ATTRIBUTES) conses.  Add the size of a regular
 file, queue a child directory unless `tired-directory-size-exclude'
 names it, and count every name, so the Elements column reads no
 directory of its own.  Skip symbolic links, so a link cycle cannot
-loop."
+loop.  A regular file that the matcher of `tired-persistent-files'
+names lands in `tired--persistent-file-cache', so a rule that states
+that the file never changes stores the size that the walk just read."
   (let ((directory (plist-get frame :directory))
+        (prefix (file-name-as-directory (plist-get frame :directory)))
+        (rules (plist-get frame :rules))
         (total (plist-get frame :total))
         (count (plist-get frame :count))
         (children (plist-get frame :names)))
     (dolist (pair pairs)
       (unless (member (car pair) '("." ".."))
         (setq count (1+ count))
-        (let ((type (file-attribute-type (cdr pair))))
+        (let* ((attributes (cdr pair))
+               (type (file-attribute-type attributes))
+               (size (or (file-attribute-size attributes) 0)))
           (cond
            ((eq t type)
             ;; A child that `tired-directory-size-exclude' names adds
@@ -2479,8 +2565,11 @@ loop."
               (unless (tired--size-excluded-p child)
                 (push child children))))
            ((stringp type) nil)
-           (t (setq total (+ total
-                             (or (file-attribute-size (cdr pair)) 0))))))))
+           (t (setq total (+ total size))
+              (when (and rules (null type) attributes)
+                (let ((path (concat prefix (car pair))))
+                  (when (string-match-p rules path)
+                    (puthash path size tired--persistent-file-cache)))))))))
     (plist-put (plist-put (plist-put frame :total total) :count count)
                :names children)))
 
@@ -2493,28 +2582,78 @@ no directory of its own."
            tired--child-cache)
   (plist-put frame :phase 'visit))
 
+(defun tired--size-walk-whole-pairs (directory pending rules)
+  "Return the attribute pairs of PENDING inside DIRECTORY.
+RULES holds the matcher of `tired-persistent-files'.  A name that the
+session table answered stays out of the result, so the fold never
+counts it twice.  RULES nil means that no name answered, and one
+whole-directory read then serves every name."
+  (if (null rules)
+      (ignore-errors (directory-files-and-attributes directory nil nil t))
+    (let ((wanted (make-hash-table :test #'equal))
+          pairs)
+      (dolist (name pending)
+        (puthash name t wanted))
+      (dolist (pair (ignore-errors
+                      (directory-files-and-attributes directory nil nil t)))
+        (when (gethash (car pair) wanted)
+          (push pair pairs)))
+      (nreverse pairs))))
+
+(defun tired--size-walk-whole-read-p (names pending)
+  "Return non-nil when one whole-directory read beats one call per miss.
+NAMES holds every name of the directory and PENDING the names that
+still wait for their attributes.  One
+`directory-files-and-attributes' call costs about a third of one
+`file-attributes' call per name, so the whole-directory read wins
+while the pending names make up a third of the directory.  The
+batched path serves the rest, and it also caps the read: a
+directory above `tired--size-walk-single-read-limit' never takes one
+call for the whole directory."
+  (declare (side-effect-free t))
+  (and (<= (length names) tired--size-walk-single-read-limit)
+       (< (length names) (* 3 (length pending)))))
+
 (defun tired--size-walk-read (walk)
   "Read the names of the head frame of WALK and fold them in.
-A directory above `tired--size-walk-single-read-limit' keeps its
-names alone, and the frame then reads one batch of attributes per
-step, so no single C call holds the interpreter for a whole
-directory.  A smaller directory reads with one
-`directory-files-and-attributes' call, which costs the least per
-entry.  An unreadable directory counts as empty."
+A name that `tired-persistent-files' covers and that
+`tired--persistent-file-cache' holds adds its size with no file
+system call at all.  The rest takes one
+`directory-files-and-attributes' call while that call costs less,
+and one batch of `tired--size-walk-batch' names per step otherwise,
+so no C call holds the interpreter for a whole directory.  An
+unreadable directory counts as empty."
   (let* ((stack (tired--size-walk-stack walk))
          (frame (car stack))
          (directory (plist-get frame :directory))
+         (prefix (file-name-as-directory directory))
+         (rules (tired--persistent-file-matcher))
          (names (seq-remove (lambda (name) (member name '("." "..")))
                             (ignore-errors
-                              (directory-files directory nil nil t)))))
-    (setcar stack
-            (if (> (length names) tired--size-walk-single-read-limit)
-                (plist-put (plist-put frame :phase 'stat) :pending names)
-              (tired--size-walk-scanned
-               (tired--size-walk-fold
-                frame
-                (ignore-errors
-                  (directory-files-and-attributes directory nil nil t))))))
+                              (directory-files directory nil nil t))))
+         (total (plist-get frame :total))
+         (count (plist-get frame :count))
+         pending)
+    (dolist (name names)
+      (let ((size (tired--persistent-file-size (concat prefix name) rules)))
+        (if size
+            (setq total (+ total size)
+                  count (1+ count))
+          (push name pending))))
+    (setq pending (nreverse pending))
+    (let ((ready (plist-put (plist-put (plist-put frame :total total)
+                                       :count count)
+                            :rules rules)))
+      (setcar stack
+              (if (or (null pending)
+                      (tired--size-walk-whole-read-p names pending))
+                  (tired--size-walk-scanned
+                   (tired--size-walk-fold
+                    ready
+                    (when pending
+                      (tired--size-walk-whole-pairs
+                       directory pending rules))))
+                (plist-put (plist-put ready :pending pending) :phase 'stat))))
     :more))
 
 (defun tired--size-walk-stat (walk)

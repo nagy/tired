@@ -1775,6 +1775,114 @@ still covers can hide a file that arrived after its walk."
   (let ((tired-persistent-directories nil))
     (should-not (tired--persistent-p "/nix/store"))))
 
+;;; Persistent files
+
+(ert-deftest tired-persistent-files-default-matches-a-git-object ()
+  "The default rules name a Git object and a pack file alone."
+  (tired-test--with-fixture
+    (let ((tired-persistent-files
+           (default-toplevel-value 'tired-persistent-files)))
+      (let ((rules (tired--persistent-file-matcher)))
+        (should rules)
+        (should (string-match-p
+                 rules
+                 "/data/repo.git/objects/ab/cdef0123456789abcdef0123456789abcdef01"))
+        (should (string-match-p
+                 rules
+                 (concat "/data/repo.git/objects/ab/"
+                         "cdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")))
+        (should (string-match-p
+                 rules
+                 (concat "/data/nixpkgs.git/objects/pack/pack-"
+                         "d30196ef78f7463131c2dd02ef6fbc26aecb9076.bitmap")))
+        (should (string-match-p
+                 rules
+                 (concat "/data/nixpkgs.git/objects/pack/pack-"
+                         "d30196ef78f7463131c2dd02ef6fbc26aecb9076.idx")))
+        ;; A temporary pack, a file that git rewrites, a hash that a
+        ;; rule cannot name and a file outside objects stay out.
+        (should-not (string-match-p
+                     rules "/data/repo.git/objects/pack/tmp_pack_9Hq1"))
+        (should-not (string-match-p
+                     rules "/data/repo.git/objects/pack/multi-pack-index"))
+        (should-not (string-match-p
+                     rules "/data/repo.git/objects/info/alternates"))
+        (should-not (string-match-p
+                     rules "/data/repo.git/objects/ab/not-a-hash"))
+        (should-not (string-match-p rules "/data/repo.git/refs/heads/main"))))))
+
+(ert-deftest tired--size-walk-caches-a-persistent-file ()
+  "A rule stores the size of a regular file, and the next walk reads it once."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-persistent-files '("inner\\.txt\\'"))
+          (tired--size-walk-single-read-limit 0)
+          (attributes 0)
+          (original (symbol-function 'file-attributes)))
+      (tired root)
+      (let ((sub (expand-file-name "sub" root))
+            (key (tired--size-key (expand-file-name "sub" root))))
+        (cl-letf (((symbol-function 'file-attributes)
+                   (lambda (&rest args)
+                     (setq attributes (1+ attributes))
+                     (apply original args))))
+          (let ((job (tired--queue-job 'size key)))
+            (should job)
+            (while (eq :more (tired--size-walk-advance job)))
+            (tired--queue-drop job))
+          ;; `deep', `inner.txt' and `loop', then the leaf of `deep'.
+          (should (= 4 attributes))
+          (should (equal 5 (gethash (expand-file-name "inner.txt" sub)
+                                    tired--persistent-file-cache)))
+          ;; A second walk answers the rule from the table alone, so
+          ;; only the directory, the link and the leaf take a call.
+          (clrhash tired--size-cache)
+          (setq attributes 0)
+          (tired--size-enqueue key sub)
+          (let ((job (tired--queue-job 'size key)))
+            (should job)
+            (while (eq :more (tired--size-walk-advance job)))
+            (tired--queue-drop job))
+          (should (= 3 attributes))
+          (should (equal 9 (tired--directory-total sub))))))))
+
+(ert-deftest tired--size-walk-caches-no-directory-and-no-link ()
+  "The session table holds regular files alone, so a tree keeps its total."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-persistent-files '("\\`"))
+          (tired--size-walk-single-read-limit 0)
+          (attributes 0)
+          (original (symbol-function 'file-attributes)))
+      (tired root)
+      (let ((sub (expand-file-name "sub" root))
+            (key (tired--size-key (expand-file-name "sub" root))))
+        (cl-letf (((symbol-function 'file-attributes)
+                   (lambda (&rest args)
+                     (setq attributes (1+ attributes))
+                     (apply original args))))
+          (let ((job (tired--queue-job 'size key)))
+            (should job)
+            (while (eq :more (tired--size-walk-advance job)))
+            (tired--queue-drop job))
+          (should (equal 5 (gethash (expand-file-name "inner.txt" sub)
+                                    tired--persistent-file-cache)))
+          (should-not (gethash (expand-file-name "deep" sub)
+                               tired--persistent-file-cache))
+          (should-not (gethash (expand-file-name "loop" sub)
+                               tired--persistent-file-cache))
+          ;; A directory still reads its own attributes, so the second
+          ;; walk descends and counts the same total.
+          (clrhash tired--size-cache)
+          (setq attributes 0)
+          (tired--size-enqueue key sub)
+          (let ((job (tired--queue-job 'size key)))
+            (should job)
+            (while (eq :more (tired--size-walk-advance job)))
+            (tired--queue-drop job))
+          (should (= 2 attributes))
+          (should (equal 9 (tired--directory-total sub))))))))
+
 (ert-deftest tired--size-store-keeps-a-persistent-total ()
   "A walk under a rule stores into the permanent table."
   (tired-test--with-fixture
@@ -1857,9 +1965,11 @@ holds outlives a refresh and a change inside the subtree."
     (puthash "/kept" (cons 1 (float-time)) tired--size-cache-permanent)
     (puthash "/held" (list nil nil (float-time) 3)
              tired--elements-cache-permanent)
+    (puthash "/object" 7 tired--persistent-file-cache)
     (tired-clear-caches)
     (should (= 0 (hash-table-count tired--size-cache)))
     (should (= 0 (hash-table-count tired--size-cache-permanent)))
+    (should (= 0 (hash-table-count tired--persistent-file-cache)))
     (should (= 0 (hash-table-count tired--elements-cache)))
     (should (= 0 (hash-table-count tired--elements-cache-permanent)))
     (should (commandp #'tired-clear-caches))

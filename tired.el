@@ -311,12 +311,13 @@ the window, so a jump lands on that row and not near an edge."
 
 ;;;###autoload
 (defun tired-clear-caches ()
-  "Drop every cached directory size and element count.
+  "Drop every cached directory size, file size and element count.
 Both the windowed caches and the permanent caches of
-`tired-persistent-directories' empty, so a path that a wrong rule
-kept reads again.  Every Tired buffer redraws and queues the counts
-that it shows.  The command has no key and no menu entry, so `M-x'
-alone reaches it."
+`tired-persistent-directories' empty, and so does the session table of
+`tired-persistent-files', so a path that a wrong rule kept reads
+again.  Every Tired buffer redraws and queues the counts that it
+shows.  The command has no key and no menu entry, so `M-x' alone
+reaches it."
   (interactive)
   (tired--size-cache-clear)
   (tired--queue-drop-where #'tired--size-walk-job-p)

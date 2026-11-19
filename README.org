@@ -863,6 +863,30 @@ A rule also takes the auto-revert watch of its subtree, because no
 change arrives there.  A new child of a watched root, such as a fresh
 store path, reaches the listing through =g= alone.
 
+A directory that a build keeps growing, such as the object store of a
+Git repository, gains files while the files that it already holds
+stay.  List a regexp for such a file in =tired-persistent-files=:
+
+#+begin_src elisp
+  (setq tired-persistent-files
+        (list (rx ".git/objects/" (= 2 (any "0-9a-f")) "/"
+                  (or (= 38 (any "0-9a-f")) (= 62 (any "0-9a-f")))
+                  string-end)))
+#+end_src
+
+Each regexp matches the absolute file name.  A regular file that
+matches keeps its size for the whole Emacs session, so a size walk
+adds that number and reads no attribute at all.  A warm walk of an
+object store therefore costs one name read per directory and no
+attribute read, which measured about three times faster than a walk
+without the rule.  A directory and a symbolic link never enter the
+table.  The default value names a loose Git object and a Git pack file,
+for both the SHA-1 and the SHA-256 object format, so a repository
+needs no setup.  The rule states that the file never changes: a path
+that a build rewrote keeps the old size until =M-x tired-clear-caches=
+runs.  The table holds one row per file that a walk reached, for the
+session, so set the value to =nil= on a small machine.
+
 M-x tired-refresh re-reads a listing, and M-x tired-clear-caches
 empties every cache, the windowed ones and the permanent ones.
 A refresh first compares the modification time and the size of every

@@ -105,6 +105,13 @@ carries no cookie at all: `tired-noselect` runs the mode.
 
 ## Cross-file rules
 
+- A rule in `tired-persistent-files` states that a file never
+  changes, so `tired--persistent-file-cache` holds its size for the
+  whole session and a walk adds that row with no file system call.
+  The table holds regular files alone, so a hit names no directory and
+  no symbolic link.  `tired--persistent-file-matcher` joins the rules
+  into one alternation and rebuilds it when the option changed, and no
+  `:set` hook carries that work: a `setq` reaches the next walk alone.
 - `tired-shorten-path` is the one shortening engine.  It reads
   `tired-shorthand-rules`, and it returns display text alone, so no
   caller reads its result as a path.  The symlink suffix reaches it
