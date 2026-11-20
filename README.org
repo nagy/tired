@@ -228,7 +228,9 @@ point becomes a target, and both of those rows join, so one =n= adds
 one row to the run.  A run costs one motion instead of one =SPC= per
 row.  A command turns the region into a selection before it acts, so
 =D=, =c=, =m=, =y=, =w=, =!=, =M-i= and =TAB= read
-the same rows that =SPC= on each row would select.  The mode line
+the same rows that =SPC= on each row would select.  A linewise
+evil =V= range stops on its last row, so =V= and two motions cover
+three rows and no row below the range joins.  The mode line
 reports the region count and size, as it does for a selection.  =U=
 clears both sources.  A non-empty selection wins over the region.  A
 section row stands for the file that holds it, so a region over
@@ -404,7 +406,9 @@ Visual state keeps its text objects.  The keys that act on files stay
 bound there, so =V= followed by a motion and =D= deletes the range,
 because the region already feeds every file command.  A visual range
 grows one row per =j= or =k=, and the row at point joins it, so =V=
-and two motions cover three rows.  =tired-evil-mode= adds and removes
+and two motions cover three rows.  A command that reads the region
+takes no row below the range, because =tired-evil-mode= keeps point
+on the last selected row.  =tired-evil-mode= adds and removes
 the keys for every Tired buffer, existing or new.
 
 Evil keeps its own mouse handling.  =down-mouse-1= runs

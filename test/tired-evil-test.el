@@ -33,6 +33,8 @@
 
 (declare-function evil-visual-line "evil" (&optional count))
 
+(declare-function evil-visual-pre-command "evil" (&optional command))
+
 (declare-function tired-evil-mode "tired-evil" (&optional arg))
 
 (ert-deftest tired-evil-mode-binds-the-tired-commands ()
@@ -279,6 +281,48 @@ range unexpanded around them and `V j j' covers three rows."
           (execute-kbd-macro (kbd "vjj"))
           (should (equal (tired-test--target-names)
                          '(".hidden" "link" "alpha.txt"))))
+      (evil-normal-state)
+      (tired-evil-mode -1)
+      (evil-local-mode -1))))
+
+(ert-deftest tired-evil-expanded-range-stops-at-the-last-row ()
+  "A command that reads the region leaves out the row below it.
+`evil-visual-pre-command' expands a linewise range to the start of
+the row below it, so a command without `:exclude-newline' reaches
+one row too many.  `tired-evil-region-commands' names the commands
+that read the region, and every one of them carries the property."
+  (skip-unless (require 'evil nil t))
+  (require 'tired-evil)
+  (require 'tired-export)
+  (tired-test--with-fixture
+    (tired root)
+    (evil-local-mode 1)
+    (unwind-protect
+        (progn
+          (tired-evil-mode 1)
+          (dolist (command tired-evil-region-commands)
+            (should (eq (evil-get-command-property command :exclude-newline) t)))
+          ;; The export command reads the region before it writes.
+          (tired-test--goto ".hidden")
+          (execute-kbd-macro (kbd "Vjj"))
+          (evil-visual-pre-command 'tired-export-json)
+          (should (equal (mapcar #'tired-entry-name (tired--region-entries))
+                         '(".hidden" "link" "alpha.txt")))
+          (evil-normal-state)
+          ;; An upward range keeps the same three rows.
+          (tired-test--goto "beta.txt")
+          (execute-kbd-macro (kbd "Vkk"))
+          (evil-visual-pre-command 'tired-delete)
+          (should (equal (mapcar #'tired-entry-name (tired--region-entries))
+                         '("link" "alpha.txt" "beta.txt")))
+          (evil-normal-state)
+          ;; A command outside the list still reaches the row below, so
+          ;; the test holds the rule and not the reading alone.
+          (tired-test--goto ".hidden")
+          (execute-kbd-macro (kbd "Vjj"))
+          (evil-visual-pre-command 'ignore)
+          (should (equal (mapcar #'tired-entry-name (tired--region-entries))
+                         '(".hidden" "link" "alpha.txt" "beta.txt"))))
       (evil-normal-state)
       (tired-evil-mode -1)
       (evil-local-mode -1))))

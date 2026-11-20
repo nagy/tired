@@ -3595,10 +3595,12 @@ parent directory holds no such name."
 Both ends join, so the row that point shows joins even when the
 region ends at its line start, and a line motion grows the region
 one row per step.  Read the ends from point and mark, because a
-linewise evil range ends with the newline of the row at point, and
-that newline does not name another row.  A section row stands for
-the file that holds it, and one file joins once, so a region over
-the headings of a file reaches that file alone."
+linewise evil range puts point on the row below the range, and
+`tired-evil.el' gives every command that reads the region the
+`:exclude-newline' property, so point lands on the newline of the
+last selected row and that newline names no other row.  A section
+row stands for the file that holds it, and one file joins once, so
+a region over the headings of a file reaches that file alone."
   (when (use-region-p)
     (let* ((far (max (point) (or (mark t) (point))))
            (last (save-excursion (goto-char far) (line-beginning-position)))

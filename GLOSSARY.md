@@ -78,6 +78,7 @@ _Avoid_: Job, process, filter
 The Emacs region between mark and point, used as a target source.
 Every row between the two positions joins, including the rows that
 mark and point show, and a section row stands for the file that holds
+it.  A linewise evil range stops on its last row and adds no row below
 it.
 _Avoid_: Range, block, span
 

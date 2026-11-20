@@ -79,6 +79,12 @@
 ;;   `evil-visual-pre-command' expands the region for every other
 ;;   command, and an expanded region turns the line motion into no
 ;;   motion.
+;; - An expanded linewise range covers every selected row and the
+;;   newline of the last of them, so its end sits on the row below the
+;;   range.  `tired--region-entries' reads point and mark, so it would
+;;   take that row too.  Every command that reads the region carries
+;;   the `:exclude-newline' property, and evil then leaves point on the
+;;   newline of the last selected row.
 ;; - Evil shadows `i' (text objects), `e' and `E' (word motion) and TAB
 ;;   (jump forward) in visual state, so `tired-evil-visual-keys' holds no
 ;;   insert, expand, collapse or toggle key.
@@ -193,6 +199,42 @@ command here reads the active region.")
 (dolist (command '(tired-next-line tired-previous-line
                    tired-goto-last-entry))
   (evil-set-command-property command :keep-visual t))
+
+;; A linewise range lands on the row below the range: evil keeps the
+;; last selected row and the newline that closes it, and
+;; `evil-visual-expand-region' moves point to the start of the next
+;; row.  `tired--region-entries' reads point and mark, so that row
+;; would join the targets.  The `:exclude-newline' property leaves
+;; point on the newline of the last selected row, and a newline names
+;; no other row.
+(defvar tired-evil-region-commands
+  '(tired-browse-url-of-file
+    tired-collapse-file
+    tired-copy
+    tired-copy-name
+    tired-copy-path
+    tired-copy-project-path
+    tired-copy-relative-path
+    tired-delete
+    tired-delete-now
+    tired-do-shell-command
+    tired-expand-file
+    tired-export-csv
+    tired-export-json
+    tired-export-text
+    tired-find-file
+    tired-find-file-literally
+    tired-insert-subdir
+    tired-move
+    tired-remove-subdir
+    tired-toggle-subdir)
+  "Commands that read the active region.
+`tired-evil-mode' gives each one the `:exclude-newline' property, so
+an expanded visual range never adds the row below it.  A new command
+that reads the region joins this list.")
+
+(dolist (command tired-evil-region-commands)
+  (evil-set-command-property command :exclude-newline t))
 
 (defun tired-evil--name-edit ()
   "Keep a name edit in the evil insert state.

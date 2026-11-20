@@ -130,7 +130,10 @@ carries no cookie at all: `tired-noselect` runs the mode.
   three export commands.  The JSON mode reads `js-json-mode`.  A remap
   reaches a key that runs the major mode command, not `M-x`.
 - A new key belongs in `tired-mode-map` and in `tired-evil-keys`, and in
-  `tired-evil-visual-keys` when it reads the region.  A mouse event
+  `tired-evil-visual-keys` when it reads the region.  A command that
+  reads the region joins `tired-evil-region-commands`, because evil
+  expands a linewise range to the row below it and that entry names
+  the commands that carry `:exclude-newline`.  A mouse event
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
   shadows it.  Evil shadows `i`, `e`, `E` and `TAB` in visual state, so
   that table never names a subdir, expand, collapse or toggle command.
