@@ -196,7 +196,10 @@ carries no cookie at all: `tired-noselect` runs the mode.
   verb, the count, the destination and the first failed path.
 - A file command signals a user error while `tired--name-edit` holds:
   `tired--apply-to-targets` refreshes, `tired--redraw` draws nothing
-  then, and the listing would disagree with the disk.
+  then, and the listing would disagree with the disk.  While the flag
+  holds, `tired--line-motion` backs both line motions and keeps the
+  offset of point inside the name, so no motion jumps to the first
+  character of the new name.
 - A shown directory that left the disk keeps no entry table, so a
   refresh and a timer print an empty listing and never a
   `file-missing`.  A command that acts on one path, such as

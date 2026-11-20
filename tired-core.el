@@ -216,7 +216,9 @@
 ;;   reprint would erase the typed names.  `tired--start-name-edit'
 ;;   empties `tired--subtree-starts', so a typed name moves no bounds, and
 ;;   the abort and a commit that changes no name force a print through
-;;   `tired--listing-stamps'.
+;;   `tired--listing-stamps'.  `tired--line-motion' keeps the name offset
+;;   across a line while that flag holds, so a motion never pulls the
+;;   cursor out of a name that the user edits.
 ;; - A hidden row drops before its sections read, even when VISIBLE-ONLY
 ;;   holds nil, so the width pass and the selection never see a hidden
 ;;   path.  A hidden name also ends a chain before that level.
@@ -4413,27 +4415,41 @@ that moves point into the name itself."
   (tired--redraw)
   (tired--beginning-of-name))
 
+(defun tired--line-motion (lines)
+  "Move point LINES rows and place it inside the name.
+LINES is positive for a move down.  A no-edit listing puts point on
+the first character of the name, past the depth indent.  A name edit
+keeps the distance from that first character, so the motion never
+pulls the cursor out of a name that the user edits.  The distance
+stops at the line end, so point never leaves its row."
+  (if tired--name-edit
+      (let ((offset (tired--name-offset)))
+        (forward-line lines)
+        (tired--goto-name-offset offset))
+    (forward-line lines)
+    (tired--beginning-of-name)))
+
 (defun tired-next-line (&optional arg)
-  "Move point ARG lines down and put it at the start of the name.
+  "Move point ARG lines down and put it inside the name.
 ARG defaults to one line.  The `^' interactive code keeps
 `shift-select-mode' working, as it does in `dired-next-line'.
 The motion drops the path form of `tired-copy-name', so one key
-copies a name of the new row first."
+copies a name of the new row first.  While `tired-edit-names'
+holds, point keeps its offset inside the name."
   (interactive "^p")
-  (forward-line (or arg 1))
-  (setq tired--copy-name-absolute nil)
-  (tired--beginning-of-name))
+  (tired--line-motion (or arg 1))
+  (setq tired--copy-name-absolute nil))
 
 (defun tired-previous-line (&optional arg)
-  "Move point ARG lines up and put it at the start of the name.
+  "Move point ARG lines up and put it inside the name.
 ARG defaults to one line.  The `^' interactive code keeps
 `shift-select-mode' working, as it does in `dired-previous-line'.
 The motion drops the path form of `tired-copy-name', so one key
-copies a name of the new row first."
+copies a name of the new row first.  While `tired-edit-names'
+holds, point keeps its offset inside the name."
   (interactive "^p")
-  (forward-line (- (or arg 1)))
-  (setq tired--copy-name-absolute nil)
-  (tired--beginning-of-name))
+  (tired--line-motion (- (or arg 1)))
+  (setq tired--copy-name-absolute nil))
 
 (defun tired--last-row-position ()
   "Return the position of the last row of the listing, or nil."

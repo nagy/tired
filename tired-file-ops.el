@@ -62,6 +62,10 @@
 ;; - Do not guard the edit with `before-change-functions': a signal there
 ;;   clears that buffer-local hook, so the first refused key would leave
 ;;   every later key unguarded.
+;; - The edit mode keeps the line motions of `tired-mode-map', and
+;;   `tired--line-motion' reads `tired--name-edit' to keep the offset of
+;;   point inside the name.  A jump to the first character of the new
+;;   name would drop the cursor out of the word that the user edits.
 ;; - `special-mode-map' remaps `self-insert-command' to `undefined', and
 ;;   `tired-mode-map' inherits that remap, so the edit mode needs its own
 ;;   `<remap> <self-insert-command>' and one explicit binding per

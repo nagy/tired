@@ -530,7 +530,10 @@ link stay read only.  A collapsed chain row shows a relative name,
 and its editable part is the leaf alone, so a rename moves the leaf
 and never the chain above it.  =C-c C-c= renames the rows that hold a
 new name and =C-c C-k= drops every change.  Neither command carries a
-key outside the edit mode, so =M-x= alone reaches them.
+key outside the edit mode, so =M-x= alone reaches them.  While the
+mode holds, =tired-next-line= and =tired-previous-line= keep the
+column of point inside the name, so the cursor never jumps to the
+first character of the next name.
 
 A commit refuses a blank name, a name with a directory part, a
 control character, a name that repeats another name, a name that a

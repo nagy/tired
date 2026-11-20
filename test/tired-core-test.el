@@ -3979,6 +3979,38 @@ again under the stub."
     (should (equal (tired-entry-name (tired--row-at-point)) "link"))
     (should (= 0 (current-column)))))
 
+(ert-deftest tired-line-motions-keep-the-name-offset-in-a-name-edit ()
+  "A name edit keeps point at its column inside the name."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-edit-names)
+    (tired-test--goto "alpha.txt")
+    (tired--goto-name-offset 3)
+    (should (= 3 (tired--name-offset)))
+    (tired-next-line)
+    (should (equal (tired-entry-name (tired--row-at-point)) "beta.txt"))
+    (should (= 3 (tired--name-offset)))
+    (should (= 3 (current-column)))
+    (tired-previous-line)
+    (should (equal (tired-entry-name (tired--row-at-point)) "alpha.txt"))
+    (should (= 3 (tired--name-offset)))))
+
+(ert-deftest tired-next-line-keeps-the-name-offset-of-a-deep-row ()
+  "The offset counts from the name, not from the line start."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-test--goto "sub")
+    (tired-insert-subdir)
+    (tired-edit-names)
+    (tired-test--goto "sub")
+    (tired--goto-name-offset 1)
+    (should (= 1 (current-column)))
+    (tired-next-line)
+    (should (equal (tired-entry-name (tired--row-at-point))
+                   "deep/leaf.txt"))
+    (should (= 1 (tired--name-offset)))
+    (should (= 3 (current-column)))))
+
 (ert-deftest tired-line-motions-keep-their-keys ()
   "The listing binds the two motions, as `dired' does."
   (tired-test--with-fixture
