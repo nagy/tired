@@ -97,7 +97,8 @@
 ;;   kind and key.  A pass takes the queue down, runs one step of every
 ;;   job, and starts another round over the unfinished jobs until the
 ;;   budget or pending input stops it.  A pass that leaves work
-;;   schedules its own successor through `tired--queue-delay'.  Never
+;;   schedules its own successor through `tired--queue-delay', and
+;;   through `tired--queue-busy-delay' while a key waits.  Never
 ;;   chain an idle timer: a ripe idle timer stops the read loop before
 ;;   the wait that reads subprocess output, so a walk would starve
 ;;   every process of its output and sentinel.  See `docs/adr/0032'.
@@ -1142,10 +1143,26 @@ costs no step."
     (or (null key)
         (eq (gethash key tired--queue-index) job))))
 
+(defconst tired--queue-delay 0.02
+  "Seconds between two idle queue passes.
+A normal timer chain reads subprocess output between two passes.
+An always-ripe idle timer chain does not: Emacs skips the wait that
+reads that output, so no process shows output and no sentinel runs
+until every queued job finishes.  Measured on Emacs 31.1, a child
+that writes after one second reaches its filter at once with this
+chain and after five seconds with an idle chain.")
+
+(defconst tired--queue-busy-delay 0.1
+  "Seconds between two passes while a key waits.
+A pass that a keystroke stops costs no step, and the pass that
+follows costs another 0.02 seconds of waiting, so a burst of typing
+would arm forty timers per second.  The longer gap keeps a user who
+types cheap.")
+
 (defun tired--queue-run ()
   "Advance the queue until a budget ends or a key waits.
 Each step gives way to the next job, so one large job never holds
-the others.  A pass that leaves work schedules another idle pass.
+the others.  A pass that leaves work arms its successor.
 The pass takes the queue down while it runs, so a finished job drops
 from a short list and a job that joins the queue lands on a clean
 one; a rotation of the whole queue per step would cost one list copy
@@ -1173,26 +1190,19 @@ per step."
     (setq tired--queue-jobs
           (nconc (nreverse kept) pending (nreverse tired--queue-jobs))))
   (when tired--queue-jobs
-    (tired--queue-schedule))
+    (tired--queue-schedule
+     (and (input-pending-p) tired--queue-busy-delay)))
   (when tired--queue-dirty
     (tired--queue-reprint-schedule)))
 
-(defconst tired--queue-delay 0.02
-  "Seconds between two idle queue passes.
-A normal timer chain reads subprocess output between two passes.
-An always-ripe idle timer chain does not: Emacs skips the wait that
-reads that output, so no process shows output and no sentinel runs
-until every queued job finishes.  Measured on Emacs 31.1, a child
-that writes after one second reaches its filter at once with this
-chain and after five seconds with an idle chain.")
-
-(defun tired--queue-schedule ()
-  "Arrange one more pass at `tired--queue-delay'.
-The timer is a normal timer, because a ripe idle timer starves every
-subprocess of its output."
+(defun tired--queue-schedule (&optional delay)
+  "Arrange one more pass after DELAY seconds.
+DELAY defaults to `tired--queue-delay'.  The timer is a normal timer,
+because a ripe idle timer starves every subprocess of its output."
   (unless (timerp tired--queue-timer)
     (setq tired--queue-timer
-          (run-at-time tired--queue-delay nil #'tired--queue-wake))))
+          (run-at-time (or delay tired--queue-delay) nil
+                       #'tired--queue-wake))))
 
 (defun tired--queue-wake ()
   "Run one idle queue pass unless input waits.
@@ -1201,7 +1211,7 @@ sends the pass back to `tired--queue-schedule' when a key waits."
   (setq tired--queue-timer nil)
   (cond
    ((null tired--queue-jobs) nil)
-   ((input-pending-p) (tired--queue-schedule))
+   ((input-pending-p) (tired--queue-schedule tired--queue-busy-delay))
    (t (tired--queue-run))))
 
 (defun tired--queue-reprint-schedule ()

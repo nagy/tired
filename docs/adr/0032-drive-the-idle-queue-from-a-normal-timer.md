@@ -60,7 +60,9 @@ to `tired-directory-size-budget`.  The gate costs one
 
 The queue holds one timer of a new kind, and a test names it.  A wake
 with input pending arms itself again instead of stepping a job, so a
-user who types costs one timer per 0.02 seconds and no file read.  The
-starvation was never specific to a size walk: every element count
-waiting on the queue starved every subprocess the same way, so the
-repair reaches both kinds.
+user who types costs one timer per 0.02 seconds and no file read.
+That timer takes `tired--queue-busy-delay`, 0.1 seconds, so a burst of
+typing arms no pass per 0.02 seconds.  The starvation was never
+specific to a size walk: every element count waiting on the queue
+starved every subprocess the same way, so the repair reaches both
+kinds.

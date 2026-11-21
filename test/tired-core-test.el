@@ -2125,7 +2125,7 @@ subprocess output, so a walk would starve every process."
 (ert-deftest tired--queue-wake-yields-to-a-waiting-key ()
   "A wake with a key waiting takes no step and arms another pass."
   (let* ((steps 0)
-         (scheduled 0)
+         (delays nil)
          (tired--queue-timer nil)
          (tired--queue-jobs
           (list (tired--job-create
@@ -2134,16 +2134,32 @@ subprocess output, so a walk would starve every process."
          (tired--queue-index (make-hash-table :test #'equal)))
     (cl-letf (((symbol-function 'input-pending-p) (lambda () t))
               ((symbol-function 'tired--queue-schedule)
-               (lambda () (setq scheduled (1+ scheduled)))))
+               (lambda (&optional delay) (push delay delays))))
       (tired--queue-wake)
       (should (= 0 steps))
-      (should (= 1 scheduled))
+      (should (equal (list tired--queue-busy-delay) delays))
       (should tired--queue-jobs))
     (cl-letf (((symbol-function 'input-pending-p) (lambda () nil))
               ((symbol-function 'tired--queue-schedule) #'ignore))
       (tired--queue-wake)
       (should (= 1 steps))
       (should-not tired--queue-jobs))))
+
+(ert-deftest tired--queue-pass-slows-down-while-a-key-waits ()
+  "A pass that a keystroke stops waits longer for its successor."
+  (let* ((delays nil)
+         (tired--queue-timer nil)
+         (tired--queue-jobs
+          (list (tired--job-create
+                 :step (lambda (_job) :more)
+                 :budget nil)))
+         (tired--queue-index (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'input-pending-p) (lambda () t))
+              ((symbol-function 'tired--queue-schedule)
+               (lambda (&optional delay) (push delay delays))))
+      (tired--queue-run)
+      (should (equal (list tired--queue-busy-delay) delays))
+      (should tired--queue-jobs))))
 
 (ert-deftest tired-refresh-drops-a-running-size-walk ()
   "A refresh drops the walk that a stale directory started."

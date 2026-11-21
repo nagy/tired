@@ -638,19 +638,20 @@ from reading subprocess output."
         (when (timerp tired--queue-timer)
           (cancel-timer tired--queue-timer))))))
 
-(ert-deftest tired-elements-run-schedules-the-next-idle-pass ()
+(ert-deftest tired-elements-run-arms-its-successor ()
   "A pass that leaves a job arranges its successor."
-  (let ((scheduled 0)
+  (let ((delays nil)
         (tired--queue-jobs
          (list (tired--job-create
                 :key "/one"
                 :step (lambda (_job) :more)
                 :budget 0)))
         (tired--queue-index (make-hash-table :test #'equal)))
-    (cl-letf (((symbol-function 'tired--queue-schedule)
-               (lambda () (setq scheduled (1+ scheduled)))))
+    (cl-letf (((symbol-function 'input-pending-p) (lambda () nil))
+              ((symbol-function 'tired--queue-schedule)
+               (lambda (&optional delay) (push delay delays))))
       (tired--queue-run)
-      (should (= 1 scheduled))
+      (should (equal (list nil) delays))
       (should tired--queue-jobs))))
 
 ;;; The sort
