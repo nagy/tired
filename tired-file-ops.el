@@ -1130,24 +1130,14 @@ leaves the move to `tired--apply-to-targets'."
         (tired--forward-past-flags))
     (tired--delete-targets)))
 
-(defun tired--creation-directory ()
-  "Return the directory that creation commands start from.
-The entry at point decides: a directory row starts inside that
-directory, every other row starts at the shown directory."
-  (declare (side-effect-free t))
-  (let ((entry (tired--row-at-point)))
-    (if (and (tired-entry-p entry)
-             (file-directory-p (tired-entry-path entry)))
-        (file-name-as-directory (tired-entry-path entry))
-      tired--directory)))
-
 (defun tired-mkdir (directory)
   "Create DIRECTORY and its parents.
-The command asks no confirmation.  A later `tired-undo' removes the
-new directory and the parents that it created."
+The proposed path starts in the shown directory, whatever row holds
+point, so a deep row never buries it in that subtree.  The command
+asks no confirmation.  A later `tired-undo' removes the new directory
+and the parents that it created."
   (interactive
-   (list (read-file-name "Create directory: " (tired--creation-directory)
-                         nil nil)))
+   (list (read-file-name "Create directory: " tired--directory nil nil)))
   (let* ((path (directory-file-name (expand-file-name directory)))
          (parent (file-name-directory path))
          (missing nil)
@@ -1186,11 +1176,11 @@ new directory and the parents that it created."
 
 (defun tired-touch (file)
   "Create FILE, or update its modification time when it exists.
-The command asks no confirmation.  A later `tired-undo' removes a
-created file, or puts the earlier modification time back."
+The proposed path starts in the shown directory, whatever row holds
+point.  The command asks no confirmation.  A later `tired-undo'
+removes a created file, or puts the earlier modification time back."
   (interactive
-   (list (read-file-name "Create empty file: " (tired--creation-directory)
-                         nil nil)))
+   (list (read-file-name "Create empty file: " tired--directory nil nil)))
   (let* ((path (expand-file-name file))
          (exists (tired--path-exists-p path))
          (mtime (and exists

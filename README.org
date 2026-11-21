@@ -441,8 +441,10 @@ as they stand:
 #+end_src
 
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
-empty file.  None of these commands asks for a confirmation.  None
-of them calls a shell.  =!= is the one command that runs a shell, and
+empty file.  Both creation commands start the proposed path in the
+directory that the listing shows, never in a row under point.  None
+of these commands asks for a confirmation.  None of them calls a
+shell.  =!= is the one command that runs a shell, and
 the next section covers it.
 
 By default =D= waits.  =tired-delete-delay= holds 3 seconds.  A
