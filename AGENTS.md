@@ -1,6 +1,6 @@
-# AGENTS.md — tired.el
+# AGENTS.md — tired
 
-## Overview
+## Purpose
 
 A directory editor on `tabulated-list-mode`.  Entries come from
 `directory-files-and-attributes`, never from `ls -l` output.  A row is
@@ -12,7 +12,7 @@ Minimum Emacs 31.1, because `tabulated-list-print-entry` wants a vector
 row there.  `README.org` holds the user view and `docs/adr/` the
 reasons.
 
-## Files
+## Layout
 
 - `tired.el` — entry point: commentary, the five requires, the public
   commands (`tired`, `tired-other-window`, `tired-noselect`,
@@ -44,7 +44,7 @@ Each library keeps a "Design notes" list in its `;;; Commentary:`.  Read
 the notes of the file that you change.  This file holds only the rules
 that span more than one file.
 
-## Build & test
+## Build and test
 
 ```sh
 nix build                       # package
@@ -91,8 +91,6 @@ Dependencies point one way: `tired-core` requires no sibling,
 `declare-function`, so no load-time dependency forms.  `tired.el`
 installs the evil hook after `provide`, so both load orders work.
 
-Package prefix `tired-`, private helpers `tired--`.
-
 Every `;;;###autoload` cookie for a command sits in `tired.el`, because
 the file that holds a cookie names the file that its autoload loads.  A
 cookie in `tired-core` would load the core alone, so `M-x tired` from a
@@ -103,7 +101,7 @@ carries no cookie at all: `tired-noselect` runs the mode.
 `tired-evil.el` keeps its own cookie, because the file requires
 `tired`.
 
-## Cross-file rules
+## Rules
 
 - A rule in `tired-persistent-files` states that a file never
   changes, so `tired--persistent-file-cache` holds its size for the
@@ -112,23 +110,22 @@ carries no cookie at all: `tired-noselect` runs the mode.
   no symbolic link.  `tired--persistent-file-matcher` joins the rules
   into one alternation and rebuilds it when the option changed, and no
   `:set` hook carries that work: a `setq` reaches the next walk alone.
+
 - `tired-shorten-path` is the one shortening engine.  It reads
   `tired-shorthand-rules`, and it returns display text alone, so no
   caller reads its result as a path.  The symlink suffix reaches it
   through `tired--shorthand-target`, and another package reaches it
   through a `fboundp` guard.
-- Every function has a docstring, and `checkdoc`, `relint` and byte
-  compilation with `byte-compile-error-on-warn` pass.  A
-  `define-minor-mode` form defines a defcustom, so it needs
-  `:group 'tired` or byte compilation fails.  Every Elisp file carries
-  the AGPL3+ header.
+
 - `tired-mode-menu` mirrors the key map on the menu bar.  Add a command
   when its key alone does not explain it.  An `:active` form reads the
   listing when the menu opens, and it uses `(bound-and-true-p VARIABLE)`
   for a variable that another library owns.
+
 - The mode map remaps `csv-mode`, `text-mode` and `js-json-mode` to the
   three export commands.  The JSON mode reads `js-json-mode`.  A remap
   reaches a key that runs the major mode command, not `M-x`.
+
 - A new key belongs in `tired-mode-map` and in `tired-evil-keys`, and in
   `tired-evil-visual-keys` when it reads the region.  A command that
   reads the region joins `tired-evil-region-commands`, because evil
@@ -137,6 +134,7 @@ carries no cookie at all: `tired-noselect` runs the mode.
   belongs in `tired-mode-map`, and in `tired-evil-keys` only when evil
   shadows it.  Evil shadows `i`, `e`, `E` and `TAB` in visual state, so
   that table never names a subdir, expand, collapse or toggle command.
+
 - Some commands carry no binding on purpose: `tired-clear-caches`,
   `tired-delete-now`, `tired-edit-names`, `tired-commit-edits`, `tired-abort-edits`,
   `tired-insert-subdir`, `tired-expand-file`, `tired-collapse-file`,
@@ -145,17 +143,20 @@ carries no cookie at all: `tired-noselect` runs the mode.
   `tired-redo` take the `<undo>` and `<redo>` keysyms alone, so no
   printable key and no menu entry reaches them.  `tired-core-test` and
   `tired-file-ops-test` fail when a binding returns.
+
 - Every file command clears the selection through
   `tired--clear-selection`.  Only the interactive `tired-select-none`
   clears the deletion flags too, so a copy or a move never cancels a
   pending deletion.  A flagged path never joins the selection:
   `tired--set-selection` drops it, and a selection command that touches
   a flagged row either drops the flag or skips the row.
+
 - A section row is not selectable and stands for its file.  Do not add
   one to `tired--selection`: the selection and the narrow snapshot key
   by path alone, so change them only through `tired--set-selection` and
   `tired--set-narrowed`.  A region over a section row reaches that row's
   file instead, through `tired--display-entry-table`.
+
 - A section names its parent through `:parent`, the line of the parent
   row, and `tired--section-rows` builds the depth and the fold chain from
   that line alone.  Set it only where the rows leave source order, as the
@@ -163,6 +164,7 @@ carries no cookie at all: `tired-noselect` runs the mode.
   through the tree-sitter walk keeps `:level` and names no parent.  The
   level stack ignores a row that names a parent, and a parent line that
   names a later row falls back to the level rule.  See `docs/adr/0028`.
+
 - A name cell carries `face` and `font-lock-face`.  `tired--section-cell`
   mirrors the faces of a handler label the same way.  A name face
   inherits its `dired-` partner, and `tired-selected-face` inherits
@@ -170,17 +172,20 @@ carries no cookie at all: `tired-noselect` runs the mode.
   flagged row writes `:extend t`, because its overlay covers the line
   and the newline.  A handler face writes `:group 'tired`, because
   `tired-sections` holds no `defgroup`.
+
 - A collapsed row answers the `filename` thing one chain component at
   a time: `tired--filename-at-point` and `tired--name-bounds` split the
   name at the slashes, and point on a slash names the component that
   the slash closes.  `tired--name-region` keeps the whole name, because
   the mouse face and the in-place name edit read that region.
+
 - Point on the target text of a symbolic link names the link target:
   `tired--filename-at-point` and `tired--filename-bounds` fall back to
   `tired--link-region` and `tired--link-path`.  The region covers the
   printed target text alone, so a `tired-shorthand-rules` sigil never
   reaches a path answer.  `bounds-of-thing-at-point-provider-alist`
   names `tired--filename-bounds`, never `tired--name-bounds`.
+
 - `embark` reads the `filename` thing for its file target, so
   `tired.el` gives `embark-target-finders` a buffer-local Tired finder
   and drops the two built-in file finders.  The swap runs from
@@ -191,27 +196,33 @@ carries no cookie at all: `tired-noselect` runs the mode.
   reads the bounds as `(cdr (cdr TARGET))`.  A proper list of four
   elements hands `(END)` to `make-overlay`, and `embark-act` dies with
   `wrong-type-argument integer-or-marker-p`.
+
 - A library that paints overlays on the printed rows uses
   `tired-after-redraw-hook` and no call from `tired-core`.  A body of the
   hook never runs a view command, because the redraw calls the hook.
+
 - A command that changes the disk prints exactly one line through
   `message`, and no `display-warning` runs beside it.  The line names the
   verb, the count, the destination and the first failed path.
+
 - A file command signals a user error while `tired--name-edit` holds:
   `tired--apply-to-targets` refreshes, `tired--redraw` draws nothing
   then, and the listing would disagree with the disk.  While the flag
   holds, `tired--line-motion` backs both line motions and keeps the
   offset of point inside the name, so no motion jumps to the first
   character of the new name.
+
 - A shown directory that left the disk keeps no entry table, so a
   refresh and a timer print an empty listing and never a
   `file-missing`.  A command that acts on one path, such as
   `tired-rename`, signals a `user-error` for a path that left the disk,
   and `tired--apply-to-targets` counts that path as a failure.
+
 - A file command never asks a confirmation and never calls a shell,
   except `tired-do-shell-command`.  Removal goes through
   `tired--trash-move`, never through `delete-file`, so undo restores the
   path.
+
 - `tired` goes through `tired--show-buffer`, which hands
   `tired-display-buffer-action` to `display-buffer` and selects the
   returned window, because `tired-jump` moves point afterwards.  Keep
@@ -221,6 +232,7 @@ carries no cookie at all: `tired-noselect` runs the mode.
   `switch-to-buffer-other-window`, never a display action, because an
   action that only reuses a window finds none on a one-window frame and
   pops a new frame.
+
 - The whole-tree expansion runs once per buffer through
   `tired--expand-all-in-buffer`, and both entry commands attempt it
   after `tired--show-buffer` picks a window.  `tired-noselect` sets
@@ -245,6 +257,17 @@ carries no cookie at all: `tired-noselect` runs the mode.
   `tired-hide-dotfiles` alone, never `tired--hidden-p`, so
   `tired-toggle-hidden` changes no fill.  See `docs/adr/0027` and
   `docs/adr/0031`.
+
+## Conventions
+
+- Package prefix `tired-`, private helpers `tired--`.
+
+- Every function has a docstring, and `checkdoc`, `relint` and byte
+  compilation with `byte-compile-error-on-warn` pass.  A
+  `define-minor-mode` form defines a defcustom, so it needs
+  `:group 'tired` or byte compilation fails.  Every Elisp file carries
+  the AGPL3+ header.
+
 - A helper whose value comes from its arguments alone carries
   `(declare (pure t) (side-effect-free t))`.  A helper that reads state
   or the file system, but writes nothing, carries
@@ -298,7 +321,16 @@ before you write a test.
   `tired-autoload-cookies-stay-in-a-loading-entry-point`, so a cookie in
   a sub-library fails the suite.
 
-## Where to write things
+## Dependencies
+
+| Dependency | Required? | Why |
+|---|---|---|
+| Emacs 31.1 | required | `tabulated-list-print-entry` wants a vector row there. |
+| `evil` | optional | `tired-evil.el` loads late, and `packageRequires` stays empty. |
+| tree-sitter grammars (Rust, Python, Go, Markdown, TOML) | test only | `checkInputs` gives `checkPhase` its grammars. A missing grammar skips its test. |
+| `zstd` | test only | Puts `zstd` on the path for the archive fixtures. |
+
+## Workflow
 
 - A user-visible command, key or option goes in `README.org`.  Read the
   README before you document a command.
