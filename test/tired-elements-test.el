@@ -20,7 +20,7 @@
 
 ;; Tests for the Elements column: the column itself, the dissectors,
 ;; the cache, the queue, the sort and the clear command.  The suite
-;; flushes the queue by hand, because batch Emacs runs no idle timer.
+;; flushes the queue by hand, because batch Emacs runs no timer.
 
 ;;; Code:
 
@@ -619,14 +619,17 @@ count of that directory needs no second `directory-files' call."
       (should (= 3 (tired-elements-directory
                     (expand-file-name "sub" root)))))))
 
-(ert-deftest tired-elements-schedule-keeps-one-idle-timer ()
-  "A pass that already waits takes no second timer."
-  (let ((timers 0)
-        (tired--queue-timer nil))
-    (cl-letf (((symbol-function 'run-with-idle-timer)
-               (lambda (&rest _)
+(ert-deftest tired-elements-schedule-keeps-one-timer ()
+  "A pass that already waits takes no second timer.
+The queue arms a normal timer, because a ripe idle timer stops Emacs
+from reading subprocess output."
+  (let* ((original (symbol-function 'run-at-time))
+         (timers 0)
+         (tired--queue-timer nil))
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest args)
                  (setq timers (1+ timers))
-                 (run-at-time 60 nil #'ignore))))
+                 (apply original args))))
       (unwind-protect
           (progn
             (tired--queue-schedule)

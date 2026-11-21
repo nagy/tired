@@ -264,14 +264,14 @@ suffix, because the loader must stay a test-only list.
 `test/tired-test-helper.el` holds the macros.  Read their docstrings
 before you write a test.
 
-- Batch Emacs runs no idle timer and no reprint timer.
+- Batch Emacs runs no queue timer and no reprint timer.
   `tired-test--with-fixture` binds a private element cache and an empty
   idle queue, stubs the two schedulers, binds
   `tired-delete-delay` to nil and binds `tired-expand-all-if-fits` to
   nil, because the fixture tree fits a window.  A test of the expansion
   binds the option to t.  `tired-test--flush-sizes` and
   `tired-test--flush-elements` both run the queue and then the reprint.
-  A test that needs the real scheduler stubs `run-with-idle-timer`.
+  A test that needs the real scheduler stubs `run-at-time`.
 - Batch Emacs runs no `window-buffer-change-functions` entry during
   redisplay, so a test of the deferred expansion calls
   `tired--window-buffer-changed` and then `tired--expand-all-timer`

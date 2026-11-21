@@ -97,8 +97,10 @@
 ;;   kind and key.  A pass takes the queue down, runs one step of every
 ;;   job, and starts another round over the unfinished jobs until the
 ;;   budget or pending input stops it.  A pass that leaves work
-;;   schedules its own successor, because an idle timer fires once for
-;;   one transition into the idle state.
+;;   schedules its own successor through `tired--queue-delay'.  Never
+;;   chain an idle timer: a ripe idle timer stops the read loop before
+;;   the wait that reads subprocess output, so a walk would starve
+;;   every process of its output and sentinel.  See `docs/adr/0032'.
 ;; - Two tables answer a directory size: `tired--size-cache' and
 ;;   `tired--size-cache-permanent', which `tired-persistent-directories'
 ;;   fills.  `tired--directory-total' reads both and matches no rule,
@@ -1175,13 +1177,32 @@ per step."
   (when tired--queue-dirty
     (tired--queue-reprint-schedule)))
 
+(defconst tired--queue-delay 0.02
+  "Seconds between two idle queue passes.
+A normal timer chain reads subprocess output between two passes.
+An always-ripe idle timer chain does not: Emacs skips the wait that
+reads that output, so no process shows output and no sentinel runs
+until every queued job finishes.  Measured on Emacs 31.1, a child
+that writes after one second reaches its filter at once with this
+chain and after five seconds with an idle chain.")
+
 (defun tired--queue-schedule ()
-  "Arrange one more pass at the next idle period.
-An idle timer fires once for one transition into the idle state, so
-each pass schedules its own successor."
+  "Arrange one more pass at `tired--queue-delay'.
+The timer is a normal timer, because a ripe idle timer starves every
+subprocess of its output."
   (unless (timerp tired--queue-timer)
     (setq tired--queue-timer
-          (run-with-idle-timer 0 nil #'tired--queue-run))))
+          (run-at-time tired--queue-delay nil #'tired--queue-wake))))
+
+(defun tired--queue-wake ()
+  "Run one idle queue pass unless input waits.
+A normal timer fires while Emacs reads a command too, so the gate
+sends the pass back to `tired--queue-schedule' when a key waits."
+  (setq tired--queue-timer nil)
+  (cond
+   ((null tired--queue-jobs) nil)
+   ((input-pending-p) (tired--queue-schedule))
+   (t (tired--queue-run))))
 
 (defun tired--queue-reprint-schedule ()
   "Arrange one reprint for every buffer that waits for a job."
@@ -2433,7 +2454,7 @@ display queues the rows that the window holds.")
 (defvar-local tired--size-deferred nil
   "Non-nil when a redraw left a directory size unqueued.
 `tired--size-queue' sets it while no window shows the listing, and
-a display, an idle timer or the next redraw reads it.")
+a display, a queue pass or the next redraw reads it.")
 
 (defvar-local tired--size-forced nil
   "Time of the refresh that wants every shown total recomputed.

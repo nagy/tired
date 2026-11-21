@@ -2110,6 +2110,41 @@ hidden."
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root)))))))
 
+(ert-deftest tired--queue-schedule-arms-no-idle-timer ()
+  "The queue arms a normal timer, never an idle one.
+A ripe idle timer stops the read loop before the wait that reads
+subprocess output, so a walk would starve every process."
+  (let ((tired--queue-timer nil))
+    (cl-letf (((symbol-function 'run-with-idle-timer)
+               (lambda (&rest _) (error "Idle timer armed")))
+              ((symbol-function 'run-at-time)
+               (lambda (&rest _) (timer-create))))
+      (tired--queue-schedule)
+      (should (timerp tired--queue-timer)))))
+
+(ert-deftest tired--queue-wake-yields-to-a-waiting-key ()
+  "A wake with a key waiting takes no step and arms another pass."
+  (let* ((steps 0)
+         (scheduled 0)
+         (tired--queue-timer nil)
+         (tired--queue-jobs
+          (list (tired--job-create
+                 :step (lambda (_job) (setq steps (1+ steps)) :done)
+                 :budget nil)))
+         (tired--queue-index (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'input-pending-p) (lambda () t))
+              ((symbol-function 'tired--queue-schedule)
+               (lambda () (setq scheduled (1+ scheduled)))))
+      (tired--queue-wake)
+      (should (= 0 steps))
+      (should (= 1 scheduled))
+      (should tired--queue-jobs))
+    (cl-letf (((symbol-function 'input-pending-p) (lambda () nil))
+              ((symbol-function 'tired--queue-schedule) #'ignore))
+      (tired--queue-wake)
+      (should (= 1 steps))
+      (should-not tired--queue-jobs))))
+
 (ert-deftest tired-refresh-drops-a-running-size-walk ()
   "A refresh drops the walk that a stale directory started."
   (tired-test--with-fixture
