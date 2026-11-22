@@ -390,6 +390,8 @@
 ;; dependency on that file.
 (defvar tired-python-section-depth)
 
+;;; Options
+
 (defgroup tired nil
   "Tabulated list directory editor."
   :group 'files
@@ -850,6 +852,8 @@ way it colors a date in an Org file.")
 The face inherits `default', so a theme colors a size through this
 face alone and Tired names no outside package.")
 
+;;; Entry and section structs
+
 (cl-defstruct (tired-entry (:constructor tired--entry-create))
   "One entry of a directory listing.
 NAME is the file name without its directory.  PATH is the absolute
@@ -897,6 +901,8 @@ prints, or nil for an empty cell."
 
 (defvar-local tired--directory nil
   "Absolute name of the directory shown in the current buffer.")
+
+;;; Buffer state
 
 (defvar-local tired--tables nil
   "Hash table mapping absolute directory names to entry tables.")
@@ -1056,6 +1062,8 @@ collapsed row of a small tree.")
 `tired-name-edit-mode' sets it, and `tired-edit-names' turns that
 mode on.  A reprint then erases what the user typed, so
 `tired--redraw' draws nothing while the value holds.")
+
+;;; Elements hooks
 
 (defvar tired--elements-value-function nil
   "Function that returns the element count of a row, or nil.
@@ -1302,6 +1310,8 @@ next redraw."
                    (derived-mode-p 'tired-mode)))
         (with-current-buffer buffer
           (tired--redraw))))))
+
+;;; Entries, tables and sorting
 
 (defun tired--read-entries (directory)
   "Return a hash table of entries for DIRECTORY.
@@ -2050,6 +2060,8 @@ so two sections of one file stay distinct."
       (tired--section-cell row)
     (tired--name-cell row)))
 
+;;; Rows and name faces
+
 (defun tired--display-rows (&optional visible-only limit)
   "Return (ROW . DEPTH) conses for the whole listing.
 ROW is a `tired-entry' or a `tired-section'.  Children of inserted
@@ -2498,6 +2510,8 @@ leaves the rest of the row alone."
               (add-text-properties (car name) (cdr name)
                                    (list 'mouse-face 'highlight)))))
         (forward-line 1)))))
+
+;;; Sizes and the size walk
 
 (defvar tired--size-cache (make-hash-table :test #'equal)
   "Global memo table for the directory size walks.
@@ -3122,6 +3136,8 @@ nothing until the idle queue fills it."
   (let ((count (tired--elements-show row)))
     (if (integerp count) (number-to-string count) "")))
 
+;;; Columns, header and mode line
+
 (defun tired--mode-expected (entry)
   "Return the permission bits that the type of ENTRY expects.
 A regular file expects 644, a directory 755 and a symbolic link
@@ -3417,6 +3433,8 @@ inside an active region reaches the mode line without a redraw."
   (unless (equal (tired--region-signature) tired--mode-line-region)
     (tired--update-mode-line)))
 
+;;; Point and path answers
+
 (defun tired--row-at-point ()
   "Return the row at point, or nil when there is none.
 The row is a `tired-entry' or a `tired-section'."
@@ -3631,6 +3649,8 @@ optional.  The command runs interactively, so its own prompt still
 reaches the user."
   (interactive "C")
   (tired-with-directory-at-point (lambda () (call-interactively command))))
+
+;;; Selection and deletion flags
 
 (defun tired--selected-p (entry)
   "Return non-nil when ENTRY is part of the transient selection."
@@ -3994,6 +4014,8 @@ selection."
             (tired--clear-flags)
             (tired-delete-flagged paths))))))))
 
+;;; Point restore
+
 (defun tired--goto-path (path)
   "Move point to the line showing PATH.
 Return non-nil when the listing contains PATH.  Leave point at the
@@ -4042,6 +4064,8 @@ Keep the region active, or inactive, as it was before the redraw."
     (save-excursion
       (when (tired--goto-row row)
         (set-marker (mark-marker) (point) (current-buffer))))))
+
+;;; Watches and auto-revert
 
 (defun tired--chain-paths ()
   "Return the skipped directories of every cached collapse.
@@ -4185,6 +4209,8 @@ listing refreshes once."
   (tired--sync-watches)
   (tired--update-mode-line)
   (message "Auto-revert %s" (if (tired--auto-revert-enabled-p) "on" "off")))
+
+;;; Redraw, refresh and motion
 
 (defun tired--point-row (window)
   "Return the row at the point of WINDOW.
@@ -5058,6 +5084,8 @@ one section alone."
         (tired--toggle-fold row)
       (tired--apply-to-rows #'tired--toggle-tree))))
 
+;;; Commands
+
 (defun tired-bookmark-make-record ()
   "Return a bookmark record for the current Tired buffer."
   (list (abbreviate-file-name tired--directory)
@@ -5769,6 +5797,8 @@ into `context-menu-functions' locally."
 (declare-function tired-export-csv "tired-export" ())
 (declare-function tired-export-json "tired-export" ())
 (declare-function tired-export-text "tired-export" ())
+
+;;; Mode, key map and menu
 
 (defvar-keymap tired-mode-map
   :doc "Local keymap for `tired-mode' buffers."
