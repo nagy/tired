@@ -908,7 +908,8 @@ runs.  The table holds one row per file that a walk reached, for the
 session, so set the value to =nil= on a small machine.
 
 M-x tired-refresh re-reads a listing, and M-x tired-clear-caches
-empties every cache, the windowed ones and the permanent ones.
+empties every cache, the windowed ones, the permanent ones and the
+parsed sections of every Tired buffer.
 A refresh first compares the modification time and the size of every
 directory that the listing reads, of every level of a single-child
 chain and of every expanded file.  A directory stamp moves only when
@@ -1248,7 +1249,9 @@ Set =tired-python-section-depth= to a nesting level to shorten the
 Python outline.  A top-level class or def sits at level zero.  A
 member of a class, or a def inside a def, sits at level one, and a def
 inside a method sits at level two.  A cap drops every definition below
-it, so =0= shows the top level alone and =nil= shows every level.
+it, so =0= shows the top level alone and =nil= shows every level.  The
+section cache names the option, so a new value re-parses an expanded
+file at the next redraw, whatever its modification time holds.
 
 The Cargo handler reads only the manifest it parses.  Its table rows
 count their entries.  A dependency row holds
@@ -1281,6 +1284,14 @@ plists:
 
   (add-to-list 'tired-file-handlers '("\\.txt\\'" . my-outline-sections))
 #+end_src
+
+The parsed sections of an expanded file stay in the buffer, and the
+next read parses again only when the modification time of the file,
+the handler or an option that handler reads changed.  A new handler
+rule therefore reaches the next redraw of an unchanged file.  A
+handler of another package that reads an option of its own calls =M-x
+tired-clear-caches=, which empties the section cache of every Tired
+buffer.
 
 The optional keys =:column=, =:action= and =:count= also work.  An
 =:action= is a function, or a cons of a function and extra arguments,

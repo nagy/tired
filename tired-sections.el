@@ -576,9 +576,9 @@ when the Markdown grammar is missing."
 A top-level class or def sits at level zero.  A member of a class,
 or a def inside a def, sits at level one, and a def inside a method
 sits at level two.  Nil emits every level.  A cap drops a deeper
-subtree whole, so a def below the cap never appears.  The handler
-caches its sections with the file, so a new value shows on the next
-redraw."
+subtree whole, so a def below the cap never appears.  The section
+cache names this option, so a new value re-parses an unchanged file
+on the next redraw."
   :type '(choice (const :tag "Every level" nil) integer)
   :group 'tired)
 

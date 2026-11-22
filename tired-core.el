@@ -198,7 +198,13 @@
 ;; - `tired-file-sections' picks a handler through `tired-file-handlers',
 ;;   runs it in a temporary buffer with VISIT set, so the buffer carries a
 ;;   file name and no modified flag, and turns the plists into
-;;   `tired-section' structs.  The result caches by modification time.  A
+;;   `tired-section' structs.  The result caches under a key of the
+;;   modification time, the handler and the options that handler reads,
+;;   so a replaced handler or a new `tired-python-section-depth' reaches
+;;   an unchanged file, and the handler compares by identity because
+;;   `equal' compares two closures by their code.  A handler of another
+;;   package reaches the same effect through `tired-clear-caches', which
+;;   empties the table of every Tired buffer.  A
 ;;   section row takes its count from the `count' slot and never through
 ;;   `tired-elements-functions', because a dissector reads the file again.
 ;; - A section that names a parent line takes its depth and its fold from
@@ -343,6 +349,11 @@
 (declare-function tired-jump "tired" (&optional other-window))
 (declare-function tired-magit-status "tired" nil)
 (declare-function tired-other-window "tired" (directory))
+
+;; `tired-sections' reads this option when it parses a Python file, and
+;; the section cache names it, so the core reads it without a load-time
+;; dependency on that file.
+(defvar tired-python-section-depth)
 
 (defgroup tired nil
   "Tabulated list directory editor."
@@ -1801,12 +1812,33 @@ ITEM is a plist with `:label' and `:line', plus the optional keys
    :action (plist-get item :action)
    :count (plist-get item :count)))
 
+(defun tired--section-cache-key (handler time)
+  "Return the key that `tired--sections' stores with the sections.
+TIME is the modification time of the file and HANDLER is the function
+that parses it.  The key holds the options that the built-in handler
+reads, because a new value must reach a file that did not change.  A
+handler of another package names no option here, so it reaches the
+same effect through `tired-clear-caches'."
+  (list time handler
+        (and (eq handler 'tired-file-sections-python)
+             tired-python-section-depth)))
+
+(defun tired--section-cache-p (cached key)
+  "Return non-nil when CACHED holds the sections that KEY describes.
+The handler compares by identity alone, because `equal' compares two
+closures by their code and environment, and a closure that a new rule
+installs can read exactly like the closure before it."
+  (declare (side-effect-free t))
+  (and (equal (car cached) (car key))
+       (eq (cadr cached) (cadr key))
+       (equal (nth 2 cached) (nth 2 key))))
+
 (defun tired-file-sections (path &optional force)
   "Return the sections of PATH as a list of `tired-section' structs.
-Parse the file when FORCE is non-nil or when its modification time
-changed.  Return nil when no handler matches, when the file is gone,
-when the file exceeds `tired-section-file-size-limit' or when the
-handler found nothing."
+Parse the file when FORCE is non-nil or when its modification time,
+its handler or an option that handler reads changed.  Return nil when
+no handler matches, when the file is gone, when the file exceeds
+`tired-section-file-size-limit' or when the handler found nothing."
   (let* ((handler (tired-file-handler path))
          (attributes (and handler (file-attributes path)))
          (time (and attributes
@@ -1814,18 +1846,22 @@ handler found nothing."
          (size (and attributes (file-attribute-size attributes)))
          (too-big (and size tired-section-file-size-limit
                        (> size tired-section-file-size-limit)))
-         (cached (and (hash-table-p tired--sections)
+         (key (and time (tired--section-cache-key handler time)))
+         (cached (and key
+                      (hash-table-p tired--sections)
                       (gethash path tired--sections)))
          (sections
           (cond
            ((or (null attributes) too-big) nil)
-           ((and (not force) cached (equal (car cached) time)) (cdr cached))
+           ((and (not force) cached
+                 (tired--section-cache-p (car cached) key))
+            (cdr cached))
            (t (mapcar (lambda (item) (tired--section-plist item path))
                       (tired--call-handler handler path))))))
     (when (and attributes
                (not too-big)
                (hash-table-p tired--sections))
-      (puthash path (cons time sections) tired--sections))
+      (puthash path (cons key sections) tired--sections))
     sections))
 
 (defun tired--expanded-p (path)

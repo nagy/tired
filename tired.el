@@ -311,17 +311,31 @@ the window, so a jump lands on that row and not near an edge."
 
 ;;;###autoload
 (defun tired-clear-caches ()
-  "Drop every cached directory size, file size and element count.
+  "Drop every cached directory size, file size, element count and section.
 Both the windowed caches and the permanent caches of
 `tired-persistent-directories' empty, and so does the session table of
 `tired-persistent-files', so a path that a wrong rule kept reads
 again.  Every Tired buffer redraws and queues the counts that it
-shows.  The command has no key and no menu entry, so `M-x' alone
+shows.  The parsed sections of every Tired buffer empty too, so a
+path that a new handler or a new handler option reaches parses again.
+A shown listing reprints its rows, and a hidden buffer parses on its
+next redraw.  The command has no key and no menu entry, so `M-x' alone
 reaches it."
   (interactive)
   (tired--size-cache-clear)
   (tired--queue-drop-where #'tired--size-walk-job-p)
-  (tired-elements-clear-cache))
+  (tired-elements-clear-cache)
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (and (derived-mode-p 'tired-mode)
+                 (hash-table-p tired--sections))
+        (setq tired--sections (make-hash-table :test #'equal))
+        ;; A shown listing reprints its rows, so the new parse reaches
+        ;; the screen.  A hidden buffer empties its table alone and
+        ;; parses when a redraw reads it.
+        (when (get-buffer-window buffer t)
+          (setq tired--listing-stamps nil)
+          (tired-refresh))))))
 
 ;;; Evil integration
 

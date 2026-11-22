@@ -874,6 +874,84 @@ mirrors each face into `font-lock-face'."
         (should (equal (tired-section-label (car (tired-file-sections path)))
                        "alpha"))))))
 
+(ert-deftest tired-section-cache-follows-the-handler ()
+  "A new handler re-parses a file whose modification time did not change."
+  (tired-test--with-fixture
+    (tired-test--write "alpha.txt" "abc")
+    (let* ((path (expand-file-name "alpha.txt" root))
+           (tired-file-handlers
+            (list (cons "\\.txt\\'"
+                        (lambda (_path) '((:label "first" :line 1)))))))
+      (tired root)
+      (should (equal (mapcar #'tired-section-label (tired-file-sections path))
+                     '("first")))
+      (let ((tired-file-handlers
+             (list (cons "\\.txt\\'"
+                         (lambda (_path) '((:label "second" :line 1)))))))
+        (should (equal (mapcar #'tired-section-label (tired-file-sections path))
+                       '("second")))))))
+
+(ert-deftest tired-section-cache-follows-the-python-depth ()
+  "A new depth cap reaches a Python file that did not change."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
+  (tired-test--with-fixture
+    (tired-test--write "demo.py"
+                        "class Config:\n    def prop(self):\n        pass\n")
+    (let ((path (expand-file-name "demo.py" root))
+          (tired-python-section-depth nil))
+      (tired root)
+      (let ((labels (lambda ()
+                      (mapcar (lambda (section)
+                                (substring-no-properties
+                                 (tired-section-label section)))
+                              (tired-file-sections path)))))
+        (should (equal (funcall labels) '("class Config" "def prop")))
+        (setq tired-python-section-depth 0)
+        (should (equal (funcall labels) '("class Config")))
+        (setq tired-python-section-depth nil)
+        (should (equal (funcall labels) '("class Config" "def prop")))))))
+
+(ert-deftest tired-python-depth-reaches-a-redraw ()
+  "A depth change drops the nested rows of a printed listing.
+The redraw passes no force, so the cache key alone decides."
+  (skip-unless (and (require 'treesit nil t) (treesit-ready-p 'python t)))
+  (tired-test--with-fixture
+    (tired-test--write "demo.py"
+                        "class Config:\n    def prop(self):\n        pass\n")
+    (let ((tired-python-section-depth nil))
+      (tired root)
+      (tired-test--goto "demo.py")
+      (tired-toggle-subdir)
+      (should (equal (mapcar #'car (tired-test--sections))
+                     '("class Config" "def prop")))
+      (setq tired-python-section-depth 0)
+      (tired--redraw)
+      (should (equal (mapcar #'car (tired-test--sections))
+                     '("class Config")))
+      (setq tired-python-section-depth nil)
+      (tired--redraw)
+      (should (equal (mapcar #'car (tired-test--sections))
+                     '("class Config" "def prop"))))))
+
+(ert-deftest tired-clear-caches-drops-the-section-cache ()
+  "Clear caches empties the parsed sections of a live listing."
+  (tired-test--with-fixture
+    (tired-test--write "alpha.txt" "abc")
+    (let ((calls 0)
+          (path (expand-file-name "alpha.txt" root)))
+      (let ((tired-file-handlers
+             (list (cons "\\.txt\\'"
+                         (lambda (_path)
+                           (cl-incf calls)
+                           '((:label "alpha" :line 1)))))))
+        (tired root)
+        (tired-file-sections path)
+        (tired-file-sections path)
+        (should (= 1 calls))
+        (tired-clear-caches)
+        (tired-file-sections path)
+        (should (= 2 calls))))))
+
 (ert-deftest tired-broken-handler-keeps-the-listing ()
   "A handler that signals an error yields no sections and no crash."
   (tired-test--with-fixture
