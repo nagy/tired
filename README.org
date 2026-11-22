@@ -1145,7 +1145,8 @@ get a file notification watch.  Events coalesce for
 `tired-auto-revert-delay' seconds, so a build writing many files
 causes one refresh.  A new sibling in a skipped level breaks its
 chain, so that watch matters.  Emacs lock files do not trigger a
-refresh, and an open minibuffer postpones the refresh.  =A= toggles
+refresh, and an open minibuffer postpones the refresh, which runs as
+soon as the prompt closes.  =A= toggles
 the feature for the current buffer.
 
 A move or a removal that takes the shown directory away empties the

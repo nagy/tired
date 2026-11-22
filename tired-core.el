@@ -87,7 +87,14 @@
 ;; - `tired--sync-watches' compares one hash set of wanted paths with
 ;;   one table of live watches, so the pass stays linear: a collapsed
 ;;   listing watches thousands of directories.  `tired--watches' stays
-;;   nil while no watch exists.
+;;   nil while no watch exists.  The callback of every watch calls
+;;   `tired--file-changed', so the lockfile filter reaches the real
+;;   notification path and not a unit test alone.
+;; - `tired--auto-revert-now' refreshes the buffer that the timer names.
+;;   A prompt puts the refresh back through `tired--revert-retry-delay'
+;;   instead of dropping the event, because no later notification may
+;;   arrive.  The retry keeps one pending timer, because only the timer
+;;   schedules its successor.
 ;; - `tired-filter' reads the minibuffer and schedules a redraw through
 ;;   `tired-filter-delay'.  The buffer-local `pre-command-hook' entry
 ;;   clears a kept filter before a quit command runs, and it reads
@@ -962,6 +969,9 @@ never joins `tired--selection', because the countdown owns it.")
 
 (defconst tired--delete-retry-delay 0.2
   "Seconds that a countdown waits for an active minibuffer prompt.")
+
+(defconst tired--revert-retry-delay 0.5
+  "Seconds that a file change waits for an active minibuffer prompt.")
 
 (defvar-local tired--collapse-cache nil
   "Hash table mapping a directory to its `tired--chain' result.
@@ -4061,10 +4071,10 @@ a listing that collapses thousands of chains into a linear pass."
                  (unless (and (hash-table-p watches)
                               (gethash directory watches))
                    (let* ((callback
-                           (lambda (_event)
+                           (lambda (event)
                              (when (buffer-live-p buffer)
                                (with-current-buffer buffer
-                                 (tired--schedule-revert)))))
+                                 (tired--file-changed event)))))
                           (descriptor
                            (ignore-errors
                              (file-notify-add-watch directory '(change)
@@ -4087,18 +4097,25 @@ a listing that collapses thousands of chains into a linear pass."
 
 (defun tired--auto-revert-now (buffer)
   "Refresh BUFFER after a file change.
-Skip the refresh while a minibuffer is active, so an open completion
-or filter prompt keeps its input."
+A prompt owns the echo area, so a change that matures under one waits
+for `tired--revert-retry-delay' and tries again, and no event drops.
+The retry keeps one pending timer, so an event never stacks a second."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq tired--revert-timer nil)
-      (when (and (tired--auto-revert-enabled-p)
-                 (not (active-minibuffer-window)))
-        (tired-refresh)))))
+      (when (tired--auto-revert-enabled-p)
+        (if (active-minibuffer-window)
+            (setq tired--revert-timer
+                  (run-at-time tired--revert-retry-delay nil
+                               #'tired--auto-revert-now buffer))
+          (tired-refresh))))))
 
 (defun tired--file-changed (event)
   "Handle file notification EVENT by scheduling a refresh.
-Ignore Emacs lock files and events without a file name.  One
+Ignore Emacs lock files, because a buffer that visits a file writes
+one beside it and no listing changes then.  An event without a file
+name still refreshes, because a watch that stopped reports a change
+that no name explains.  One
 directory notification can describe several entries, so the whole
 listing refreshes once."
   (let ((file (nth 2 event)))

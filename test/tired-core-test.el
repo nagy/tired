@@ -3823,21 +3823,64 @@ reaches the network."
         (cancel-timer timer)
         (setq tired--revert-timer nil)))))
 
-(ert-deftest tired-auto-revert-refreshes-once-and-skips-minibuffer ()
-  "The timer callback refreshes, except while a minibuffer is active."
+(ert-deftest tired-auto-revert-refreshes-once-and-retries-in-a-minibuffer ()
+  "The timer callback refreshes, and a prompt defers that refresh.
+The deferred event keeps one retry timer and refreshes once the
+prompt closes, so an event that matures in a minibuffer never drops."
   (tired-test--with-fixture
     (let ((tired-auto-revert t) (calls 0))
       (tired root)
-      (let ((buffer (current-buffer)))
-        (cl-letf (((symbol-function 'tired-refresh)
-                   (lambda () (cl-incf calls))))
-          (tired--auto-revert-now buffer)
-          (should (= 1 calls))
-          (setq calls 0)
-          (cl-letf (((symbol-function 'active-minibuffer-window)
-                     (lambda () t)))
-            (tired--auto-revert-now buffer))
-          (should (= 0 calls)))))))
+      (let ((buffer (current-buffer))
+            (timer (run-at-time 100 nil #'ignore))
+            (scheduled nil))
+        (unwind-protect
+            (cl-letf (((symbol-function 'tired-refresh)
+                       (lambda () (cl-incf calls)))
+                      ((symbol-function 'run-at-time)
+                       (lambda (delay _repeat function &rest arguments)
+                         (push (list delay function arguments) scheduled)
+                         timer)))
+              (tired--auto-revert-now buffer)
+              (should (= 1 calls))
+              (setq calls 0)
+              (cl-letf (((symbol-function 'active-minibuffer-window)
+                         (lambda () t)))
+                (tired--auto-revert-now buffer)
+                (should (= 0 calls)))
+              ;; The prompt defers the refresh and keeps one timer.
+              (should (equal scheduled
+                             (list (list tired--revert-retry-delay
+                                         #'tired--auto-revert-now
+                                         (list buffer)))))
+              (should (eq timer tired--revert-timer))
+              ;; The prompt closes, so the retry refreshes once.
+              (apply (nth 1 (car scheduled)) (nth 2 (car scheduled)))
+              (should (= 1 calls))
+              (should-not tired--revert-timer)
+              (should (= 1 (length scheduled))))
+          (when (timerp timer)
+            (cancel-timer timer)))))))
+
+(ert-deftest tired-watch-callback-runs-the-event-filter ()
+  "The registered callback drops a lockfile event and keeps a real one."
+  (tired-test--with-fixture
+    (let ((tired-auto-revert t) (callbacks nil) (scheduled 0))
+      (tired root)
+      (tired--stop-watching)
+      (cl-letf (((symbol-function 'file-notify-add-watch)
+                 (lambda (_directory _aspects function)
+                   (push function callbacks)
+                   'fake-descriptor))
+                ((symbol-function 'tired--schedule-revert)
+                 (lambda () (cl-incf scheduled))))
+        (tired--sync-watches)
+        (should callbacks)
+        (funcall (car callbacks) '(change created "/tmp/.#alpha.txt"))
+        (should (= 0 scheduled))
+        (funcall (car callbacks) '(change created "/tmp/alpha.txt"))
+        (should (= 1 scheduled))
+        (funcall (car callbacks) '(change changed "/tmp/beta.txt"))
+        (should (= 2 scheduled))))))
 
 (ert-deftest tired-file-change-ignores-lockfiles ()
   "Emacs lock file events do not schedule a refresh."
