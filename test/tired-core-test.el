@@ -1625,9 +1625,9 @@ the last digit of `4755' lines up with `755'."
                                              :type 'directory
                                              :dirp t))))
         (should-not (tired--queue-job
-                     'size (tired--size-key "/ssh:host:/tmp/sub")))
+                     'size (tired--path-key "/ssh:host:/tmp/sub")))
         (should (tired--queue-job
-                 'size (tired--size-key (expand-file-name "sub" root))))))))
+                 'size (tired--path-key (expand-file-name "sub" root))))))))
 
 (ert-deftest tired--size-excluded-p-matches-the-absolute-name ()
   "An exclude rule matches the absolute name with and without a slash.
@@ -1655,8 +1655,8 @@ sum, so a mounted directory costs nothing even from above."
       (should (equal "" (tired--size-cell (tired-test--entry "sub"))))
       (should-not (tired--directory-total (expand-file-name "sub" root)))
       (should-not (tired--queue-job
-                   'size (tired--size-key (expand-file-name "sub" root))))
-      (tired--size-enqueue (tired--size-key root) root)
+                   'size (tired--path-key (expand-file-name "sub" root))))
+      (tired--size-enqueue (tired--path-key root) root)
       (tired-test--flush-sizes)
       ;; alpha.txt, beta.txt and .hidden alone, because the walk of the
       ;; root pushes no frame for the excluded subtree.
@@ -1685,7 +1685,7 @@ No walk reads it, so the empty-directory mark cannot know its size."
                      (tired--size-cell (tired-test--entry "sub"))))
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root))))
-      (tired--size-enqueue (tired--size-key root) root)
+      (tired--size-enqueue (tired--path-key root) root)
       (tired-test--flush-sizes)
       (should (equal 53 (tired--directory-total root))))))
 
@@ -1718,14 +1718,14 @@ No walk reads it, so the empty-directory mark cannot know its size."
         (should (= 2 listed))
         (should (= 2 calls))))))
 
-(ert-deftest tired--size-key-needs-no-truename ()
+(ert-deftest tired--path-key-needs-no-truename ()
   "The size memo keys on the absolute name, not on a resolved link."
   (tired-test--with-fixture
     (let ((tired-directory-size t)
           (resolved 0))
-      (should (equal (directory-file-name root) (tired--size-key root)))
+      (should (equal (directory-file-name root) (tired--path-key root)))
       (should (equal (expand-file-name "sub" root)
-                     (tired--size-key (expand-file-name "sub/" root))))
+                     (tired--path-key (expand-file-name "sub/" root))))
       (tired root)
       (cl-letf (((symbol-function 'file-truename)
                  (lambda (&rest _) (setq resolved (1+ resolved)) 'never)))
@@ -1889,7 +1889,7 @@ still covers can hide a file that arrived after its walk."
           (original (symbol-function 'file-attributes)))
       (tired root)
       (let ((sub (expand-file-name "sub" root))
-            (key (tired--size-key (expand-file-name "sub" root))))
+            (key (tired--path-key (expand-file-name "sub" root))))
         (cl-letf (((symbol-function 'file-attributes)
                    (lambda (&rest args)
                      (setq attributes (1+ attributes))
@@ -1924,7 +1924,7 @@ still covers can hide a file that arrived after its walk."
           (original (symbol-function 'file-attributes)))
       (tired root)
       (let ((sub (expand-file-name "sub" root))
-            (key (tired--size-key (expand-file-name "sub" root))))
+            (key (tired--path-key (expand-file-name "sub" root))))
         (cl-letf (((symbol-function 'file-attributes)
                    (lambda (&rest args)
                      (setq attributes (1+ attributes))
@@ -1956,9 +1956,9 @@ still covers can hide a file that arrived after its walk."
   (tired-test--with-fixture
     (let ((tired-persistent-directories
            (list (concat "\\`" (regexp-quote root)))))
-      (tired--size-store (tired--size-key root) 7 (tired--size-walk-create))
-      (should (gethash (tired--size-key root) tired--size-cache-permanent))
-      (should-not (gethash (tired--size-key root) tired--size-cache))
+      (tired--size-store (tired--path-key root) 7 (tired--size-walk-create))
+      (should (gethash (tired--path-key root) tired--size-cache-permanent))
+      (should-not (gethash (tired--path-key root) tired--size-cache))
       (should (equal 7 (tired--directory-total root))))))
 
 (ert-deftest tired--size-cache-prune-keeps-a-persistent-total ()
@@ -1996,7 +1996,7 @@ holds outlives a refresh and a change inside the subtree."
            (list (concat "\\`" (regexp-quote root)))))
       (tired root)
       (tired-test--flush-sizes)
-      (should (gethash (tired--size-key (expand-file-name "sub" root))
+      (should (gethash (tired--path-key (expand-file-name "sub" root))
                        tired--size-cache-permanent))
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root))))
@@ -2053,7 +2053,7 @@ hidden."
         (tired root)
         (should-not (seq-some #'tired--size-walk-job-p tired--queue-jobs))
         (should-not (tired--queue-job
-                     'size (tired--size-key (expand-file-name "sub" root))))
+                     'size (tired--path-key (expand-file-name "sub" root))))
         (should tired--size-deferred)
         (should-not (timerp tired--size-timer))
         (should (equal "" (tired--size-cell (tired-test--entry "sub"))))))))
@@ -2062,7 +2062,7 @@ hidden."
   "A listing that no window shows still reads a young total from the table."
   (tired-test--with-fixture
     (tired-test--with-deferred-sizes
-      (puthash (tired--size-key root) (cons 42 (float-time)) tired--size-cache)
+      (puthash (tired--path-key root) (cons 42 (float-time)) tired--size-cache)
       (should (equal 42 (tired--directory-total root))))))
 
 (ert-deftest tired--directory-total-reads-the-table-alone ()
@@ -2072,7 +2072,7 @@ hidden."
           (reads 0)
           (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
-      (let ((key (tired--size-key (expand-file-name "sub" root))))
+      (let ((key (tired--path-key (expand-file-name "sub" root))))
         (remhash key tired--size-cache))
       (cl-letf (((symbol-function 'directory-files-and-attributes)
                  (lambda (&rest args)
@@ -2087,7 +2087,7 @@ hidden."
     (let ((tired-directory-size t)
           (tired-directory-size-budget 0))
       (tired root)
-      (let ((key (tired--size-key (expand-file-name "sub" root))))
+      (let ((key (tired--path-key (expand-file-name "sub" root))))
         (should (tired--queue-job 'size key))
         (tired--queue-run)
         (should (tired--queue-job 'size key))
@@ -2106,7 +2106,7 @@ and the listing still receives its total and its repaint."
     (let ((tired-directory-size t)
           (tired-directory-size-budget nil))
       (let* ((buffer-b (tired root))
-             (key (tired--size-key (expand-file-name "sub" root)))
+             (key (tired--path-key (expand-file-name "sub" root)))
              (buffer-a (tired (expand-file-name "sub" root))))
         (should (tired--queue-job 'size key))
         (should (memq buffer-b
@@ -2133,7 +2133,7 @@ owners of the walk that it replaced, so no listing loses the total."
           (tired-directory-size-budget nil))
       (let* ((buffer-a (tired root))
              (buffer-b (get-buffer-create " *tired-test-owner*"))
-             (key (tired--size-key (expand-file-name "sub" root))))
+             (key (tired--path-key (expand-file-name "sub" root))))
         (unwind-protect
             (progn
               (should (tired--queue-job 'size key))
@@ -2157,7 +2157,7 @@ owners of the walk that it replaced, so no listing loses the total."
           (tired-directory-size-budget nil))
       (let* ((buffer-a (tired root))
              (buffer-b (get-buffer-create " *tired-test-owner*"))
-             (key (tired--size-key (expand-file-name "sub" root))))
+             (key (tired--path-key (expand-file-name "sub" root))))
         (unwind-protect
             (progn
               (tired--queue-adopt (tired--queue-job 'size key) buffer-b)
@@ -2179,7 +2179,7 @@ owners of the walk that it replaced, so no listing loses the total."
           (original (symbol-function 'directory-files-and-attributes)))
       (tired root)
       (let ((job (tired--queue-job
-                  'size (tired--size-key (expand-file-name "sub" root)))))
+                  'size (tired--path-key (expand-file-name "sub" root)))))
         (should job)
         (cl-letf (((symbol-function 'directory-files-and-attributes)
                    (lambda (&rest args)
@@ -2208,7 +2208,7 @@ owners of the walk that it replaced, so no listing loses the total."
           (original (symbol-function 'file-attributes)))
       (tired root)
       (let ((job (tired--queue-job
-                  'size (tired--size-key (expand-file-name "sub" root)))))
+                  'size (tired--path-key (expand-file-name "sub" root)))))
         (should job)
         (cl-letf (((symbol-function 'directory-files-and-attributes)
                    (lambda (&rest args)
@@ -2320,7 +2320,7 @@ step costs 0.1 seconds and a test of a budget needs no sleep."
   "Pending input stops a pass, so a walk never holds a keystroke."
   (tired-test--with-fixture
     (let ((tired-directory-size t)
-          (key (tired--size-key (expand-file-name "sub" root))))
+          (key (tired--path-key (expand-file-name "sub" root))))
       (tired root)
       (cl-letf (((symbol-function 'input-pending-p) (lambda () t)))
         (tired--queue-run)
@@ -2387,7 +2387,7 @@ subprocess output, so a walk would starve every process."
   (tired-test--with-fixture
     (let ((tired-directory-size t))
       (tired root)
-      (let* ((key (tired--size-key (expand-file-name "sub" root)))
+      (let* ((key (tired--path-key (expand-file-name "sub" root)))
              (job (tired--queue-job 'size key)))
         (should job)
         (tired-refresh)
@@ -2415,7 +2415,7 @@ subprocess output, so a walk would starve every process."
           (tired-directory-size-budget 0))
       (tired root)
       (tired--queue-run)
-      (should-not (gethash (tired--size-key (expand-file-name "sub" root))
+      (should-not (gethash (tired--path-key (expand-file-name "sub" root))
                            tired--size-cache))
       (should (equal "" (tired--size-cell (tired-test--entry "sub")))))))
 

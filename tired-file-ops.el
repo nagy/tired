@@ -327,8 +327,8 @@ first failed path."
 (defun tired--path-under-p (path parent)
   "Return non-nil when PATH is PARENT or lies below it."
   (declare (side-effect-free t))
-  (let ((path (directory-file-name (expand-file-name path)))
-        (parent (directory-file-name (expand-file-name parent))))
+  (let ((path (tired--path-key path))
+        (parent (tired--path-key parent)))
     (or (equal path parent)
         (string-prefix-p (file-name-as-directory parent) path))))
 
@@ -1036,8 +1036,7 @@ reaches a source path that the parent rename left behind."
   (let ((sources (make-hash-table :test #'equal))
         (targets (make-hash-table :test #'equal)))
     (dolist (change changes)
-      (puthash (directory-file-name
-                (expand-file-name (tired-entry-path (car change))))
+      (puthash (tired--path-key (tired-entry-path (car change)))
                change sources))
     (dolist (change changes)
       (let* ((entry (car change))
@@ -1223,7 +1222,7 @@ asks no confirmation.  A later `tired-undo' removes the new directory
 and the parents that it created."
   (interactive
    (list (read-file-name "Create directory: " tired--directory nil nil)))
-  (let* ((path (directory-file-name (expand-file-name directory)))
+  (let* ((path (tired--path-key directory))
          (parent (file-name-directory path))
          (missing nil)
          (slots nil))

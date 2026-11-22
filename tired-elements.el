@@ -29,9 +29,11 @@
 ;;
 ;; - A cached count keys on the path, the modification time, the size and
 ;;   the hook value, and `tired-elements-cache-ttl' drops an entry that
-;;   no buffer read inside that window.  A cached nil count is a hit,
-;;   not a miss: an unreadable file and a file without a dissector both
-;;   store nil.
+;;   no buffer read inside that window.  The path reaches
+;;   `tired--path-key', the one identity that `tired-core' holds, so a
+;;   count and a size memo of one file meet under one key.  A cached nil
+;;   count is a hit, not a miss: an unreadable file and a file without a
+;;   dissector both store nil.
 ;; - A dissector returns nil, an integer or a job, and the library wraps
 ;;   a job in the `elements' kind of the shared queue, so one queue
 ;;   serves sizes and counts.  A dissector that hands its own job over
@@ -193,13 +195,6 @@ empties `tired--elements-cache-permanent' once.")
   "When non-nil, queue element counts with no window.
 Batch Emacs shows no window, so the test suite binds this to t.")
 
-(defun tired--elements-key (path)
-  "Return the `tired--elements-cache' key for PATH.
-Join the absolute name as plain text, so a name of `~' stays a name
-and needs no home directory lookup."
-  (declare (side-effect-free t))
-  (directory-file-name (expand-file-name path)))
-
 (defun tired--elements-stamp (entry)
   "Return the `(MTIME SIZE)' stamp of ENTRY, or nil.
 A remote path returns nil, because every read there costs one
@@ -248,7 +243,7 @@ after the print.  A section row never reaches this function, because
   (when (tired-entry-p row)
     (when-let* ((stamp (tired--elements-stamp row))
                 (hit (tired--elements-entry
-                      (tired--elements-key (tired-entry-path row))
+                      (tired--path-key (tired-entry-path row))
                       stamp)))
       (nth 3 hit))))
 
@@ -256,7 +251,7 @@ after the print.  A section row never reaches this function, because
   "Queue ROW for a count unless a fresh count or a job holds it.
 A second buffer that shows the same path joins the running job, so
 one read serves every listing."
-  (let ((path (tired--elements-key (tired-entry-path row)))
+  (let ((path (tired--path-key (tired-entry-path row)))
         (stamp (tired--elements-stamp row)))
     (when stamp
       (let ((job (tired--queue-job 'elements path)))

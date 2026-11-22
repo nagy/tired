@@ -29,6 +29,15 @@
 ;;
 ;; Design notes for a change in this file:
 ;;
+;; - `tired--path-key' is the one identity of a path.  Every table that
+;;   keys a path joins it: the entry tables, the inserted set, the
+;;   collapse cache, the expanded set, the size caches and the
+;;   Elements cache.  Two spellings of one file must reach one key, so
+;;   a caller never calls `directory-file-name' and `expand-file-name'
+;;   by hand.  The result is a key alone, so no caller turns it back
+;;   into a path that it renames to: `tired--name-target' stays out,
+;;   because `expand-file-name' reads a name of `~' as the home
+;;   directory.
 ;; - `tired--read-entries' builds one hash table per shown directory
 ;;   from `directory-files-and-attributes', so a file costs one stat.
 ;;   `tired--tables' holds the tables and `tired--inserted' the
@@ -135,7 +144,7 @@
 ;;   `tired--child-cache', so a directory count costs no second read.
 ;;   See `docs/adr/0018', `docs/adr/0019' and `docs/adr/0020'.
 ;; - The size walk reads the size memo alone and never blocks a redraw.
-;;   Key that memo with `tired--size-key', never with `file-truename'.
+;;   Key that memo with `tired--path-key', never with `file-truename'.
 ;;   Do not add a `post-gc-hook' clear: one walk triggers several
 ;;   collections.  The walk itself rides the idle queue, so it takes
 ;;   one step per name list, batch or frame.
@@ -1343,6 +1352,18 @@ A circular link counts as broken.  The user option
   (and tired-check-symlinks
        (not (ignore-errors (file-exists-p (file-truename path))))))
 
+(defun tired--path-key (path)
+  "Return the identity of PATH in the tables that key a path.
+Join the absolute name as plain text and drop the trailing slash of a
+directory, so one file reaches one key however its caller spelled the
+name.  Never call `file-truename': it costs one file round trip per
+path component, and a symbolic link keeps its own key.  The result is
+a table key alone, so no caller reads it back as a path that it may
+rename to: a name of `~' stays a name here, while
+`tired--name-target' deliberately leaves `expand-file-name' out."
+  (declare (side-effect-free t))
+  (directory-file-name (expand-file-name path)))
+
 (defun tired--in-narrow-p (entry)
   "Return non-nil when ENTRY is inside the narrow snapshot."
   (declare (side-effect-free t))
@@ -1420,7 +1441,7 @@ and a rule that ends in a string-end anchor covers one directory
 alone."
   (declare (pure t) (side-effect-free t))
   (when (and (stringp directory) regexps)
-    (let* ((name (directory-file-name (expand-file-name directory)))
+    (let* ((name (tired--path-key directory))
            (slashed (file-name-as-directory name)))
       (seq-some (lambda (regexp)
                   (or (string-match-p regexp name)
@@ -1604,7 +1625,7 @@ it lists after every row that has one, in both directions."
 (defun tired--table (directory)
   "Return the entry table for DIRECTORY, or nil."
   (declare (side-effect-free t))
-  (let ((directory (directory-file-name (expand-file-name directory))))
+  (let ((directory (tired--path-key directory)))
     (and (hash-table-p tired--tables)
          (gethash directory tired--tables))))
 
@@ -1612,7 +1633,7 @@ it lists after every row that has one, in both directions."
   "Return non-nil when the listing shows the children of DIRECTORY."
   (declare (side-effect-free t))
   (and (hash-table-p tired--inserted)
-       (gethash (directory-file-name (expand-file-name directory))
+       (gethash (tired--path-key directory)
                 tired--inserted)))
 
 (defun tired--directory-entry-p (entry)
@@ -1726,7 +1747,7 @@ an unreadable directory or at a cycle, and the entry that it reached
 becomes the leaf.  A visited-truename set stops cycles.  One
 attributes read per level records the stamp that a later refresh
 checks."
-  (let ((current (directory-file-name (expand-file-name directory)))
+  (let ((current (tired--path-key directory))
         (remote (if (file-remote-p directory) t 'local))
         (seen (make-hash-table :test #'equal))
         (visited nil)
@@ -1777,7 +1798,7 @@ directory to keep its stamp."
 Recompute a result that a changed directory invalidated, and keep the
 one that still matches, so a refresh costs one attributes read per
 walked level instead of a directory read."
-  (let* ((key (directory-file-name (expand-file-name directory)))
+  (let* ((key (tired--path-key directory))
          (cached (and (hash-table-p tired--collapse-cache)
                       (gethash key tired--collapse-cache))))
     (if (and cached (tired--chain-current-p cached))
@@ -1911,14 +1932,14 @@ no handler matches, when the file is gone, when the file exceeds
   "Return non-nil when the sections of PATH appear in the listing."
   (declare (side-effect-free t))
   (and (hash-table-p tired--expanded)
-       (gethash (expand-file-name path) tired--expanded)))
+       (gethash (tired--path-key path) tired--expanded)))
 
 (defun tired--set-expanded (path value)
   "Record VALUE as the expansion state of PATH."
   (when (hash-table-p tired--expanded)
     (if value
-        (puthash (expand-file-name path) t tired--expanded)
-      (remhash (expand-file-name path) tired--expanded))))
+        (puthash (tired--path-key path) t tired--expanded)
+      (remhash (tired--path-key path) tired--expanded))))
 
 (defun tired--section-key (section)
   "Return the identity of SECTION inside the listing.
@@ -2027,7 +2048,7 @@ so two sections of one file stay distinct."
     (cond
      ((tired-section-p row) (tired--section-key row))
      ((tired-entry-p row)
-      (directory-file-name (expand-file-name (tired-entry-path row)))))))
+      (tired--path-key (tired-entry-path row))))))
 
 (defun tired--row-name-cell (row)
   "Return the name cell for ROW, without indentation."
@@ -2581,15 +2602,6 @@ files, `:names' holds the child directories that it visits and
         :names nil
         :rules nil))
 
-(defun tired--size-key (directory)
-  "Return the `tired--size-cache' key for DIRECTORY.
-Normalise the name without a symbolic link resolution: the walk
-starts on one directory and never descends through a link, so the
-absolute name stays unique.  `file-truename' would cost one file
-round trip per path component."
-  (declare (side-effect-free t))
-  (directory-file-name (expand-file-name directory)))
-
 (defun tired--size-cache-valid-p (value)
   "Return non-nil when VALUE holds a total young enough to reuse."
   (declare (side-effect-free t))
@@ -2637,7 +2649,7 @@ buffer in a window."
 Return nil when no walk of DIRECTORY has landed yet, so the caller
 reads the directory itself."
   (declare (side-effect-free t))
-  (gethash (tired--size-key directory) tired--child-cache))
+  (gethash (tired--path-key directory) tired--child-cache))
 
 (defun tired--size-store (key total walk)
   "Store TOTAL for KEY under the start stamp of WALK.
@@ -2689,7 +2701,7 @@ that the file never changes stores the size that the walk just read."
   "Return FRAME ready to visit its children, with its count recorded.
 The count lands in `tired--child-cache', so the Elements column reads
 no directory of its own."
-  (puthash (tired--size-key (plist-get frame :directory))
+  (puthash (tired--path-key (plist-get frame :directory))
            (plist-get frame :count)
            tired--child-cache)
   (plist-put frame :phase 'visit))
@@ -2812,7 +2824,7 @@ at its root."
          (frame (car stack))
          (total (plist-get frame :total))
          (rest (cdr stack)))
-    (tired--size-store (tired--size-key (plist-get frame :directory))
+    (tired--size-store (tired--path-key (plist-get frame :directory))
                        total walk)
     (setf (tired--size-walk-stack walk) rest)
     (if (null rest)
@@ -2866,10 +2878,10 @@ costs one pass and no second walk inside the cache window."
   (declare (pure t) (side-effect-free t))
   (eq (tired--job-kind job) 'size))
 
-(defun tired--size-key-under-p (key directory)
+(defun tired--size-walk-under-p (key directory)
   "Return non-nil when KEY names DIRECTORY or a directory below it."
   (declare (side-effect-free t))
-  (let ((directory (tired--size-key directory)))
+  (let ((directory (tired--path-key directory)))
     (or (equal key directory)
         (string-prefix-p (file-name-as-directory directory) key))))
 
@@ -2884,7 +2896,7 @@ still waits for the total and the repaint that ends it."
   (when directory
     (dolist (job (copy-sequence tired--queue-jobs))
       (when (and (tired--size-walk-job-p job)
-                 (tired--size-key-under-p (tired--job-key job) directory))
+                 (tired--size-walk-under-p (tired--job-key job) directory))
         (let ((owners (delq (current-buffer) (tired--job-owners job))))
           (if owners
               (setf (tired--job-owners job) owners)
@@ -2938,7 +2950,7 @@ refresh never restarts itself."
 DIRECTORIES holds the keys that the redraw collected.  Stop at the
 shown directory, so no row above the listing counts as an ancestor."
   (declare (side-effect-free t))
-  (let ((ceiling (tired--size-key tired--directory))
+  (let ((ceiling (tired--path-key tired--directory))
         (parent (directory-file-name (file-name-directory key)))
         found)
     (while (and parent
@@ -2965,7 +2977,7 @@ queues, because a walk covers the subtree of its row."
           (when (and (tired-entry-p row)
                      (tired-entry-dirp row)
                      (not (tired--size-skip-p (tired-entry-path row) row)))
-            (puthash (tired--size-key (tired-entry-path row)) row
+            (puthash (tired--path-key (tired-entry-path row)) row
                      directories))))
       (maphash (lambda (key row)
                  (unless (tired--size-ancestor-p key directories)
@@ -2982,7 +2994,7 @@ walk for a directory without a young total.  A refresh also queues a
 walk of every directory that it shows, so a live total never hides a
 change that the refresh just read from the disk."
   (declare (side-effect-free t))
-  (let ((key (tired--size-key directory)))
+  (let ((key (tired--path-key directory)))
     (let ((hit (or (gethash key tired--size-cache-permanent)
                    (gethash key tired--size-cache))))
       (when (consp hit)
@@ -3993,7 +4005,7 @@ selection."
 Return non-nil when the listing contains PATH.  Leave point at the
 first line when PATH is absent."
   (when path
-    (let ((path (directory-file-name (expand-file-name path)))
+    (let ((path (tired--path-key path))
           (found nil))
       (goto-char (point-min))
       (while (and (not found) (not (eobp)))
@@ -4060,7 +4072,7 @@ list, and so does every directory that a collapsed chain skips,
 because a new sibling there breaks the collapse.  Every expanded
 file joins as well, because a directory watch does not report an
 edit to a file inside that directory."
-  (append (list (directory-file-name (expand-file-name tired--directory)))
+  (append (list (tired--path-key tired--directory))
           (and (hash-table-p tired--inserted)
                (hash-table-keys tired--inserted))
           (and (hash-table-p tired--expanded)
@@ -4347,7 +4359,7 @@ pinned window asked for."
   "Remove DIRECTORY and its inserted descendants from the listing.
 Drop the chain results below them as well, so a stale chain adds no
 watch."
-  (let* ((base (directory-file-name (expand-file-name directory)))
+  (let* ((base (tired--path-key directory))
          (prefix (file-name-as-directory base))
          doomed)
     (maphash (lambda (other _ignore)
@@ -4365,7 +4377,7 @@ watch."
   "Drop the chain results under DIRECTORY from the collapse cache."
   (when (hash-table-p tired--collapse-cache)
     (let ((prefix (file-name-as-directory
-                   (directory-file-name (expand-file-name directory))))
+                   (tired--path-key directory)))
           stale)
       (maphash (lambda (key _result)
                  (when (string-prefix-p prefix key)
@@ -4686,7 +4698,7 @@ Read the children and leave the redraw to the caller."
   (let ((directory (tired-entry-path entry)))
     (unless (file-directory-p directory)
       (user-error "Not a directory: %s" directory))
-    (setq directory (directory-file-name (expand-file-name directory)))
+    (setq directory (tired--path-key directory))
     (puthash directory t tired--inserted)
     (puthash directory (tired--read-entries directory) tired--tables)))
 
@@ -4738,16 +4750,16 @@ directory that the fill could not read."
     (condition-case nil
         (progn
           (tired--insert-directory entry)
-          (directory-file-name (expand-file-name directory)))
+          (tired--path-key directory))
       (error
-       (remhash (directory-file-name (expand-file-name directory))
+       (remhash (tired--path-key directory)
                 tired--inserted)
        nil))))
 
 (defun tired--trial-key (row)
   "Return the directory key that the fill inserts for ROW."
   (declare (side-effect-free t))
-  (directory-file-name (expand-file-name (tired-entry-path (car row)))))
+  (tired--path-key (tired-entry-path (car row))))
 
 (defun tired--uninsert-directory (key)
   "Take the rows of directory KEY out of the listing again.
@@ -4973,7 +4985,7 @@ an already inserted directory changes nothing."
       (progn
         (unless (file-directory-p directory)
           (user-error "Not a directory: %s" directory))
-        (setq directory (directory-file-name (expand-file-name directory)))
+        (setq directory (tired--path-key directory))
         (puthash directory t tired--inserted)
         (puthash directory (tired--read-entries directory) tired--tables)
         (tired--redraw-at-name))
@@ -5032,7 +5044,7 @@ to the caller."
   (let ((path (tired-entry-path entry)))
     (cond
      ((tired--directory-entry-p entry)
-      (let ((directory (directory-file-name (expand-file-name path))))
+      (let ((directory (tired--path-key path)))
         (if (tired--inserted-p directory)
             (tired--forget-inserted directory)
           (tired--insert-directory entry))))
@@ -5198,7 +5210,7 @@ Selected entries outside the visible listing drop out."
 
 (defun tired--narrow-ancestors (paths)
   "Return PATHS plus the directories needed to reach them."
-  (let ((root (directory-file-name (expand-file-name tired--directory)))
+  (let ((root (tired--path-key tired--directory))
         (result (copy-sequence paths)))
     (dolist (path paths)
       (let ((directory (file-name-directory path)))

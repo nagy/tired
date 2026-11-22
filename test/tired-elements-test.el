@@ -459,7 +459,7 @@ The header row counts, and a blank line stays out."
            (list (concat "\\`" (regexp-quote root)))))
       (tired root)
       (tired-test--flush-elements)
-      (let ((key (tired--elements-key (expand-file-name "a.json" root))))
+      (let ((key (tired--path-key (expand-file-name "a.json" root))))
         (should (gethash key tired--elements-cache-permanent))
         (should-not (gethash key tired--elements-cache))
         ;; Age the entry beyond the window, so the window alone would
