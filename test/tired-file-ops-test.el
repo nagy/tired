@@ -1609,6 +1609,19 @@ needs no `M-x' visit."
       (should (equal (car result) '("wc alpha.txt")))
       (should (= 1 (cdr result))))))
 
+(ert-deftest tired-do-shell-command-acts-on-a-collapsed-section ()
+  "A section of a collapsed chain runs the command on its file."
+  (tired-test--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (tired-test--write "chain/a/b/file.el" "(defun chain-foo (a) a)\n")
+    (tired root)
+    (tired-test--goto "chain/a/b/file.el")
+    (tired-expand-file)
+    (tired-test--goto-section "defun chain-foo")
+    (let ((result (tired-test--shell-run "wc")))
+      (should (equal (car result) '("wc chain/a/b/file.el")))
+      (should (= 1 (cdr result))))))
+
 (ert-deftest tired-do-shell-command-runs-a-star-mark-once ()
   "A `*' mark takes the whole selected file list and runs one command."
   (tired-test--with-fixture

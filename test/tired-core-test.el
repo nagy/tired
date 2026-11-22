@@ -1152,6 +1152,80 @@ The home directory of a path takes its abbreviation."
     (should-not tired--selection)
     (should-not (member "beta.txt" (tired-test--names)))))
 
+(ert-deftest tired-refresh-keeps-a-collapsed-selection ()
+  "A selected collapsed leaf survives a refresh.
+No table holds the levels of a collapsed chain, so the prune reads
+the displayed rows for a path that its parent table misses."
+  (tired-test--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/file.txt" root)
+      (insert "abc"))
+    (tired root)
+    (let ((leaf (expand-file-name "chain/a/b/file.txt" root)))
+      (should (member "chain/a/b/file.txt" (tired-test--names)))
+      (tired-test--goto "chain/a/b/file.txt")
+      (tired-select-toggle)
+      (should (equal tired--selection (list leaf)))
+      (with-temp-file (expand-file-name "later.txt" root)
+        (insert "new"))
+      (tired-refresh)
+      (should (equal tired--selection (list leaf)))
+      (should (member "chain/a/b/file.txt" (tired-test--names))))))
+
+(ert-deftest tired-refresh-prunes-a-deleted-collapsed-leaf ()
+  "A collapsed leaf that left the disk drops out of the selection."
+  (tired-test--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/file.txt" root)
+      (insert "abc"))
+    (tired root)
+    (tired-test--goto "chain/a/b/file.txt")
+    (tired-select-toggle)
+    (delete-file (expand-file-name "chain/a/b/file.txt" root))
+    (tired-refresh)
+    (should-not tired--selection)))
+
+(ert-deftest tired-refresh-keeps-a-filtered-out-selection ()
+  "A selection that the filter hides survives a refresh."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-test--goto "beta.txt")
+    (tired-select-toggle)
+    (setq tired--filter "alpha")
+    (with-temp-file (expand-file-name "later.txt" root)
+      (insert "new"))
+    (tired-refresh)
+    (should (equal tired--selection
+                   (list (expand-file-name "beta.txt" root))))))
+
+(ert-deftest tired-refresh-keeps-a-narrowed-selection ()
+  "A selection that the narrow snapshot shows survives a refresh."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-test--goto "alpha.txt")
+    (tired-select-toggle)
+    (tired-narrow-to-selection)
+    (with-temp-file (expand-file-name "later.txt" root)
+      (insert "new"))
+    (tired-refresh)
+    (should (equal tired--selection
+                   (list (expand-file-name "alpha.txt" root))))
+    (should (member "alpha.txt" (tired-test--names)))))
+
+(ert-deftest tired-copy-path-reads-a-section-of-a-collapsed-file ()
+  "A section of a collapsed chain names its file as a target."
+  (tired-test--with-fixture
+    (make-directory (expand-file-name "chain/a/b" root) t)
+    (with-temp-file (expand-file-name "chain/a/b/file.el" root)
+      (insert "(defun chain-foo (a) a)\n"))
+    (tired root)
+    (tired-test--goto "chain/a/b/file.el")
+    (tired-expand-file)
+    (tired-test--goto-section "defun chain-foo")
+    (tired-copy-path)
+    (should (equal (car kill-ring)
+                   (expand-file-name "chain/a/b/file.el" root)))))
+
 (ert-deftest tired-refresh-survives-a-vanished-directory ()
   "A shown directory that left the disk leaves an empty listing.
 An external move takes the whole directory away, and the

@@ -199,7 +199,9 @@ describe-keymap RET tired-mode-map RET=, to read every key with its
 command name and docstring.  =C-h k= explains one key.
 
 The selection is transient.  It belongs to the buffer and it is pruned
-when entries disappear.  A command that acts on files clears it
+when entries leave the disk.  A collapsed chain row keeps its
+selection, because the leaf stands for itself and no table of a
+level above it exists.  A command that acts on files clears it
 afterwards, and a view command keeps it.  =t= toggles every visible
 entry.  With an empty selection it selects them all, with a full
 selection it clears them, and with a partial selection it inverts the

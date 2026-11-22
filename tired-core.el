@@ -228,10 +228,12 @@
 ;; - A collapsed row takes the leaf of the chain, so
 ;;   `tired-entry-path' names the leaf, and the leaf can be a directory:
 ;;   `tired--display-rows' walks the children of `display' and not of
-;;   `entry'.  `tired--chain-paths' feeds the watch and
-;;   `tired--entry-for-path' reads a parent table by file name, so it
-;;   misses such a row.  Drop a chain result when its directory leaves the
-;;   tree, or the watch outlives the row.
+;;   `entry'.  `tired--chain-paths' feeds the watch, and
+;;   `tired--parent-entry-for-path' reads a parent table by file name, so
+;;   the leaf alone answers no such lookup: `tired--entry-for-path' falls
+;;   back to one read of the displayed rows, and `tired--prune-selection'
+;;   reads that table once for the whole list.  Drop a chain result when
+;;   its directory leaves the tree, or the watch outlives the row.
 ;; - A nil sort value lists last in both directions, and `tired--lessp'
 ;;   breaks a two-nil tie by name, or the rows would keep the hash order.
 ;;   The Elements header label with its arrow is ten characters wide, so
@@ -3611,12 +3613,15 @@ nothing when the region holds no entry."
         (tired--restart-delete-timer)
         (tired--update-mode-line)))))
 
-(defun tired--display-entry-table ()
+(defun tired--display-entry-table (&optional all-rows)
   "Return a hash table that maps each listed entry path to its entry.
 A collapsed row shows the leaf of a chain, so the table of its
-parent directory holds no such name."
+parent directory holds no such name.  ALL-ROWS reads the rows that
+`tired-hidden-regexps' and `tired-hide-dotfiles' show, including the
+ones that the filter and the narrow snapshot hide, because a row that
+those hide keeps its place in the listing model."
   (let ((table (make-hash-table :test #'equal)))
-    (dolist (row (tired--display-rows t) table)
+    (dolist (row (tired--display-rows (not all-rows)) table)
       (let ((entry (car row)))
         (when (tired-entry-p entry)
           (puthash (tired-entry-path entry) entry table))))))
@@ -3661,13 +3666,22 @@ a region over the headings of a file reaches that file alone."
           (forward-line 1)))
       (nreverse entries))))
 
-(defun tired--entry-for-path (path)
-  "Return the listed entry for PATH, or nil."
+(defun tired--parent-entry-for-path (path)
+  "Return the entry that the parent table of PATH holds, or nil."
   (declare (side-effect-free t))
   (let* ((directory (file-name-directory path))
          (table (tired--table directory))
          (entry (and table (gethash (file-name-nondirectory path) table))))
     (and entry (equal (tired-entry-path entry) path) entry)))
+
+(defun tired--entry-for-path (path)
+  "Return the listed entry for PATH, or nil.
+Read the table of the parent directory first, because it holds every
+entry of that directory whatever a filter or a narrow snapshot
+shows.  A collapsed chain row shows a leaf whose levels no table
+holds, so a miss reads the displayed rows."
+  (or (tired--parent-entry-for-path path)
+      (gethash path (tired--display-entry-table))))
 
 (defun tired--set-selection (paths)
   "Set the transient selection to PATHS and rebuild its lookup table.
@@ -3685,9 +3699,23 @@ A flagged path stays out, because a delayed `tired-delete' owns it."
     (puthash path t tired--narrowed-set)))
 
 (defun tired--prune-selection (selection)
-  "Return SELECTION without paths that are no longer listed."
-  (declare (side-effect-free t))
-  (seq-filter #'tired--entry-for-path selection))
+  "Return SELECTION without paths that no longer exist in the listing.
+A path that its parent table holds stays, whatever a filter or a
+narrow snapshot shows.  A collapsed chain leaf has no parent table,
+so one read of the displayed rows answers every such path of the
+list.  A path that left the disk drops, because no row shows it."
+  (if (null selection)
+      nil
+    (let* ((kept (seq-filter #'tired--parent-entry-for-path selection))
+           (held (make-hash-table :test #'equal)))
+      (dolist (path kept)
+        (puthash path t held))
+      (if (= (length kept) (length selection))
+          kept
+        (let ((table (tired--display-entry-table t)))
+          (seq-filter (lambda (path)
+                        (or (gethash path held) (gethash path table)))
+                      selection))))))
 
 (defun tired--apply-selection-overlays ()
   "Highlight every entry in the transient selection."
