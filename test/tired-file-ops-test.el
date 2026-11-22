@@ -1139,6 +1139,61 @@ The command prints one line that names the failed path."
         (tired-undo)
         (should-not (file-exists-p path))))))
 
+(ert-deftest tired-touch-keeps-the-bytes-of-an-existing-file ()
+  "Touch of an existing file keeps every byte, through undo and redo."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (tired root)
+      (let* ((path (expand-file-name "alpha.txt" root))
+             (past (encode-time 0 0 12 1 1 2020)))
+        (set-file-times path past)
+        (tired-touch path)
+        (should (equal (tired-test--contents path) "abc"))
+        (should (time-less-p past (file-attribute-modification-time
+                                   (file-attributes path))))
+        (tired-undo)
+        (should (equal (tired-test--contents path) "abc"))
+        (should (time-equal-p
+                 (file-attribute-modification-time (file-attributes path))
+                 past))
+        (tired-redo)
+        (should (equal (tired-test--contents path) "abc"))
+        (should (time-less-p past (file-attribute-modification-time
+                                   (file-attributes path))))))))
+
+(ert-deftest tired-touch-leaves-a-dangling-link-alone ()
+  "Touch of a link whose target is gone signals and writes nothing."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (let* ((link (expand-file-name "dangling" root))
+             (target (expand-file-name "missing.txt" root)))
+        (make-symbolic-link target link)
+        (should-error (tired-touch link) :type 'user-error)
+        (should (file-symlink-p link))
+        (should-not (file-exists-p target))
+        (should-not tired--undo-actions)))))
+
+(ert-deftest tired-touch-a-link-takes-the-time-of-its-target ()
+  "Touch of a symbolic link keeps the link and updates its target."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (tired root)
+      (let* ((link (expand-file-name "link" root))
+             (target (expand-file-name "alpha.txt" root))
+             (past (encode-time 0 0 12 1 1 2020)))
+        (set-file-times target past)
+        (tired-touch link)
+        (should (stringp (file-symlink-p link)))
+        (should (equal (tired-test--contents target) "abc"))
+        (should (time-less-p past (file-attribute-modification-time
+                                   (file-attributes target))))))))
+
+(ert-deftest tired-touch-rejects-a-directory ()
+  "Touch refuses a path that already names a directory."
+  (tired-test--with-fixture
+    (should-error (tired-touch (expand-file-name "sub" root))
+                  :type 'user-error)))
+
 (ert-deftest tired-touch-restores-modification-time-on-undo ()
   "Touch undoes the timestamp change of an existing file."
   (tired-test--with-fixture

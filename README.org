@@ -441,7 +441,8 @@ as they stand:
 #+end_src
 
 =D= deletes the targets.  =+= creates a directory, =M-t= creates an
-empty file.  Both creation commands start the proposed path in the
+empty file, or updates the time of a path that exists and keeps every
+byte of it.  Both creation commands start the proposed path in the
 directory that the listing shows, never in a row under point.  None
 of these commands asks for a confirmation.  None of them calls a
 shell.  =!= is the one command that runs a shell, and

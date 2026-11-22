@@ -103,6 +103,11 @@
 ;;   `tired--forward-past-flags', never through one `forward-line',
 ;;   because a flag of a selection would otherwise leave point on the
 ;;   second flagged row.
+;; - `tired-touch' reads an existing path through `set-file-times'
+;;   alone, so no byte of it changes, and it writes the empty file of a
+;;   new path through `write-region'.  `write-region' truncates, and
+;;   the trash never holds the old bytes, so a timestamp change must
+;;   never reach it.
 ;; - `tired-delete', `tired-delete-now' and `tired-delete-flagged' share
 ;;   `tired--delete-targets', so the trash move, the single undo action
 ;;   and the report line stay in one place.  `tired-delete-now' ignores
@@ -1177,8 +1182,10 @@ and the parents that it created."
 (defun tired-touch (file)
   "Create FILE, or update its modification time when it exists.
 The proposed path starts in the shown directory, whatever row holds
-point.  The command asks no confirmation.  A later `tired-undo'
-removes a created file, or puts the earlier modification time back."
+point.  The command asks no confirmation.  An existing file keeps
+every byte, and a symbolic link takes the time of its target, as
+`touch' does.  A later `tired-undo' removes a created file, or puts
+the earlier modification time back."
   (interactive
    (list (read-file-name "Create empty file: " tired--directory nil nil)))
   (let* ((path (expand-file-name file))
@@ -1189,7 +1196,16 @@ removes a created file, or puts the earlier modification time back."
          (slots nil))
     (when (file-directory-p path)
       (user-error "%s is a directory" path))
-    (write-region "" nil path nil 'silent)
+    ;; `set-file-times' alone changes an existing entry, and
+    ;; `write-region' would truncate its bytes with no copy in the
+    ;; trash that undo could put back.  A symbolic link follows its
+    ;; target and a dangling link fails, so no link changes its
+    ;; kind or its target.
+    (if exists
+        (unless (ignore-errors (set-file-times path))
+          (user-error "Cannot update the time of %s"
+                      (abbreviate-file-name path)))
+      (write-region "" nil path nil 'silent))
     (tired--push-undo
      (format "touch %s" (abbreviate-file-name path))
      (lambda ()
