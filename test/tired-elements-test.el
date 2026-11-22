@@ -464,8 +464,9 @@ The header row counts, and a blank line stays out."
         (should-not (gethash key tired--elements-cache))
         ;; Age the entry beyond the window, so the window alone would
         ;; drop it.
-        (setcar (nthcdr 2 (gethash key tired--elements-cache-permanent))
-                (- (float-time) 3600))
+        (setf (tired--elements-record-accessed
+               (gethash key tired--elements-cache-permanent))
+              (- (float-time) 3600))
         (tired--elements-prune)
         (should (gethash key tired--elements-cache-permanent))
         (should (= 3 (tired--elements-value

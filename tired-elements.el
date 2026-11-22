@@ -33,7 +33,9 @@
 ;;   `tired--path-key', the one identity that `tired-core' holds, so a
 ;;   count and a size memo of one file meet under one key.  A cached nil
 ;;   count is a hit, not a miss: an unreadable file and a file without a
-;;   dissector both store nil.
+;;   dissector both store nil.  One entry is a `tired--elements-record',
+;;   never a positional list, because a redraw mutates its access time
+;;   while every field around it must stay put.
 ;; - A dissector returns nil, an integer or a job, and the library wraps
 ;;   a job in the `elements' kind of the shared queue, so one queue
 ;;   serves sizes and counts.  A dissector that hands its own job over
@@ -168,13 +170,23 @@ nil for no count.  OFFSET and SIZE drive a chunked read."
   offset
   size)
 
+(cl-defstruct (tired--elements-record (:constructor tired--elements-record-create))
+  "One cached element count.
+STAMP holds the modification time and the size that the count
+describes, HOOKS the hook value that produced it, ACCESSED the
+`float-time' of the last read and COUNT the number itself, or nil for
+no count.  `tired--elements-hit' hands the entry to a redraw, so the
+fields stay apart instead of living in a positional list."
+  stamp
+  hooks
+  accessed
+  count)
+
 (defvar tired--elements-cache (make-hash-table :test #'equal)
   "Global table of element counts.
-The key is the absolute file name.  The value holds the
-modification time and the size that the count describes, the hook
-value that produced it, the `float-time' of the last read, and the
-count itself.  Every Tired buffer shares the table, so one file
-costs one read.")
+The key is the absolute file name and the value is a
+`tired--elements-record'.  Every Tired buffer shares the table, so one
+file costs one read.")
 
 (defvar tired--elements-cache-permanent (make-hash-table :test #'equal)
   "Table of element counts for `tired-persistent-directories'.
@@ -221,9 +233,10 @@ another modification time, another size or another hook value does
 not match."
   (let ((hit (gethash key table tired--elements-missing)))
     (when (and (not (eq hit tired--elements-missing))
-               (equal (nth 0 hit) stamp)
-               (equal (nth 1 hit) tired-elements-functions))
-      (setcar (nthcdr 2 hit) (float-time))
+               (equal (tired--elements-record-stamp hit) stamp)
+               (equal (tired--elements-record-hooks hit)
+                      tired-elements-functions))
+      (setf (tired--elements-record-accessed hit) (float-time))
       hit)))
 
 (defun tired--elements-entry (key stamp)
@@ -245,7 +258,7 @@ after the print.  A section row never reaches this function, because
                 (hit (tired--elements-entry
                       (tired--path-key (tired-entry-path row))
                       stamp)))
-      (nth 3 hit))))
+      (tired--elements-record-count hit))))
 
 (defun tired--elements-enqueue (row)
   "Queue ROW for a count unless a fresh count or a job holds it.
@@ -382,10 +395,11 @@ costs no second read.  A path that matches
   (let* ((data (tired--job-data job))
          (path (tired--elements-job-path data)))
     (puthash path
-             (list (tired--elements-job-stamp data)
-                   (tired--elements-job-hooks data)
-                   (float-time)
-                   (tired--elements-job-count data))
+             (tired--elements-record-create
+              :stamp (tired--elements-job-stamp data)
+              :hooks (tired--elements-job-hooks data)
+              :accessed (float-time)
+              :count (tired--elements-job-count data))
              (if (tired--persistent-p path)
                  tired--elements-cache-permanent
                tired--elements-cache))
@@ -411,9 +425,11 @@ rows that it shows again."
       (clrhash tired--elements-cache-permanent))
     (let (stale)
       (maphash (lambda (key entry)
-                 (when (or (not (equal (nth 1 entry) hooks))
+                 (when (or (not (equal (tired--elements-record-hooks entry)
+                                       hooks))
                            (and tired-elements-cache-ttl
-                                (> (- (float-time) (nth 2 entry))
+                                (> (- (float-time)
+                                      (tired--elements-record-accessed entry))
                                    tired-elements-cache-ttl)))
                    (push key stale)))
                tired--elements-cache)
@@ -423,7 +439,7 @@ rows that it shows again."
     ;; Only another hook value invalidates a count that a rule keeps.
     (let (stale)
       (maphash (lambda (key entry)
-                 (unless (equal (nth 1 entry) hooks)
+                 (unless (equal (tired--elements-record-hooks entry) hooks)
                    (push key stale)))
                tired--elements-cache-permanent)
       (when stale (setq dropped t))
