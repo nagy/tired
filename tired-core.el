@@ -189,10 +189,10 @@
 ;;   `tired--reload-tables' sets `tired--size-forced' and
 ;;   `tired--size-queue' passes it on, so a young total cannot keep a
 ;;   cell or a face that the refresh contradicted.
-;; - The header title and the cached mode-line part double the percent
-;;   sign, because both readers start a substitution at one sign.  Do not
-;;   escape `tired--header-base', which holds the substitutions that
-;;   `tabulated-list-init-header' wrote.
+;; - The cached mode-line part doubles the percent sign, because the
+;;   mode line reader starts a substitution at one sign and a filter can
+;;   hold any text.  Do not escape `tired--header-base', which holds the
+;;   substitutions that `tabulated-list-init-header' wrote.
 ;; - `minibuffer-contents' returns the current buffer text outside a
 ;;   minibuffer, so read it before `with-current-buffer'.
 ;; - `tired-file-sections' picks a handler through `tired-file-handlers',
@@ -3211,13 +3211,13 @@ print the buffer name."
 (defun tired--header-title ()
   "Return the listing state shown in the header line.
 The buffer name already names the directory, so the header line
-holds the state alone and stays empty without one."
+holds the state alone and stays empty without one.  The filter
+stays out: `tired--mode-line' reports it in the same bracket group
+as the hidden count, so it reads in one place alone."
   (declare (side-effect-free t))
   (let ((parts '()))
     (when tired--narrowed
       (push "[narrowed]" parts))
-    (when tired--filter
-      (push (format "[filter: %s]" tired--filter) parts))
     (when tired--hide-dotfiles
       (push "[dotfiles hidden]" parts))
     (mapconcat #'identity (nreverse parts) "  ")))
@@ -4159,8 +4159,7 @@ directory rows and the idle queue fills the size cells."
                 (let ((title (tired--header-title)))
                   (if (string-empty-p title)
                       tired--header-base
-                    (list (propertize (tired--escape-mode-line title)
-                                      'face 'bold)
+                    (list (propertize title 'face 'bold)
                           "  "
                           tired--header-base))))
           (tabulated-list-print t)

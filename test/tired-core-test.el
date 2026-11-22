@@ -3537,13 +3537,16 @@ literal one needs two."
     (tired--apply-filter "50%")
     (should (string-match-p "50%%" (car (last mode-line-format))))))
 
-(ert-deftest tired-header-line-escapes-a-percent-sign ()
-  "A filter with a percent sign survives the header line reader.
-The same substitution rules apply to the header line."
+(ert-deftest tired-filter-reads-in-the-mode-line-bracket ()
+  "The filter joins the hidden count in the one mode line bracket.
+The header line reports no filter, so the state reads in one place."
   (tired-test--with-fixture
-    (tired root)
-    (tired--apply-filter "50%")
-    (should (string-match-p "50%%" (car header-line-format)))))
+    (let ((tired-hidden-regexps '("\\.txt\\'")))
+      (tired root)
+      (tired--apply-filter "alp")
+      (should (string-match-p "filter: alp" (tired--mode-line)))
+      (should (string-match-p "2 hidden" (tired--mode-line)))
+      (should-not (string-match-p "filter" (tired--header-title))))))
 
 (ert-deftest tired-select-invert-flips-visible-entries ()
   "Inverting selects every visible entry that was not selected."
