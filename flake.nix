@@ -150,6 +150,7 @@
             }:
             melpaBuild {
               pname = "tired";
+              preferLocalBuild = true;
               inherit version;
               # `./.' is the repository root.  cleanSource drops VCS metadata
               # and editor backup files, so only real package sources enter
