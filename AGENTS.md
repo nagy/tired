@@ -88,7 +88,9 @@ Dependencies point one way: `tired-core` requires no sibling,
 `tired-sections`, `tired-elements`, `tired-file-ops` and
 `tired-export` require `tired-core`, and `tired` requires all five.
 `tired-evil` requires `tired`.  A call into another library takes a
-`declare-function`, so no load-time dependency forms.  `tired.el`
+`declare-function`, so no load-time dependency forms, and a variable of
+another library takes a `defvar` with no value, as
+`tired-python-section-depth` shows in `tired-core`.  `tired.el`
 installs the evil hook after `provide`, so both load orders work.
 
 Every `;;;###autoload` cookie for a command sits in `tired.el`, because
@@ -178,6 +180,13 @@ carries no cookie at all: `tired-noselect` runs the mode.
   name at the slashes, and point on a slash names the component that
   the slash closes.  `tired--name-region` keeps the whole name, because
   the mouse face and the in-place name edit read that region.
+
+- A path answer goes through `tired--entry-for-path`, never through
+  the table of a parent directory alone.  A collapsed chain row holds a
+  leaf whose levels no table loaded, so the lookup falls back to the
+  displayed rows, and `tired--prune-selection` reads that table once for
+  the whole list.  The prune keeps every row that a filter or a narrow
+  snapshot hides, because a hidden row stays in the listing model.
 
 - Point on the target text of a symbolic link names the link target:
   `tired--filename-at-point` and `tired--filename-bounds` fall back to
