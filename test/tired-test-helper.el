@@ -274,10 +274,14 @@ name cell alone."
                       (overlays-in (point-min) (point-max)))))
 
 (defun tired-test--entry (name)
-  "Return the listed entry called NAME."
-  (seq-find (lambda (entry)
-              (equal (tired-entry-name entry) name))
-            (tired--sorted-directory-entries tired--directory nil)))
+  "Return the listed entry called NAME, or nil."
+  (when-let* ((row (seq-find (lambda (row)
+                               (equal (tired-entry-name
+                                       (tired-sort-row-entry row))
+                                      name))
+                             (tired--sorted-directory-rows
+                              tired--directory nil))))
+    (tired-sort-row-entry row)))
 
 (defmacro tired-test--with-trash (&rest body)
   "Run BODY with a private trash directory and an empty undo stack."

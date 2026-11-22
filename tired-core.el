@@ -1660,14 +1660,6 @@ the dotfile setting."
                table))
     (sort rows #'tired--lessp)))
 
-(defun tired--sorted-directory-entries (directory visible-only)
-  "Return the entries of DIRECTORY in display order.
-When VISIBLE-ONLY is non-nil, drop entries hidden by the filter and
-the dotfile setting.  A collapsed entry returns the table entry, so
-a caller reads the file that the row stands for."
-  (mapcar #'tired-sort-row-entry
-          (tired--sorted-directory-rows directory visible-only)))
-
 (defun tired--directory-names (directory)
   "Return the entry names of DIRECTORY, or nil when unreadable."
   (declare (side-effect-free t))
@@ -4575,10 +4567,6 @@ for an OFFSET past the line, so point never leaves its row."
     (goto-char (max start
                     (min (+ start (or offset 0))
                          (line-end-position))))))
-
-(defun tired--at-name-p ()
-  "Return non-nil when point sits on the first character of a name."
-  (zerop (tired--name-offset)))
 
 (defun tired--redraw-at-name ()
   "Redraw the listing and put point at the start of the name it shows.
