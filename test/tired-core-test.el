@@ -744,14 +744,10 @@ costs one redraw and not one per character."
     (tired-select-toggle)
     (should (equal (mapcar #'tired-entry-name (tired--selection-targets))
                    '("beta.txt")))
-    (should (= 1 (length (seq-filter (lambda (overlay)
-                                       (overlay-get overlay 'tired-selection))
-                                     (overlays-in (point-min) (point-max))))))
+    (should (= 1 (tired-test--overlay-count 'tired-selection)))
     (tired-select-none)
     (should-not tired--selection)
-    (should-not (seq-filter (lambda (overlay)
-                              (overlay-get overlay 'tired-selection))
-                            (overlays-in (point-min) (point-max))))))
+    (should (zerop (tired-test--overlay-count 'tired-selection)))))
 
 (ert-deftest tired-select-all-selects-visible-entries ()
   "Selecting all covers exactly the visible entries."
@@ -770,9 +766,7 @@ costs one redraw and not one per character."
     (tired-select-all)
     (tired-select-all)
     (should-not tired--selection)
-    (should-not (seq-filter (lambda (overlay)
-                              (overlay-get overlay 'tired-selection))
-                            (overlays-in (point-min) (point-max))))))
+    (should (zerop (tired-test--overlay-count 'tired-selection)))))
 
 (ert-deftest tired-select-all-toggles-a-partial-selection ()
   "Selecting all inverts the visible part of a partial selection."
@@ -3555,10 +3549,7 @@ The file row may lie inside the same region, and it joins once."
     (should (= 4 (length tired--selection)))
     (should-not (member (expand-file-name "alpha.txt" root)
                         tired--selection))
-    (should (= 4 (length (seq-filter
-                          (lambda (overlay)
-                            (overlay-get overlay 'tired-selection))
-                          (overlays-in (point-min) (point-max))))))))
+    (should (= 4 (tired-test--overlay-count 'tired-selection)))))
 
 (ert-deftest tired-select-none-at-point-keeps-an-unselected-row ()
   "Unmark on a row outside the selection changes nothing but point."
@@ -4868,6 +4859,19 @@ The countdown starts once and the files stay on the disk."
         (tired-select-toggle)
         (should (= 2 (length (tired-test--delete-countdowns scheduled))))
         (should (memq timer cancelled))))))
+
+(ert-deftest tired-selection-changed-owns-the-follow-up-passes ()
+  "A bare `tired--set-selection' changes state alone.
+`tired--selection-changed' paints the rows, so a refresh can set the
+selection and let the redraw that follows paint it."
+  (tired-test--with-fixture
+    (tired root)
+    (let ((path (expand-file-name "alpha.txt" root)))
+      (tired--set-selection (list path))
+      (should (equal (list path) tired--selection))
+      (should (zerop (tired-test--overlay-count 'tired-selection)))
+      (tired--selection-changed)
+      (should (= 1 (tired-test--overlay-count 'tired-selection))))))
 
 (provide 'tired-core-test)
 

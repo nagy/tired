@@ -267,6 +267,12 @@ name cell alone."
   `(with-temp-file (expand-file-name ,name root)
      (insert ,content)))
 
+(defun tired-test--overlay-count (property)
+  "Return the number of overlays in the buffer that carry PROPERTY."
+  (length (seq-filter (lambda (overlay)
+                        (overlay-get overlay property))
+                      (overlays-in (point-min) (point-max)))))
+
 (defun tired-test--entry (name)
   "Return the listed entry called NAME."
   (seq-find (lambda (entry)

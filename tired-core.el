@@ -84,6 +84,13 @@
 ;;   an interactive spec call it.  A region reads point and mark and
 ;;   never `region-end', because a linewise evil range ends with the
 ;;   newline of the row at point.
+;; - A command that changes the selection calls `tired--set-selection'
+;;   and then `tired--selection-changed', which repaints the rows,
+;;   restarts the deletion countdown and updates the mode line.  No
+;;   command repeats those three calls, so their order lives in one
+;;   place.  `tired--set-selection' stays a state change alone, because
+;;   `tired-refresh' sets the selection and the redraw that follows
+;;   paints it from `tired--rows'.
 ;; - `tired--sync-watches' compares one hash set of wanted paths with
 ;;   one table of live watches, so the pass stays linear: a collapsed
 ;;   listing watches thousands of directories.  `tired--watches' stays
@@ -3711,9 +3718,7 @@ nothing when the region holds no entry."
     (let ((entries (tired--region-entries)))
       (when entries
         (tired--set-selection (mapcar #'tired-entry-path entries))
-        (tired--apply-selection-overlays)
-        (tired--restart-delete-timer)
-        (tired--update-mode-line)))))
+        (tired--selection-changed)))))
 
 (defun tired--display-entry-table (&optional all-rows)
   "Return a hash table that maps each listed entry path to its entry.
@@ -3876,6 +3881,17 @@ flag set, leaves no timer."
               (overlay-put overlay 'evaporate t))))
         (forward-line 1)))))
 
+(defun tired--selection-changed ()
+  "Repaint the selection and rebuild what reads it.
+A command that changes `tired--selection' calls this after the
+change.  `tired--set-selection' stays a state change alone, because
+`tired-refresh' sets the selection and the redraw that follows paints
+it.  Hold the order: the overlays read `tired--selection-set', the
+countdown reads the flags and the mode line reads the region."
+  (tired--apply-selection-overlays)
+  (tired--restart-delete-timer)
+  (tired--update-mode-line))
+
 (defun tired--set-flags (paths)
   "Set the deletion flag set to PATHS and repaint the listing.
 Drop a repeated path and keep the order of PATHS."
@@ -3906,9 +3922,7 @@ flag pushes the removal back."
         (setq flags (append flags (list path)))))
     (tired--set-flags flags))
   (tired--set-selection tired--selection)
-  (tired--apply-selection-overlays)
-  (tired--restart-delete-timer)
-  (tired--update-mode-line)
+  (tired--selection-changed)
   (message "Flagged %d %s for deletion, %s %s"
            (length tired--flagged-deletion)
            (if (= (length tired--flagged-deletion) 1) "entry" "entries")
@@ -3965,10 +3979,8 @@ Keep the deletion flags, because a file command clears the selection
 as bookkeeping and the user never asked to drop a pending deletion.
 Start the countdown again while a flag remains."
   (tired--set-selection nil)
-  (tired--apply-selection-overlays)
   (deactivate-mark)
-  (tired--restart-delete-timer)
-  (tired--update-mode-line))
+  (tired--selection-changed))
 
 (defun tired--delete-flagged (buffer)
   "Remove the paths that a delayed `tired-delete' flagged.
@@ -5090,9 +5102,7 @@ it.  Update the overlays and the mode line afterwards."
                  (push path selection)))
              toggled)
     (tired--set-selection selection))
-  (tired--apply-selection-overlays)
-  (tired--restart-delete-timer)
-  (tired--update-mode-line))
+  (tired--selection-changed))
 
 (defun tired-select-toggle ()
   "Toggle the entry at point in the selection.
@@ -5141,9 +5151,7 @@ for its file and a file row already covers that file."
         (tired--set-selection
          (seq-remove (lambda (selected) (equal selected path))
                      tired--selection))
-        (tired--apply-selection-overlays)
-        (tired--restart-delete-timer)
-        (tired--update-mode-line)))))
+        (tired--selection-changed)))))
   (forward-line 1))
 
 (defun tired-select-all ()
@@ -5182,9 +5190,7 @@ first.  Point stays on the row that started the command."
           (push candidate paths))))
     (save-excursion
       (tired--set-selection paths)
-      (tired--apply-selection-overlays)
-      (tired--restart-delete-timer)
-      (tired--update-mode-line))))
+      (tired--selection-changed))))
 
 (defun tired-select-none ()
   "Clear the transient selection, the active region and every flag.
@@ -5206,9 +5212,7 @@ Selected entries outside the visible listing drop out."
                              (tired--flagged-deletion-p
                               (tired-entry-path entry))))
                        (tired--visible-entries))))
-  (tired--apply-selection-overlays)
-  (tired--restart-delete-timer)
-  (tired--update-mode-line))
+  (tired--selection-changed))
 
 (defun tired--narrow-ancestors (paths)
   "Return PATHS plus the directories needed to reach them."
