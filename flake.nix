@@ -34,7 +34,7 @@
       # otherwise buildable package forever.
       mkLint =
         { pkgs, src }:
-        pkgs.runCommand "tired-lint"
+        pkgs.runCommandLocal "tired-lint"
           {
             nativeBuildInputs = [
               (pkgs.emacsPackages.emacsWithPackages (epkgs: [
