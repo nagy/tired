@@ -106,6 +106,82 @@
                          tired-trash-directory))
                        "abc"))))))
 
+(ert-deftest tired-copy-rejects-two-sources-that-share-a-destination ()
+  "Copy refuses a batch whose sources reach one destination.
+No source, no destination and no undo action changes."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (make-directory (expand-file-name "a" root))
+      (make-directory (expand-file-name "b" root))
+      (tired-test--write "a/same.txt" "A")
+      (tired-test--write "b/same.txt" "B")
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired root)
+        (tired-insert-subdir (expand-file-name "a" root))
+        (tired-insert-subdir (expand-file-name "b" root))
+        (tired--set-selection (list (expand-file-name "a/same.txt" root)
+                                    (expand-file-name "b/same.txt" root)))
+        (should-error (tired-copy destination) :type 'user-error)
+        (should (equal (tired-test--contents
+                        (expand-file-name "a/same.txt" root))
+                       "A"))
+        (should (equal (tired-test--contents
+                        (expand-file-name "b/same.txt" root))
+                       "B"))
+        (should-not (file-exists-p (expand-file-name "same.txt" destination)))
+        (should-not tired--undo-actions)
+        (should-not (tired-test--trash-entries))))))
+
+(ert-deftest tired-copy-rejects-two-destinations-that-reach-one-file ()
+  "Copy refuses two destinations that a symbolic link makes one file."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (make-directory (expand-file-name "a" root))
+      (make-directory (expand-file-name "b" root))
+      (tired-test--write "a/x.txt" "X")
+      (tired-test--write "b/y.txt" "Y")
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired-test--write "out/x.txt" "old")
+        (make-symbolic-link "x.txt" (expand-file-name "y.txt" destination))
+        (tired root)
+        (tired-insert-subdir (expand-file-name "a" root))
+        (tired-insert-subdir (expand-file-name "b" root))
+        (tired--set-selection (list (expand-file-name "a/x.txt" root)
+                                    (expand-file-name "b/y.txt" root)))
+        (should-error (tired-copy destination) :type 'user-error)
+        (should (equal (tired-test--contents
+                        (expand-file-name "x.txt" destination))
+                       "old"))
+        (should-not tired--undo-actions)))))
+
+(ert-deftest tired-move-rejects-two-sources-that-share-a-destination ()
+  "Move refuses a batch whose sources reach one destination."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (make-directory (expand-file-name "a" root))
+      (make-directory (expand-file-name "b" root))
+      (tired-test--write "a/same.txt" "A")
+      (tired-test--write "b/same.txt" "B")
+      (let ((destination (expand-file-name "out" root)))
+        (make-directory destination)
+        (tired root)
+        (tired-insert-subdir (expand-file-name "a" root))
+        (tired-insert-subdir (expand-file-name "b" root))
+        (tired--set-selection (list (expand-file-name "a/same.txt" root)
+                                    (expand-file-name "b/same.txt" root)))
+        (should-error (tired-move destination) :type 'user-error)
+        (should (equal (tired-test--contents
+                        (expand-file-name "a/same.txt" root))
+                       "A"))
+        (should (equal (tired-test--contents
+                        (expand-file-name "b/same.txt" root))
+                       "B"))
+        (should-not (file-exists-p (expand-file-name "same.txt" destination)))
+        (should-not tired--undo-actions)
+        (should-not (tired-test--trash-entries))))))
+
 (ert-deftest tired-move-single-target-renames ()
   "Move with one target reads the destination as the new full path."
   (tired-test--with-fixture

@@ -493,7 +493,9 @@ directory at once and asks no question.  The window scan follows
 =dired-do-rename= with a dwim target, and =tired-copy= behaves like
 =dired-do-copy=.  A Tired buffer for the shown directory names no
 target, because a copy or a move into that directory would change
-nothing.  =M-x tired-undo= undoes a copy and a move.  Set
+nothing.  A batch whose targets reach one destination signals an
+error before the command touches the disk, because one undo cannot
+put two sources back.  =M-x tired-undo= undoes a copy and a move.  Set
 =tired-dwim-target= to nil to keep the minibuffer question.  A copy,
 a move or a deletion refreshes every Tired buffer, so the destination
 window of a dwim copy shows the new entry at once and no wait for the

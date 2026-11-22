@@ -53,6 +53,11 @@
 ;; - `tired-copy' and `tired-move' read their destination from another
 ;;   Tired window through `tired--other-tired-directory' when
 ;;   `tired-dwim-target' holds.
+;; - `tired--destination-plan' computes every destination before any
+;;   target changes the disk, and it refuses two sources that reach one
+;;   destination, because the undo journal describes independent paths
+;;   alone.  The executor reads the target of a path from that plan, so
+;;   one description serves preflight, execution and undo.
 ;; - `tired-edit-names' marks every character outside a name with a
 ;;   `read-only' text property and keeps the two ends in
 ;;   `tired--name-edit-regions' as markers, because the printed column is
@@ -570,13 +575,59 @@ directory would change nothing."
                        (not (equal tired--directory here)))
               (throw 'found tired--directory))))))))
 
+(defun tired--destination-key (target)
+  "Return a key that two names of one destination share.
+TARGET is an expanded path.  A path that exists keys on its device
+and inode number, so a hard link and a symbolic link that reach one
+entry share a key.  An absent path keys on its spelling alone,
+because no file settles a case-only difference before the command
+creates it.  `file-attributes' reads the link itself, so the
+canonical name settles the link before the key."
+  (declare (side-effect-free t))
+  (let* ((true (ignore-errors (file-truename target)))
+         (attributes (and true
+                          (file-exists-p true)
+                          (ignore-errors (file-attributes true)))))
+    (if (and attributes
+             (file-attribute-device-number attributes)
+             (file-attribute-inode-number attributes))
+        (cons (file-attribute-device-number attributes)
+              (file-attribute-inode-number attributes))
+      (concat "path:" (directory-file-name target)))))
+
+(defun tired--destination-plan (paths directory &optional full-path)
+  "Return a hash table that maps every path of PATHS to its destination.
+FULL-PATH names the destination of a lone source, and every other
+destination holds the base name of its source in DIRECTORY.  Signal
+a user error when two sources reach one destination, before the
+command trashes or creates anything, because one undo journal cannot
+restore two sources that share a destination."
+  (let ((plan (make-hash-table :test #'equal))
+        (seen (make-hash-table :test #'equal)))
+    (dolist (path paths plan)
+      (let* ((target (or full-path
+                         (expand-file-name
+                          (file-name-nondirectory (directory-file-name path))
+                          directory)))
+             (key (tired--destination-key target))
+             (other (gethash key seen)))
+        (when other
+          (user-error "%s and %s share the destination %s"
+                      (abbreviate-file-name other)
+                      (abbreviate-file-name path)
+                      (abbreviate-file-name (directory-file-name target))))
+        (puthash key path seen)
+        (puthash path target plan)))))
+
 (defun tired-copy (directory)
   "Copy the targets into DIRECTORY.
 Interactively, when `tired-dwim-target' holds and another window of
 the frame shows a Tired buffer for another directory, the command
 copies the targets into that directory at once and asks no
 question.  An existing destination goes to `tired-trash-directory'
-first, so `tired-undo' puts it back.  The copy never calls a shell."
+first, so `tired-undo' puts it back.  Two targets that reach one
+destination signal a user error before the command changes the disk.
+The copy never calls a shell."
   (interactive
    (let ((targets (tired--selection-targets))
          (dwim (and tired-dwim-target (tired--other-tired-directory))))
@@ -585,15 +636,16 @@ first, so `tired-undo' puts it back.  The copy never calls a shell."
      (if dwim
          (list dwim)
        (list (read-directory-name "Copy targets to: " tired--directory)))))
-  (let ((destination (file-name-as-directory (expand-file-name directory)))
-        (created nil)
-        (trashed nil)
-        (slots nil))
+  (let* ((destination (file-name-as-directory (expand-file-name directory)))
+         (paths (mapcar #'tired-entry-path (tired--targets)))
+         (plan (tired--destination-plan paths destination))
+         (created nil)
+         (trashed nil)
+         (slots nil))
     (tired--apply-to-targets
      "Copied" (abbreviate-file-name (directory-file-name destination))
      (lambda (path)
-       (let* ((name (file-name-nondirectory (directory-file-name path)))
-              (target (expand-file-name name destination))
+       (let* ((target (gethash path plan))
               (previous (tired--replace-with-trash target)))
          (when previous
            (push (cons previous target) trashed))
@@ -606,7 +658,8 @@ first, so `tired-undo' puts it back.  The copy never calls a shell."
               (setq trashed (delete (assoc previous trashed) trashed))
               (ignore-errors (tired--restore-path previous target)))
             (signal (car err) (cdr err))))
-         (push target created))))
+         (push target created)))
+     paths)
     (when created
       (tired--push-undo
        (format "copy into %s"
@@ -625,8 +678,9 @@ directory.  Interactively, when `tired-dwim-target' holds and
 another window of the frame shows a Tired buffer for another
 directory, the command moves the targets into that directory at
 once and asks no question.  An existing destination goes to
-`tired-trash-directory' first, so `tired-undo' puts it back.  The
-move never calls a shell."
+`tired-trash-directory' first, so `tired-undo' puts it back.  Two
+targets that reach one destination signal a user error before the
+command changes the disk.  The move never calls a shell."
   (interactive
    (let ((targets (tired--selection-targets))
          (dwim (and tired-dwim-target (tired--other-tired-directory))))
@@ -640,8 +694,8 @@ move never calls a shell."
               (file-name-nondirectory
                (directory-file-name (tired-entry-path (car targets)))))))
       (t (list (read-directory-name "Move targets to: " tired--directory))))))
-  (let* ((targets (tired--targets))
-         (single (null (cdr targets)))
+  (let* ((sources (mapcar #'tired-entry-path (tired--targets)))
+         (single (null (cdr sources)))
          (destination (expand-file-name destination))
          (full-path (and single
                          (not (file-directory-p destination))
@@ -650,15 +704,13 @@ move never calls a shell."
          (directory (file-name-as-directory
                      (or (and full-path (file-name-directory full-path))
                          destination)))
+         (plan (tired--destination-plan sources directory full-path))
          (moved nil)
          (trashed nil))
     (tired--apply-to-targets
      "Moved" (abbreviate-file-name (directory-file-name directory))
      (lambda (path)
-       (let* ((target (or full-path
-                          (expand-file-name
-                           (file-name-nondirectory (directory-file-name path))
-                           directory)))
+       (let* ((target (gethash path plan))
               (previous (unless (equal (directory-file-name path)
                                        (directory-file-name target))
                           (tired--replace-with-trash target))))
@@ -673,7 +725,8 @@ move never calls a shell."
               (setq trashed (delete (assoc previous trashed) trashed))
               (ignore-errors (tired--restore-path previous target)))
             (signal (car err) (cdr err))))
-         (push (cons target path) moved))))
+         (push (cons target path) moved)))
+     sources)
     (when moved
       (tired--push-undo
        (format "move to %s"
