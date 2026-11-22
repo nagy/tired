@@ -658,7 +658,6 @@ from reading subprocess output."
   (let ((delays nil)
         (tired--queue-jobs
          (list (tired--job-create
-                :key "/one"
                 :step (lambda (_job) :more)
                 :budget 0)))
         (tired--queue-index (make-hash-table :test #'equal)))

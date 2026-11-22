@@ -104,9 +104,11 @@ other file that a handler claims."
   :group 'tired)
 
 (defcustom tired-elements-budget 0.02
-  "Seconds that one idle pass spends on element counts.
-A nil value lets one pass run until the queue empties.
-`input-pending-p' still stops a pass when a key waits."
+  "Seconds that one idle pass spends on one element count job.
+A job stops when its own budget ends and waits for the next pass,
+whatever the budget of another job in the queue holds.  A nil value
+runs a job until it ends.  `input-pending-p' still stops a pass when a
+key waits."
   :type '(choice (number :tag "Seconds") (const :tag "No budget" nil))
   :group 'tired)
 

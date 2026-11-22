@@ -102,8 +102,11 @@
 ;;   `docs/adr/0021-clear-the-filter-on-a-quit-command.md'.
 ;; - `tired--queue-enqueue' holds the idle jobs of the process, one per
 ;;   kind and key.  A pass takes the queue down, runs one step of every
-;;   job, and starts another round over the unfinished jobs until the
-;;   budget or pending input stops it.  A pass that leaves work
+;;   job, and starts another round over the unfinished jobs until every
+;;   job spends its own `tired--job-budget' or pending input stops it.
+;;   A job never spends the budget of another kind, so a nil budget
+;;   bounds that job alone, and the pass adds the seconds that each step
+;;   took.  A pass that leaves work
 ;;   schedules its own successor through `tired--queue-delay', and
 ;;   through `tired--queue-busy-delay' while a key waits.  Never
 ;;   chain an idle timer: a ripe idle timer stops the read loop before
@@ -659,11 +662,12 @@ than it fills."
   :type 'natnum)
 
 (defcustom tired-directory-size-budget 0.2
-  "Seconds one idle pass may spend on directory size walks.
+  "Seconds that one idle pass spends on one directory size walk.
 The redraw itself reads the memo table alone, so it never walks a
-tree.  A queue pass stops when this budget ends and leaves the
-remaining totals for the next idle pass.  Set the value to nil to
-walk every queued directory in one pass."
+tree.  A walk stops when its own budget ends and leaves the rest of
+its totals for the next idle pass, whatever the budget of another job
+in the queue holds.  Set the value to nil to run a walk until it ends,
+and `input-pending-p' still stops the pass when a key waits."
   :type '(choice (natnum :tag "Seconds") (const :tag "No budget" nil)))
 
 (defcustom tired-dwim-target t
@@ -1190,33 +1194,48 @@ would arm forty timers per second.  The longer gap keeps a user who
 types cheap.")
 
 (defun tired--queue-run ()
-  "Advance the queue until a budget ends or a key waits.
+  "Advance the queue until every job spends its budget or a key waits.
 Each step gives way to the next job, so one large job never holds
 the others.  A pass that leaves work arms its successor.
+A job stops at its own `tired--job-budget', so a mixed pass honors the
+option of every kind, and a nil budget bounds that job alone.  The
+pass adds the seconds that a step took, so a job that a previous pass
+left unfinished starts with a fresh budget.
 The pass takes the queue down while it runs, so a finished job drops
 from a short list and a job that joins the queue lands on a clean
 one; a rotation of the whole queue per step would cost one list copy
 per step."
   (setq tired--queue-timer nil)
-  (let* ((head (car tired--queue-jobs))
-         (budget (and head (tired--job-budget head)))
-         (deadline (and budget (+ (float-time) budget)))
-         (pending tired--queue-jobs)
-         (kept nil))
+  (let ((pending tired--queue-jobs)
+        (kept nil)
+        (spent (make-hash-table :test #'eq))
+        (progress t))
     (setq tired--queue-jobs nil)
-    (while (and (or pending kept)
-                (not (input-pending-p))
-                (or (null deadline) (< (float-time) deadline)))
-      (if (null pending)
-          ;; Every job took one step, so the unfinished ones take the
-          ;; next round inside this pass.
-          (setq pending (nreverse kept)
-                kept nil)
-        (let ((job (pop pending)))
-          (when (tired--queue-holds-p job)
-            (if (eq (funcall (tired--job-step job) job) :done)
-                (tired--queue-finish job)
-              (push job kept))))))
+    (catch 'done
+      (while (or pending kept)
+        (when (input-pending-p)
+          (throw 'done nil))
+        (if (null pending)
+            ;; Every job took its turn, so the unfinished ones take the
+            ;; next round inside this pass, and a round that spends no
+            ;; step leaves the queue for the next pass.
+            (if progress
+                (setq pending (nreverse kept)
+                      kept nil
+                      progress nil)
+              (throw 'done nil))
+          (let* ((job (pop pending))
+                 (budget (tired--job-budget job))
+                 (used (gethash job spent 0)))
+            (when (tired--queue-holds-p job)
+              (if (and budget (>= used budget))
+                  (push job kept)
+                (let ((start (float-time)))
+                  (setq progress t)
+                  (if (eq (funcall (tired--job-step job) job) :done)
+                      (tired--queue-finish job)
+                    (puthash job (+ used (- (float-time) start)) spent)
+                    (push job kept)))))))))
     (setq tired--queue-jobs
           (nconc (nreverse kept) pending (nreverse tired--queue-jobs))))
   (when tired--queue-jobs

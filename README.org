@@ -693,9 +693,9 @@ directory frame, so a keystroke stops a pass at the next step.  A
 directory above 2000 names takes its attributes 64 names at a time,
 so no single call holds Emacs for a whole directory.  That batch costs
 about three times as much per name as the one whole-directory read
-that a smaller directory takes.  One pass stops when
-=tired-directory-size-budget= seconds end, and the next idle pass
-continues:
+that a smaller directory takes.  A walk stops when
+=tired-directory-size-budget= seconds of its own stepping have
+passed, and the next idle pass continues:
 
 #+begin_src elisp
   (setq tired-directory-size-budget 0.2)
@@ -703,8 +703,12 @@ continues:
 
 A redraw never walks a subtree, so a large tree costs no delay in the
 listing.  The size cells that wait for a walk show empty until it
-lands, and one reprint fills them together.  Set the value to nil to
-walk every queued directory in one pass.
+lands, and one reprint fills them together.  The idle queue runs size
+walks and element counts side by side, and each job spends the budget
+of its own kind alone: a mixed pass spends at most
+=tired-directory-size-budget= on each walk and =tired-elements-budget=
+on each count.  Set a value to nil to run that kind until it ends, and
+a waiting key still stops the pass.
 
 The idle queue is one queue for the whole session, so a listing that
 refreshes drops the walks of its own subtree alone.  A walk of another
@@ -767,7 +771,8 @@ ahead of a scroll:
 #+end_src
 
 Tired does the work in the idle state, one small step at a time.  A
-step reads one chunk and stops when the budget ends or when a key
+step reads one chunk and stops when the budget of its own job ends or
+when a key
 waits, so Emacs never blocks for a whole file.  The chunk size serves
 the CSV, Markdown and Parquet dissectors, because the JSON dissector
 hands its file to the C parser in one step:

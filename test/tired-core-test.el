@@ -2242,6 +2242,86 @@ owners of the walk that it replaced, so no listing loses the total."
       (should (equal 9 (tired--directory-total
                         (expand-file-name "sub" root)))))))
 
+(defmacro tired-test--with-fake-clock (&rest body)
+  "Run BODY with a clock that moves 0.1 second on every read.
+`tired--queue-run' reads the clock before and after a step, so one
+step costs 0.1 seconds and a test of a budget needs no sleep."
+  (declare (indent 0) (debug t))
+  `(let ((now 0.0))
+     (cl-letf (((symbol-function 'float-time)
+                (lambda (&optional _time)
+                  (setq now (+ now 0.1))
+                  now)))
+       ,@body)))
+
+(ert-deftest tired--queue-budget-follows-every-job ()
+  "A pass spends each job's own budget, not the head job's alone."
+  (tired-test--with-fixture
+    (let ((element-steps 0)
+          (size-steps 0))
+      (tired-test--with-fake-clock
+        (tired--queue-enqueue
+         (tired--job-create
+          :kind 'elements
+          :key "one"
+          :budget 0.15
+          :owners (list (current-buffer))
+          :step (lambda (_job) (cl-incf element-steps) :more)))
+        (tired--queue-enqueue
+         (tired--job-create
+          :kind 'size
+          :key "two"
+          :budget 0.5
+          :owners (list (current-buffer))
+          :step (lambda (_job) (cl-incf size-steps) :more)))
+        (tired--queue-run))
+      (should (= 2 element-steps))
+      (should (= 5 size-steps))
+      (should (= 2 (length tired--queue-jobs))))))
+
+(ert-deftest tired--queue-budget-bounds-one-job-alone ()
+  "A nil budget bounds no other job, and a spent budget keeps its job."
+  (tired-test--with-fixture
+    (let ((free-steps 0)
+          (bound-steps 0))
+      (tired-test--with-fake-clock
+        (tired--queue-enqueue
+         (tired--job-create
+          :kind 'size
+          :key "free"
+          :owners (list (current-buffer))
+          :step (lambda (_job)
+                  (setq free-steps (1+ free-steps))
+                  (if (>= free-steps 3) :done :more))))
+        (tired--queue-enqueue
+         (tired--job-create
+          :kind 'elements
+          :key "bound"
+          :budget 0.15
+          :owners (list (current-buffer))
+          :step (lambda (_job) (cl-incf bound-steps) :more)))
+        (tired--queue-run))
+      (should (= 3 free-steps))
+      (should (= 2 bound-steps))
+      (should (equal '("bound")
+                     (mapcar #'tired--job-key tired--queue-jobs))))))
+
+(ert-deftest tired--queue-budget-yields-to-a-key ()
+  "A key that waits stops the pass, whatever the budgets hold."
+  (tired-test--with-fixture
+    (let ((steps 0))
+      (tired-test--with-fake-clock
+        (tired--queue-enqueue
+         (tired--job-create
+          :kind 'size
+          :key "one"
+          :owners (list (current-buffer))
+          :step (lambda (_job) (cl-incf steps) :more)))
+        (cl-letf (((symbol-function 'input-pending-p) (lambda () t)))
+          (tired--queue-run)))
+      (should (= 0 steps))
+      (should (= 1 (length tired--queue-jobs))))))
+
 (ert-deftest tired--queue-pass-stops-when-input-waits ()
   "Pending input stops a pass, so a walk never holds a keystroke."
   (tired-test--with-fixture
