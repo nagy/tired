@@ -706,6 +706,12 @@ listing.  The size cells that wait for a walk show empty until it
 lands, and one reprint fills them together.  Set the value to nil to
 walk every queued directory in one pass.
 
+The idle queue is one queue for the whole session, so a listing that
+refreshes drops the walks of its own subtree alone.  A walk of another
+listing keeps its place, and a walk that two listings share keeps
+every owner, so one listing's refresh never empties another listing's
+size column.
+
 * Elements
 
 The =Elements= column sits between =Size= and =Modified=.  It counts the

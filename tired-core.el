@@ -109,6 +109,13 @@
 ;;   chain an idle timer: a ripe idle timer stops the read loop before
 ;;   the wait that reads subprocess output, so a walk would starve
 ;;   every process of its output and sentinel.  See `docs/adr/0032'.
+;; - A job belongs to the buffer that queued it, and a second listing
+;;   that wants the same key joins the running job instead of queueing
+;;   a second one.  So a reload invalidates the walks below its own
+;;   directory through `tired--size-drop-stale' and never every walk:
+;;   a walk of another tree keeps its place, and a shared walk keeps
+;;   every owner that the reload did not read.  A forced requeue
+;;   carries the owners of the walk that it replaces.
 ;; - Two tables answer a directory size: `tired--size-cache' and
 ;;   `tired--size-cache-permanent', which `tired-persistent-directories'
 ;;   fills.  `tired--directory-total' reads both and matches no rule,
@@ -2851,42 +2858,72 @@ costs one pass and no second walk inside the cache window."
   (declare (pure t) (side-effect-free t))
   (eq (tired--job-kind job) 'size))
 
+(defun tired--size-key-under-p (key directory)
+  "Return non-nil when KEY names DIRECTORY or a directory below it."
+  (declare (side-effect-free t))
+  (let ((directory (tired--size-key directory)))
+    (or (equal key directory)
+        (string-prefix-p (file-name-as-directory directory) key))))
+
+(defun tired--size-drop-stale (directory)
+  "Drop the queued size walks that a reload of DIRECTORY makes stale.
+A walk that names DIRECTORY or a directory below it serves this
+listing, so it leaves the queue and the redraw queues a fresh one.  A
+walk of another tree stays, because its total serves a listing that
+this reload did not read.  A walk that this listing shares keeps its
+place and loses this buffer as an owner alone, so the other listing
+still waits for the total and the repaint that ends it."
+  (when directory
+    (dolist (job (copy-sequence tired--queue-jobs))
+      (when (and (tired--size-walk-job-p job)
+                 (tired--size-key-under-p (tired--job-key job) directory))
+        (let ((owners (delq (current-buffer) (tired--job-owners job))))
+          (if owners
+              (setf (tired--job-owners job) owners)
+            (tired--queue-drop job)))))))
+
 (defun tired--size-enqueue (key directory &optional force entry)
   "Queue an idle walk of DIRECTORY under the cache key KEY.
 A kept total, a young total, a remote directory, an excluded
 directory and a queued walk cost no walk.  A kept total is one that
 `tired--size-cache-permanent' holds, so a refresh walks no directory
-under `tired-persistent-directories'.
+under `tired-persistent-directories'.  A listing that shows a
+directory whose walk already waits joins that walk, so one read and
+one repaint serve every listing.
 FORCE recomputes a young total, because a refresh asked for the
 size that the disk holds now.  FORCE also drops a queued walk that
 started before FORCE, because that walk can still store a scan that
-predates the change.  A walk that started after FORCE stays, so one
+predates the change.  The new walk takes the owners of the walk it
+replaces, so no listing that waited loses its repaint.  A walk that
+started after FORCE stays, so one
 refresh never restarts itself."
   (when (and (not (gethash key tired--size-cache-permanent))
              (not (tired--size-skip-p directory entry))
              (or force
                  (not (tired--size-cache-valid-p
-                       (gethash key tired--size-cache))))
-             (progn
-               (when force
-                 (when-let* ((job (tired--queue-job 'size key)))
-                   (when (< (or (tired--size-walk-stamp
-                                 (tired--job-data job))
-                                0)
-                            force)
-                     (tired--queue-drop job))))
-               (null (tired--queue-job 'size key))))
-    (tired--queue-enqueue
-     (tired--job-create
-      :kind 'size
-      :key key
-      :step #'tired--size-walk-advance
-      :finish #'tired--size-walk-finish
-      :budget tired-directory-size-budget
-      :owners (list (current-buffer))
-      :data (tired--size-walk-create
-             :stamp (float-time)
-             :stack (list (tired--size-walk-frame directory)))))))
+                       (gethash key tired--size-cache)))))
+    (let ((owners (list (current-buffer))))
+      (when force
+        (when-let* ((job (tired--queue-job 'size key)))
+          (when (< (or (tired--size-walk-stamp (tired--job-data job)) 0)
+                   force)
+            (dolist (owner (tired--job-owners job))
+              (unless (memq owner owners)
+                (push owner owners)))
+            (tired--queue-drop job))))
+      (if-let* ((job (tired--queue-job 'size key)))
+          (tired--queue-adopt job (current-buffer))
+        (tired--queue-enqueue
+         (tired--job-create
+          :kind 'size
+          :key key
+          :step #'tired--size-walk-advance
+          :finish #'tired--size-walk-finish
+          :budget tired-directory-size-budget
+          :owners owners
+          :data (tired--size-walk-create
+                 :stamp (float-time)
+                 :stack (list (tired--size-walk-frame directory)))))))))
 
 (defun tired--size-ancestor-p (key directories)
   "Return non-nil when a directory above KEY waits for a walk.
@@ -4394,7 +4431,7 @@ that a refresh or a directory change made stale, and keep
   ;; refresh of a static directory then costs one attributes read per
   ;; level instead of a directory read.
   (setq tired--collapse-generation (1+ tired--collapse-generation))
-  (tired--queue-drop-where #'tired--size-walk-job-p)
+  (tired--size-drop-stale tired--directory)
   (tired--size-cache-prune)
   ;; The refresh reads the disk, so a young total can hide a file that
   ;; arrived after its walk.  Keep the total on screen and queue a new

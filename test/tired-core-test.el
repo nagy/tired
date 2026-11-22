@@ -2104,6 +2104,79 @@ hidden."
         (should (equal 9 (tired--directory-total
                           (expand-file-name "sub" root))))))))
 
+(ert-deftest tired-reload-keeps-another-listings-size-walk ()
+  "A reload in one listing keeps the queued walk of another tree.
+The walk of a directory that the other listing shows stays queued,
+and the listing still receives its total and its repaint."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-budget nil))
+      (let* ((buffer-b (tired root))
+             (key (tired--size-key (expand-file-name "sub" root)))
+             (buffer-a (tired (expand-file-name "sub" root))))
+        (should (tired--queue-job 'size key))
+        (should (memq buffer-b
+                      (tired--job-owners (tired--queue-job 'size key))))
+        (with-current-buffer buffer-a
+          (tired-refresh))
+        (should (tired--queue-job 'size key))
+        (should (memq buffer-b
+                      (tired--job-owners (tired--queue-job 'size key))))
+        (with-current-buffer buffer-b
+          (tired--queue-run)
+          (should (memq buffer-b tired--queue-dirty))
+          (tired--queue-reprint)
+          (should (equal 9 (tired--directory-total
+                            (expand-file-name "sub" root))))
+          (should-not (memq buffer-b tired--queue-dirty)))))))
+
+(ert-deftest tired-reload-keeps-a-shared-size-walk-owner ()
+  "A reload that shares a walk keeps the other owner and its repaint.
+The refresh requeues the walk under its own force and carries the
+owners of the walk that it replaced, so no listing loses the total."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-budget nil))
+      (let* ((buffer-a (tired root))
+             (buffer-b (get-buffer-create " *tired-test-owner*"))
+             (key (tired--size-key (expand-file-name "sub" root))))
+        (unwind-protect
+            (progn
+              (should (tired--queue-job 'size key))
+              (tired--queue-adopt (tired--queue-job 'size key) buffer-b)
+              (with-current-buffer buffer-a
+                (tired-refresh))
+              (let ((owners (tired--job-owners (tired--queue-job 'size key))))
+                (should (memq buffer-a owners))
+                (should (memq buffer-b owners)))
+              (with-current-buffer buffer-a
+                (tired--queue-run))
+              (should (memq buffer-b tired--queue-dirty))
+              (should (equal 9 (tired--directory-total
+                                (expand-file-name "sub" root)))))
+          (kill-buffer buffer-b))))))
+
+(ert-deftest tired-queue-forget-keeps-a-shared-walk ()
+  "A killed buffer drops a walk only when its last owner leaves."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-budget nil))
+      (let* ((buffer-a (tired root))
+             (buffer-b (get-buffer-create " *tired-test-owner*"))
+             (key (tired--size-key (expand-file-name "sub" root))))
+        (unwind-protect
+            (progn
+              (tired--queue-adopt (tired--queue-job 'size key) buffer-b)
+              (with-current-buffer buffer-a
+                (tired--queue-forget-current))
+              (should (tired--queue-job 'size key))
+              (should (equal (list buffer-b)
+                             (tired--job-owners
+                              (tired--queue-job 'size key))))
+              (tired--queue-forget-buffer buffer-b)
+              (should-not (tired--queue-job 'size key)))
+          (kill-buffer buffer-b))))))
+
 (ert-deftest tired--size-walk-advances-one-directory-per-step ()
   "One step reads one directory, so one pass holds a bounded read."
   (tired-test--with-fixture
