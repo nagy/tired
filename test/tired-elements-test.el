@@ -141,6 +141,21 @@ not a file."
     (should-not (tired--elements-value (tired-test--entry "b.json")))
     (should-not (tired--elements-value (tired-test--entry "c.json")))))
 
+(ert-deftest tired-elements-json-leaves-a-scalar-root-uncounted ()
+  "Only an array or an object produces an element count."
+  (tired-test--with-fixture
+    (tired-test--write "a.json" "\"abc\"")
+    (tired-test--write "b.json" "42")
+    (tired-test--write "c.json" "true")
+    (tired-test--write "d.json" "false")
+    (tired-test--write "e.json" "null")
+    (tired-test--write "f.json" "[1,2]")
+    (tired root)
+    (tired-test--flush-elements)
+    (dolist (name '("a.json" "b.json" "c.json" "d.json" "e.json"))
+      (should-not (tired--elements-value (tired-test--entry name))))
+    (should (= 2 (tired--elements-value (tired-test--entry "f.json"))))))
+
 (ert-deftest tired-elements-json-counts-a-nested-container ()
   "A string, an escape and a nested container stay one top-level item."
   (tired-test--with-fixture

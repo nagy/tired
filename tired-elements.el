@@ -47,7 +47,11 @@
 ;;   footer and the section fallback all read it.
 ;; - The JSON dissector parses with `json-parse-buffer' in one C call.
 ;;   Do not write a byte-at-a-time JSON scanner: one 21 MB index file
-;;   cost 20 s of Elisp scanning.
+;;   cost 20 s of Elisp scanning.  It reads arrays as vectors and objects
+;;   as hash tables, because `length' of a scalar root reads the
+;;   characters of a JSON string.  `json-parse-buffer' reads null and
+;;   false as a symbol, so a nil value names no container and an empty
+;;   container keeps its zero.
 ;; - `tired--csv-scan' feeds one byte back to itself when a closing quote
 ;;   ends a field, so it drops its index only on `:consumed'.  A quote
 ;;   opens a field at a record start or after a comma alone, and a
@@ -478,8 +482,10 @@ file, so one step costs one read, whatever the size of the file."
   "Return the number of top-level items of the JSON file at PATH.
 A top-level array counts its items, and a top-level object counts
 its keys.  Return nil for another name, for a file above
-`tired-elements-sync-limit', and for text that `json-parse-buffer'
-refuses.
+`tired-elements-sync-limit', for a root that is neither an array nor
+an object, and for text that `json-parse-buffer' refuses.  A scalar
+root holds no top-level item, and the character count of a string
+root is no item count.
 One C parser reads the whole file in one step, because the scan of a
 byte at a time in Elisp costs about one microsecond per byte.  The
 size bound guards that step, and a bound file keeps an empty cell."
@@ -493,8 +499,15 @@ size bound guards that step, and a bound file keeps an empty cell."
             (with-temp-buffer
               (insert-file-contents path)
               (goto-char (point-min))
-              (length (json-parse-buffer :object-type 'alist
-                                         :array-type 'list)))
+              (let ((value (json-parse-buffer :object-type 'hash-table
+                                              :array-type 'array)))
+                (cond
+                 ((vectorp value) (length value))
+                 ((hash-table-p value) (hash-table-count value))
+                 ;; `json-parse-buffer' reads null and false as a
+                 ;; symbol, so a nil value names no scalar root and an
+                 ;; empty container keeps its zero.
+                 (t nil))))
           (error nil))))))
 
 ;;; Markdown

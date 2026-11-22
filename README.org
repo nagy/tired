@@ -795,7 +795,10 @@ seconds:
 
 A JSON file counts through =json-parse-buffer=, one C call for the
 whole file, because a scan of a byte at a time in Elisp costs about one
-microsecond per byte.  The parse holds the document, so a bound keeps
+microsecond per byte.  A top-level array counts its items and a
+top-level object its keys; a scalar root, such as a lone string or
+number, has no top-level item and keeps an empty cell.  The parse holds
+the document, so a bound keeps
 the memory finite and the idle step short.  The same bound holds the
 Parquet footer and the section fallback, which also read a whole file
 in one step, and a larger file keeps an empty cell:
