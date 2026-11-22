@@ -44,9 +44,9 @@
 ;;   pass t for a key that a comparison or a column measurement reads.
 ;; - A source span may carry more than a face: an org link brings a
 ;;   `keymap', a `mouse-face' and an `invisible' property, and the last
-;;   one hides half a row.  `tired--face-only-string' rebuilds the label
-;;   with `face' alone, and `tired--paint-missing-face' drops every other
-;;   property.
+;;   one hides half a row.  `tired--paint-missing-face' rebuilds the
+;;   label from a copy with no property at all, so it drops every other
+;;   property in the same walk that paints the two face properties.
 ;; - A fenced Markdown block names another language, and its grammar may
 ;;   be absent, so the parse binds `treesit-auto-install-grammar' to nil.
 ;; - Section depth subtracts the level of the first section, or an Org

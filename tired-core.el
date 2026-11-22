@@ -1954,25 +1954,6 @@ same line fold together and no other row collides with them."
     ((or 'heading 'title 'table) 'tired-section-heading-face)
     (_ 'tired-section-face)))
 
-(defun tired--face-only-string (string)
-  "Return STRING with only its `face' property.
-A source span may carry a `keymap', a `mouse-face', a `display' or an
-`invisible' property, as an org link does.  A listing row shows its
-whole label and owns its own mouse handling, so those properties stay
-out."
-  (declare (pure t) (side-effect-free t))
-  (let ((copy (substring-no-properties string))
-        (position 0)
-        (end (length string)))
-    (while (< position end)
-      (let* ((face (get-text-property position 'face string))
-             (next (or (next-single-property-change position 'face string end)
-                       end)))
-        (when face
-          (put-text-property position next 'face face copy))
-        (setq position next)))
-    copy))
-
 (defun tired--section-cell (section)
   "Return the name column string for SECTION, without indentation.
 A handler may return a label that already carries the faces of its
@@ -2343,29 +2324,30 @@ carries both, as `package-menu--print-info-simple' does."
 
 (defun tired--paint-missing-face (string face)
   "Return STRING with FACE on every part that carries no face.
-Drop every text property except `face' first, so a row never inherits
-a `keymap', an `invisible' or a `mouse-face' from its source text.  A
-part that already carries a `face' property keeps it, so a handler may
-mix a plain prefix with propertized source text.  Each face also lands
-in `font-lock-face', which survives `font-lock-unfontify-region'.  A
-FACE of nil leaves the uncovered parts alone."
+Drop every text property except `face', so a row never inherits a
+`keymap', an `invisible' or a `mouse-face' from its source text.  The
+copy starts with no property at all, and one walk of the source spans
+paints both properties that a name cell carries: a part that already
+holds a `face' takes that face and a part without one takes FACE.  A
+`font-lock-face' beside every `face' survives
+`font-lock-unfontify-region'.  A FACE of nil leaves the uncovered
+parts alone."
   (declare (pure t) (side-effect-free t))
-  (let ((string (tired--face-only-string string))
+  (let ((copy (substring-no-properties string))
         (position 0)
         (end (length string)))
     (while (< position end)
       (let* ((source (get-text-property position 'face string))
              (next (or (next-single-property-change position 'face
                                                     string end)
-                       end)))
-        (if source
-            (put-text-property position next 'font-lock-face source string)
-          (when face
-            (add-text-properties position next
-                                 (tired--face-properties face)
-                                 string)))
+                       end))
+             (paint (or source face)))
+        (when paint
+          (add-text-properties position next
+                               (tired--face-properties paint)
+                               copy))
         (setq position next)))
-    string))
+    copy))
 
 (defun tired--propertize-name (name face &optional spans)
   "Return NAME with FACE applied, or NAME alone when FACE is nil.
