@@ -653,6 +653,62 @@ The trash would take the whole subtree, so the commit signals."
       (should (file-regular-p (expand-file-name "other/inner.txt" root)))
       (should-not (file-exists-p (expand-file-name "sub" root))))))
 
+(ert-deftest tired-edit-names-rejects-a-renamed-parent-and-child ()
+  "A commit refuses a rename of a directory and of an entry inside it."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (tired root)
+      (tired-test--goto "sub")
+      (tired-insert-subdir)
+      (tired-edit-names)
+      (tired-test--edit-name "sub" "other")
+      (tired-test--edit-name "inner.txt" "new.txt")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should tired--name-edit)
+      (should (equal (tired-test--contents
+                      (expand-file-name "sub/inner.txt" root))
+                     "inner"))
+      (should-not (file-exists-p (expand-file-name "other" root)))
+      (should-not (file-exists-p (expand-file-name "sub/new.txt" root)))
+      (should-not tired--undo-actions)
+      (should (equal (mapcar #'cdr (tired--name-edit-changes))
+                     '("other" "new.txt"))))))
+
+(ert-deftest tired-edit-names-rejects-a-renamed-parent-and-descendant ()
+  "The same refusal reaches a descendant that no row shows directly."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (tired root)
+      (tired-test--goto "sub")
+      (tired-insert-subdir)
+      (tired-insert-subdir (expand-file-name "sub/deep" root))
+      (tired-edit-names)
+      (tired-test--edit-name "sub" "other")
+      (tired-test--edit-name "deep/leaf.txt" "leaf2.txt")
+      (should-error (tired-commit-edits) :type 'user-error)
+      (should (equal (tired-test--contents
+                      (expand-file-name "sub/deep/leaf.txt" root))
+                     "leaf"))
+      (should-not (file-exists-p (expand-file-name "other" root)))
+      (should-not tired--undo-actions))))
+
+(ert-deftest tired-edit-names-renames-independent-siblings ()
+  "A sibling rename beside a parent rename stays independent."
+  (tired-test--with-fixture
+    (tired-test--with-trash
+      (tired root)
+      (tired-test--goto "sub")
+      (tired-insert-subdir)
+      (tired-edit-names)
+      (tired-test--edit-name "alpha.txt" "one.txt")
+      (tired-test--edit-name "inner.txt" "new.txt")
+      (tired-commit-edits)
+      (should (file-regular-p (expand-file-name "one.txt" root)))
+      (should (file-regular-p (expand-file-name "sub/new.txt" root)))
+      (tired-undo)
+      (should (file-regular-p (expand-file-name "alpha.txt" root)))
+      (should (file-regular-p (expand-file-name "sub/inner.txt" root))))))
+
 (ert-deftest tired-edit-names-keeps-a-failed-name-editable ()
   "A rename that fails keeps its row, and the other rows turn read only.
 A name longer than the file system allows makes `rename-file'

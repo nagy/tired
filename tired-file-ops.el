@@ -78,9 +78,13 @@
 ;; - `tired-commit-edits' checks every name before it touches the disk:
 ;;   blank, a directory part, a control character, a repeated name, a
 ;;   name that the same commit moves away, a destination that names a
-;;   directory, and a row that left the disk.  It keeps display order, so
-;;   a renamed parent runs before a renamed child.  A rename that fails
-;;   keeps its row editable and turns the rows that succeeded read only.
+;;   directory, a row that left the disk, and a row that sits inside
+;;   another renamed row.  The last rule exists because the commit keeps
+;;   display order, so a renamed parent runs before a renamed child and
+;;   the child then reaches the source path that the parent left behind;
+;;   the whole batch is refused, so the user renames each side alone.  A
+;;   rename that fails keeps its row editable and turns the rows that
+;;   succeeded read only.
 ;; - Build every new path with `tired--name-target', never with
 ;;   `expand-file-name', which reads a name of `~' as the home
 ;;   directory.
@@ -1005,13 +1009,30 @@ name, so the commit refuses it."
           (push (cons entry name) changes))))
     (nreverse changes)))
 
+(defun tired--rename-source-above (path sources)
+  "Return the change of SOURCES whose source holds PATH, or nil.
+PATH is the expanded source of one change, and SOURCES maps an
+expanded source path to its change.  Walk the parents of PATH, so a
+deep descendant reaches the directory that the same commit renames."
+  (declare (side-effect-free t))
+  (let ((parent (file-name-directory (directory-file-name path)))
+        found)
+    (while (and parent (not found))
+      (setq found (gethash (directory-file-name parent) sources))
+      (let ((up (file-name-directory (directory-file-name parent))))
+        (setq parent (unless (equal up parent) up))))
+    found))
+
 (defun tired--check-name-edits (changes)
   "Signal a user error when CHANGES cannot reach the disk.
 A change is an (ENTRY . NAME) cons.  Refuse a blank name, a name
 that holds a directory part or a control character, a name that
 the commit already took, a name that belongs to a row which the
-same commit renames, a destination that names a directory, and a
-row whose path left the disk."
+same commit renames, a destination that names a directory, a row
+whose path left the disk, and a row that sits inside another
+renamed row.  The last rule holds because the commit renames a
+parent before the children that it holds, and every child then
+reaches a source path that the parent rename left behind."
   (let ((sources (make-hash-table :test #'equal))
         (targets (make-hash-table :test #'equal)))
     (dolist (change changes)
@@ -1021,7 +1042,7 @@ row whose path left the disk."
     (dolist (change changes)
       (let* ((entry (car change))
              (name (cdr change))
-             (path (tired-entry-path entry))
+             (path (expand-file-name (tired-entry-path entry)))
              (target (tired--name-target path name)))
         (when (string-empty-p (string-trim name))
           (user-error "A name is empty"))
@@ -1033,6 +1054,11 @@ row whose path left the disk."
           (user-error "A name holds no control character: %s" name))
         (unless (tired--path-exists-p path)
           (user-error "%s left the disk" (abbreviate-file-name path)))
+        (let ((holder (tired--rename-source-above path sources)))
+          (when holder
+            (user-error "One commit cannot rename %s and the entry %s inside it"
+                        (abbreviate-file-name (tired-entry-path (car holder)))
+                        (abbreviate-file-name path))))
         (when (file-directory-p target)
           (user-error "%s names a directory" name))
         (when (gethash target targets)
@@ -1048,7 +1074,8 @@ The commit leaves the name edit mode, unless a rename fails.
 The commit refuses a blank name, a name that carries a directory
 part, a name that repeats another name, a name that belongs to a
 row that the same commit renames, a destination that names a
-directory, and a row whose path left the disk.  Such a refusal
+directory, a row whose path left the disk, and a row that sits
+inside another renamed row.  Such a refusal
 keeps the edits, so the user fixes the name or runs
 `tired-abort-edits'.  An existing destination goes to
 `tired-trash-directory' first.  A failure does not stop the

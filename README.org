@@ -547,7 +547,12 @@ first character of the next name.
 A commit refuses a blank name, a name with a directory part, a
 control character, a name that repeats another name, a name that a
 row the same commit also renames leaves behind, a destination that
-names an existing directory, and a row whose file left the disk.  A
+names an existing directory, a row whose file left the disk, and a
+row that sits inside another row that the same commit renames.  The
+last rule refuses a parent rename and a child rename in one commit,
+because the parent moves first and the child then reaches a source
+path that the parent left behind; rename the parent, then rename the
+child.  A
 refusal keeps the edits, so the user fixes the name or aborts.  An
 existing destination file goes to =tired-trash-directory= first, and
 the whole commit lands on the undo stack once, so =M-x tired-undo=
