@@ -46,6 +46,12 @@
 ;;   `tired--parking-slot', so one undo and redo cycle leaves no dead
 ;;   entry.  `tired-redo' signals a user error while
 ;;   `tired-undo-push-functions' holds.
+;; - A journal holds (TARGET . SOURCE) conses, and `tired--move-pairs'
+;;   walks one of them forward.  A pair whose source left the disk or
+;;   whose target came back stays put, so a stale journal loses no
+;;   path.  `tired--undo-restore' reads the opposite order, (TRASH .
+;;   ORIGINAL), and swallows an error, so undo survives a half-moved
+;;   journal.
 ;; - `tired-rename' reads the row at point alone and renames the buffer
 ;;   that visits the path through `tired--rename-visiting-buffers'.  The
 ;;   helper calls `set-visited-file-name', never `rename-buffer', so
@@ -462,6 +468,16 @@ draw nothing."
       (deactivate-mark)
       (tired--report-operation verb place done (nreverse failures)))))
 
+(defun tired--move-pairs (pairs)
+  "Move each (TARGET . SOURCE) pair of PAIRS from its source to its target.
+Return the number of paths that moved.  `tired--move-path' leaves a
+pair alone whose source left the disk or whose target came back, so a
+stale journal loses no path."
+  (let ((moved 0))
+    (dolist (pair pairs moved)
+      (when (tired--move-path (cdr pair) (car pair))
+        (setq moved (1+ moved))))))
+
 (defun tired--undo-restore (pairs)
   "Put every PAIRS entry back and return the number restored.
 Each pair holds the trashed path and the original path."
@@ -489,13 +505,8 @@ later `tired--redo-copy' finds the copy again."
   "Park the TRASHED paths again and put every SLOTS copy back.
 SLOTS holds (PATH . TRASH-NAME) conses.  Return the number of
 paths that moved."
-  (let ((restored 0))
-    (dolist (pair trashed)
-      (when (tired--move-path (cdr pair) (car pair))
-        (setq restored (1+ restored))))
-    (dolist (slot slots)
-      (when (tired--move-path (cdr slot) (car slot))
-        (setq restored (1+ restored))))
+  (let ((restored (+ (tired--move-pairs trashed)
+                     (tired--move-pairs slots))))
     (tired--refresh-buffers)
     restored))
 
@@ -511,13 +522,8 @@ paths that moved."
 Each pair holds the destination and the source of one move, so the
 trashed pairs run first and free the destination of the entries.
 Return the number of paths that moved."
-  (let ((restored 0))
-    (dolist (pair trashed)
-      (when (tired--move-path (cdr pair) (car pair))
-        (setq restored (1+ restored))))
-    (dolist (pair moved)
-      (when (tired--move-path (cdr pair) (car pair))
-        (setq restored (1+ restored))))
+  (let ((restored (+ (tired--move-pairs trashed)
+                     (tired--move-pairs moved))))
     (tired--refresh-buffers)
     restored))
 
@@ -530,10 +536,7 @@ Return the number of paths that moved."
 (defun tired--redo-delete (trashed)
   "Move the original path of every TRASHED pair into the trash again.
 Return the number of paths that moved."
-  (let ((trashed-count 0))
-    (dolist (pair trashed)
-      (when (tired--move-path (cdr pair) (car pair))
-        (setq trashed-count (1+ trashed-count))))
+  (let ((trashed-count (tired--move-pairs trashed)))
     (tired--refresh-buffers)
     trashed-count))
 

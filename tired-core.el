@@ -336,7 +336,9 @@
 ;;   runs its body in `save-excursion'.  A narrow snapshot includes
 ;;   `tired--flagged-deletion', so a pending row stays on screen.
 ;; - `tired-copy-name' alternates between the name and the abbreviated
-;;   path through `tired--copy-name-absolute'.  `tired-next-line' and
+;;   path through `tired--copy-name-absolute', and every copy command
+;;   reads one echo-area line from `tired--copy-targets', which receives
+;;   a function of one entry.  `tired-next-line' and
 ;;   `tired-previous-line' clear that value, but `tired--beginning-of-name'
 ;;   must not, because a redraw calls that helper.
 ;; - A row must be a vector: Emacs 31 calls `aref' on it.
@@ -5466,28 +5468,18 @@ One call copies the name of each target, and the next call copies
 the full path with the home directory abbreviated.  A third call
 copies the name again."
   (interactive)
-  (let ((targets (tired--targets)))
-    (unless targets
-      (user-error "No entry at point"))
-    (kill-new (mapconcat #'tired--copy-name-value targets "\n"))
-    (deactivate-mark)
-    (message "Copied %d %s%s"
-             (length targets)
-             (if tired--copy-name-absolute "path" "name")
-             (if (= (length targets) 1) "" "s"))
-    (setq tired--copy-name-absolute (not tired--copy-name-absolute))))
+  (tired--copy-targets #'tired--copy-name-value
+                       (if tired--copy-name-absolute "path" "name"))
+  (setq tired--copy-name-absolute (not tired--copy-name-absolute)))
 
 (defun tired--copy-targets (function description)
-  "Copy FUNCTION of each target path to the kill ring.
-DESCRIPTION names the copied form in the echo area."
+  "Copy FUNCTION of each target entry to the kill ring.
+FUNCTION receives one entry.  DESCRIPTION names the copied form in
+the echo area."
   (let ((targets (tired--targets)))
     (unless targets
       (user-error "No entry at point"))
-    (kill-new
-     (mapconcat (lambda (entry)
-                  (funcall function (tired-entry-path entry)))
-                targets
-                "\n"))
+    (kill-new (mapconcat function targets "\n"))
     (deactivate-mark)
     (message "Copied %d %s%s"
              (length targets)
@@ -5497,14 +5489,15 @@ DESCRIPTION names the copied form in the echo area."
 (defun tired-copy-path ()
   "Copy the full paths of the targets to the kill ring."
   (interactive)
-  (tired--copy-targets #'identity "path"))
+  (tired--copy-targets #'tired-entry-path "path"))
 
 (defun tired-copy-relative-path ()
   "Copy target paths relative to the shown directory."
   (interactive)
   (let ((directory tired--directory))
     (tired--copy-targets
-     (lambda (path) (file-relative-name path directory))
+     (lambda (entry)
+       (file-relative-name (tired-entry-path entry) directory))
      "relative path")))
 
 (defun tired--project-root ()
@@ -5520,7 +5513,8 @@ Signal a user error when no project contains it."
   (interactive)
   (let ((root (tired--project-root)))
     (tired--copy-targets
-     (lambda (path) (file-relative-name path root))
+     (lambda (entry)
+       (file-relative-name (tired-entry-path entry) root))
      "project path")))
 
 (defun tired--visit-section (section &optional other-window)
