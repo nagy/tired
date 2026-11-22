@@ -1530,7 +1530,9 @@ absent, and the Nix check supplies =zstd=.
 - =tired.el= is the entry point.  It requires =tired-core.el=, which
   holds the listing, =tired-sections.el=, which holds the section
   handlers, and =tired-file-ops.el=, which holds the file commands.
-  Loading =tired= loads all three in that order.
+  Loading =tired= loads all three in that order.  The idle queue that
+  the size walks and the element counts share lives in
+  =tired-queue.el=, which loads before the core.
 - Directory entries are =tired-entry= structs in a hash table.  The
   listing table is rebuilt on refresh, so the displayed data never goes
   stale.

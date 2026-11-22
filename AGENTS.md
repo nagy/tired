@@ -19,6 +19,9 @@ reasons.
   `tired-find-file-mode`, `tired-jump`, `tired-project`,
   `tired-magit-status`, `tired-clear-caches`), the
   evil hook
+- `tired-queue.el` — the idle job queue that the size walks and the
+  element counts ride: the job record, the queue tables, the pass, its
+  timer chain and the reprint
 - `tired-core.el` — entries, section framework, display, selection,
   redraw, watches, the size caches, the whole-tree level fill,
   `tired-mode`, and the point
@@ -26,8 +29,8 @@ reasons.
   `tired-with-directory-at-point` and `tired-run-at-point`
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Python, Go,
   Markdown, Cargo, KiCad schematic, SQLite and tar handlers
-- `tired-elements.el` — the Elements column, its dissector hook, the
-  global count caches and the idle queue
+- `tired-elements.el` — the Elements column, its dissector hook and the
+  global count caches
 - `tired-file-ops.el` — copy, move, rename, delete, undo and redo, mkdir,
   touch, shell, and the in-place name edit
 - `tired-export.el` — the CSV, text and `rclone lsjson` exports and
@@ -72,7 +75,7 @@ first, because the flake sources take git-tracked files alone.
   `TREESIT_EXTRA_LOAD_PATH` and puts `zstd` on the path for the archive
   fixtures.  A missing grammar skips its test instead of failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el` and
-  `test/*.el`, `checkdoc` on the seven libraries and `test/*.el`, and
+  `test/*.el`, `checkdoc` on the eight libraries and `test/*.el`, and
   `relint` on the same set.  `checkdoc` and `relint` exit 0 while they
   report, so the check gates on output.  `package-lint-main-file`
   names `tired.el`, because no test file carries a header.
@@ -84,14 +87,16 @@ first, because the flake sources take git-tracked files alone.
 
 ## Architecture
 
-Dependencies point one way: `tired-core` requires no sibling,
-`tired-sections`, `tired-elements`, `tired-file-ops` and
-`tired-export` require `tired-core`, and `tired` requires all five.
-`tired-evil` requires `tired`.  A call into another library takes a
-`declare-function`, so no load-time dependency forms, and a variable of
-another library takes a `defvar` with no value, as
-`tired-python-section-depth` shows in `tired-core`.  `tired.el`
-installs the evil hook after `provide`, so both load orders work.
+Dependencies point one way: `tired-queue` requires no sibling,
+`tired-core` requires `tired-queue`, `tired-sections`, `tired-elements`,
+`tired-file-ops` and `tired-export` require `tired-core`, and `tired`
+requires the last five.  `tired-evil` requires `tired`.  A call into
+another library takes a `declare-function`, so no load-time dependency
+forms, and a variable of another library takes a `defvar` with no
+value, as `tired-python-section-depth` shows in `tired-core`.  The
+queue calls `tired--redraw` for its reprint through a declaration,
+because the queue sits below the listing.  `tired.el` installs the evil
+hook after `provide`, so both load orders work.
 
 Every `;;;###autoload` cookie for a command sits in `tired.el`, because
 the file that holds a cookie names the file that its autoload loads.  A

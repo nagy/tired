@@ -65,9 +65,9 @@
             # checkdoc and relint exit 0 even when they report
             # problems; gate on output.  The test files join the gate so
             # they keep the header, docstring and prefix rules.
-            for file in tired.el tired-core.el tired-sections.el \
-              tired-elements.el tired-file-ops.el tired-export.el \
-              tired-evil.el test/*.el; do
+            for file in tired.el tired-core.el tired-queue.el \
+              tired-sections.el tired-elements.el tired-file-ops.el \
+              tired-export.el tired-evil.el test/*.el; do
               doc=$(emacs --batch -l checkdoc \
                 --eval "(checkdoc-file \"$file\")" 2>&1)
               if [ -n "$doc" ]; then
@@ -78,9 +78,9 @@
 
             # relint reads a Lisp form and a file, so give it one file
             # per run.  A regexp finding prints a line for each problem.
-            for file in tired.el tired-core.el tired-sections.el \
-              tired-elements.el tired-file-ops.el tired-export.el \
-              tired-evil.el test/*.el; do
+            for file in tired.el tired-core.el tired-queue.el \
+              tired-sections.el tired-elements.el tired-file-ops.el \
+              tired-export.el tired-evil.el test/*.el; do
               report=$(emacs --batch -l relint \
                 --eval "(relint-file \"$file\")" 2>&1)
               if [ -n "$report" ]; then
