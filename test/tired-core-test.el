@@ -1776,6 +1776,127 @@ still covers can hide a file that arrived after its walk."
       (should (equal (file-size-human-readable 104)
                      (tired--size-cell (tired-test--entry "sub")))))))
 
+(ert-deftest tired-size-walk-is-on-by-default ()
+  "The recursive directory size walk runs unless the user turns it off."
+  (should (default-value 'tired-directory-size-walk)))
+
+(ert-deftest tired-size-walk-off-queues-no-walk ()
+  "A nil `tired-directory-size-walk' queues no walk and reads no directory.
+The size cell stays empty, the empty-directory mark stays plain and
+no directory reaches a byte total."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-walk nil)
+          (calls 0)
+          (original (symbol-function 'directory-files-and-attributes)))
+      (tired root)
+      (should-not (tired-test--queued-jobs 'size))
+      (cl-letf (((symbol-function 'directory-files-and-attributes)
+                 (lambda (&rest args)
+                   (setq calls (1+ calls))
+                   (apply original args))))
+        (tired-test--flush-sizes)
+        (should (= 0 calls))
+        (tired--redraw)
+        (tired-test--flush-sizes)
+        (should (= 0 calls)))
+      (should-not (tired-test--queued-jobs 'size))
+      (should (equal "" (tired--size-cell (tired-test--entry "sub"))))
+      (should-not (tired--directory-total (expand-file-name "sub" root)))
+      (should (zerop (tired--entry-size (tired-test--entry "sub"))))
+      (tired--size-enqueue (tired--path-key root) root)
+      (should-not (tired-test--queued-jobs 'size)))))
+
+(ert-deftest tired-size-walk-off-after-setq-keeps-a-cached-total ()
+  "A plain binding keeps a total that a walk computed before it.
+No setter runs, so the memo table still serves the size cell, and a
+refresh queues no new walk while the option holds."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (tired-test--flush-sizes)
+      (let ((tired-directory-size-walk nil))
+        (tired-refresh)
+        (tired-test--flush-sizes)
+        (should-not (tired-test--queued-jobs 'size)))
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-test--entry "sub"))))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root)))))))
+
+(ert-deftest tired-size-walk-setter-empties-the-cache ()
+  "Turning `tired-directory-size-walk' off empties the walk caches.
+The setter drops every total and every child count, and it redraws
+every Tired buffer, so the printed size cell empties at once."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (original (default-value 'tired-directory-size-walk)))
+      (unwind-protect
+          (progn
+            (with-temp-file (expand-file-name "sub/big.txt")
+              (insert (make-string 4096 ?x)))
+            (tired root)
+            (tired-test--flush-sizes)
+            (should (equal (file-size-human-readable 4105)
+                           (tired--size-cell (tired-test--entry "sub"))))
+            (should (save-excursion
+                      (goto-char (point-min))
+                      (search-forward (file-size-human-readable 4105)
+                                      nil t)))
+            (tired--size-walk-set 'tired-directory-size-walk nil)
+            (should (zerop (hash-table-count tired--size-cache)))
+            (should (zerop (hash-table-count tired--child-cache)))
+            (should-not (tired--directory-total
+                         (expand-file-name "sub" root)))
+            (should (equal "" (tired--size-cell (tired-test--entry "sub"))))
+            (should (zerop (tired--entry-size (tired-test--entry "sub"))))
+            (should-not (save-excursion
+                          (goto-char (point-min))
+                          (search-forward (file-size-human-readable 4105)
+                                          nil t))))
+        (set-default 'tired-directory-size-walk original)))))
+
+(ert-deftest tired-size-walk-setter-drops-and-restarts-walks ()
+  "The Custom setter drops the queued walks and queues a shown listing.
+A `setopt' therefore takes effect without a refresh."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (original (default-value 'tired-directory-size-walk)))
+      (unwind-protect
+          (progn
+            (tired root)
+            (should (tired-test--queued-jobs 'size))
+            (tired--size-walk-set 'tired-directory-size-walk nil)
+            (should-not (tired-test--queued-jobs 'size))
+            (tired--size-walk-set 'tired-directory-size-walk t)
+            (should (tired-test--queued-jobs 'size)))
+        (set-default 'tired-directory-size-walk original)))))
+
+(ert-deftest tired-size-walk-setter-defers-a-hidden-listing ()
+  "A hidden listing keeps its deferred state across a disable and enable.
+Its next display then starts the walk that the option asks for."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (original (default-value 'tired-directory-size-walk)))
+      (unwind-protect
+          (tired-test--with-deferred-sizes
+            (tired root)
+            (should tired--size-deferred)
+            (tired--size-walk-set 'tired-directory-size-walk nil)
+            (should-not tired--size-deferred)
+            (tired--size-walk-set 'tired-directory-size-walk t)
+            (should tired--size-deferred)
+            (should-not (tired-test--queued-jobs 'size))
+            (let ((tired-test--window-shown t))
+              (tired--window-buffer-changed (selected-window))
+              (should (timerp tired--size-timer))
+              (cancel-timer tired--size-timer)
+              (tired--size-redraw (current-buffer))
+              (tired-test--flush-sizes)
+              (should (equal (file-size-human-readable 9)
+                             (tired--size-cell (tired-test--entry "sub"))))))
+        (set-default 'tired-directory-size-walk original)))))
+
 
 (ert-deftest tired-size-cache-ttl-zero-sums-every-refresh ()
   "A zero `tired-size-cache-ttl' makes each refresh walk the subtree."

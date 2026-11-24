@@ -266,6 +266,18 @@
 ;;   breaks a two-nil tie by name, or the rows would keep the hash order.
 ;;   The Elements header label with its arrow is ten characters wide, so
 ;;   the column and its share of `tired--fixed-column-width' are ten.
+;; - A nil `tired-directory-size-walk' stops the walk at
+;;   `tired--size-queue' and `tired--size-enqueue', so no idle pass
+;;   reads a directory.  `tired--size-skip-p' stays out of it, because
+;;   that predicate answers the display questions too.  The Custom
+;;   setter drops the queued walks, empties the totals and the child
+;;   counts that earlier walks stored, and redraws every Tired buffer,
+;;   so no row keeps a size that the option stops Tired from
+;;   computing.  Turning the value back on queues every Tired buffer
+;;   again, so a hidden listing keeps its deferred state for its next
+;;   display.  A plain `setq' runs no setter, so a walk that already
+;;   waits still runs and its total stays on screen.  See
+;;   `docs/adr/0037'.
 ;; - `tired--entries-size' counts a directory by its subtree, adds nothing
 ;;   for a remote directory or for a directory that
 ;;   `tired-directory-size-exclude' names, and adds zero until the walk
@@ -597,8 +609,31 @@ later redraw from a global memo table, and a refresh re-walks the
 directories that it shows.  A remote directory never
 shows a total, because the walk would cost one network round trip
 per file.  A directory that `tired-directory-size-exclude' names
-costs no walk either."
+costs no walk either.  A nil `tired-directory-size-walk' queues no
+walk at all, so the column shows the totals that earlier walks
+stored, and the setter of that option drops them."
   :type 'boolean)
+
+(defcustom tired-directory-size-walk t
+  "When nil, Tired queues no recursive directory size walk.
+`tired-directory-size' still governs the column, but a directory
+without a total shows no size, keeps its plain directory face and
+adds no byte to the mode line.  Set this option through Customize or
+`setopt', so the setter drops the walks that wait in the idle queue,
+empties the totals and the child counts that earlier walks stored,
+and redraws every Tired buffer.  The setter also queues every Tired
+buffer again when the value turns back on, so a shown listing walks
+at once and a hidden one walks at its next display.  A plain `setq'
+runs no setter, so a walk that already waits still runs and the total
+that it stores stays on screen.  The Elements column, the
+single-child collapse and the whole-tree expansion keep their own
+options."
+  :type 'boolean
+  ;; The standard value must not run the setter while this file loads,
+  ;; because the setter redraws the listings and calls functions that
+  ;; the rest of the file defines.
+  :initialize #'custom-initialize-default
+  :set #'tired--size-walk-set)
 
 (defcustom tired-directory-size-exclude nil
   "List of regexps that name directories without a recursive size.
@@ -1198,7 +1233,10 @@ before every real extension."
   "Return the byte count that the size column shows for ENTRY, or nil.
 A file shows its own size.  A directory shows the total of its
 subtree when `tired-directory-size' holds and the memo table holds a
-total.  A remote directory, a directory that
+total.  A total that the memo table holds shows even while
+`tired-directory-size-walk' is nil, because reading it costs no
+walk, although the setter of that option empties the table.
+A remote directory, a directory that
 `tired-directory-size-exclude' names and a walk that the idle queue
 has not finished show nothing, so the value stays nil."
   (cond
@@ -2378,13 +2416,22 @@ files, `:names' holds the child directories that it visits and
   (and (consp value)
        (<= (- (float-time) (cdr value)) tired-size-cache-ttl)))
 
+(defun tired--size-total-clear ()
+  "Drop every cached directory total and every child count.
+A walk stores a total in `tired--size-cache' or, under a rule of
+`tired-persistent-directories', in `tired--size-cache-permanent',
+and the names that it counted in `tired--child-cache'.  Keep
+`tired--persistent-file-cache', which holds a file size that the
+next walk reuses."
+  (clrhash tired--size-cache)
+  (clrhash tired--size-cache-permanent)
+  (clrhash tired--child-cache))
+
 (defun tired--size-cache-clear ()
   "Drop every cached directory size and persistent file size.
 Empty `tired--size-cache-permanent' as well, so a directory under a
 rule walks its subtree again."
-  (clrhash tired--size-cache)
-  (clrhash tired--size-cache-permanent)
-  (clrhash tired--child-cache)
+  (tired--size-total-clear)
   (clrhash tired--persistent-file-cache))
 
 (defun tired--size-cache-prune ()
@@ -2680,6 +2727,7 @@ directory and a queued walk cost no walk.  A kept total is one that
 under `tired-persistent-directories'.  A listing that shows a
 directory whose walk already waits joins that walk, so one read and
 one repaint serve every listing.
+A nil `tired-directory-size-walk' queues nothing.
 FORCE recomputes a young total, because a refresh asked for the
 size that the disk holds now.  FORCE also drops a queued walk that
 started before FORCE, because that walk can still store a scan that
@@ -2687,7 +2735,8 @@ predates the change.  The new walk takes the owners of the walk it
 replaces, so no listing that waited loses its repaint.  A walk that
 started after FORCE stays, so one
 refresh never restarts itself."
-  (when (and (not (gethash key tired--size-cache-permanent))
+  (when (and tired-directory-size-walk
+             (not (gethash key tired--size-cache-permanent))
              (not (tired--size-skip-p directory entry))
              (or force
                  (not (tired--size-cache-valid-p
@@ -2735,10 +2784,18 @@ shown directory, so no row above the listing counts as an ancestor."
   "Queue the visible directory rows for an idle size walk.
 `tired--redraw-buffer' calls this after the print.  A listing that
 no window shows queues nothing and sets `tired--size-deferred', so
-the next display starts the walk.  Only the topmost row of a chain
+the next display starts the walk.  A nil
+`tired-directory-size-walk' queues nothing and clears the deferred
+flag with the forced stamp, so no listing waits for a walk and no
+stale refresh restarts one later.  Only the topmost row of a chain
 queues, because a walk covers the subtree of its row."
-  (if (not (tired--size-window-p))
-      (setq tired--size-deferred t)
+  (cond
+   ((not tired-directory-size-walk)
+    (setq tired--size-forced nil)
+    (setq tired--size-deferred nil))
+   ((not (tired--size-window-p))
+    (setq tired--size-deferred t))
+   (t
     (let ((directories (make-hash-table :test #'equal))
           (force tired--size-forced))
       (setq tired--size-forced nil)
@@ -2752,7 +2809,40 @@ queues, because a walk covers the subtree of its row."
       (maphash (lambda (key row)
                  (unless (tired--size-ancestor-p key directories)
                    (tired--size-enqueue key key force row)))
-               directories))))
+               directories)))))
+
+(defun tired--size-walk-resync ()
+  "Start or stop the idle size walks after the walk option changed.
+A nil `tired-directory-size-walk' drops every queued walk, because
+no pass then reads another directory, empties the totals and the
+child counts that earlier walks stored, and redraws every Tired
+buffer, so no row shows a size that the option stops Tired from
+computing.  A non-nil value queues every Tired buffer again: a shown
+listing queues its visible rows at once, and a hidden one sets
+`tired--size-deferred', so its next display starts the walk it would
+have queued there."
+  (if tired-directory-size-walk
+      (dolist (buffer (buffer-list))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (when (derived-mode-p 'tired-mode)
+              (tired--size-queue)))))
+    (tired--queue-drop-where #'tired--size-walk-job-p)
+    (tired--size-total-clear)
+    (dolist (buffer (buffer-list))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (when (derived-mode-p 'tired-mode)
+            (setq tired--size-deferred nil)
+            (tired--redraw)))))))
+
+(defun tired--size-walk-set (symbol value)
+  "Set SYMBOL to VALUE and resync the idle size walks.
+The setter of `tired-directory-size-walk', so Customize and
+`setopt' stop the walks that wait, drop the totals that they stored
+and start the walks that a shown listing needs."
+  (set-default symbol value)
+  (tired--size-walk-resync))
 
 (defun tired--directory-total (directory)
   "Return the byte total that the memo table holds for DIRECTORY, or nil.

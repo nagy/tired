@@ -647,6 +647,28 @@ large tree outside the listing does not inflate a size.  A remote
 directory keeps the column empty, because the walk would cost one
 network round trip per file.  Hidden files count.
 
+A recursive total reads one directory per directory in the subtree,
+so a tree on slow storage costs time even while Emacs sits idle.
+Set =tired-directory-size-walk= to nil to queue no walk at all:
+
+#+begin_src elisp
+  (setopt tired-directory-size-walk nil)
+#+end_src
+
+The option stops the computation, not the column: a directory with
+no total shows no size, keeps the plain directory face and adds no
+byte to the mode line.  Change the option through Customize or
+=setopt=, so the setter drops the walks that already wait in the idle
+queue, empties the totals and the child counts that earlier walks
+stored, and redraws every Tired buffer.  The setter also queues every
+Tired buffer again when the value turns back on, so a shown listing
+walks at once and a hidden one walks at its next display.  A plain
+=setq= reaches the next redraw alone, so a walk that already waits
+still runs and the total that it stores stays on screen.
+=M-x tired-clear-caches= drops the totals at any time.  The Elements
+column, the single-child collapse and the whole-tree expansion keep
+their own options.
+
 A mounted network directory that =file-remote-p= does not reach can
 freeze Emacs, because a walk over a mount reads a whole network tree.
 List a regexp for such a directory in =tired-directory-size-exclude=:
@@ -1013,9 +1035,11 @@ as empty when its subtree holds no byte, so a directory that holds
 only empty files dims too.  The slash of the row follows the name.
 The mark needs no =tired-directory-size=, because the name reads the
 size cache, and a remote directory keeps the directory face.  A
-directory that =tired-directory-size-exclude= names keeps it too.  A
-directory that waits for its walk, and a listing that no window
-shows, keep the plain directory face until the walk lands.
+directory that =tired-directory-size-exclude= names keeps it too, and
+so does a directory without a total, which is every directory once
+=tired-directory-size-walk= turns nil.  A directory that still waits
+for a walk, and a listing that no window shows, keep the plain
+directory face until the walk lands.
 
 Set =tired-name-faces= to colorize more names.  Each rule starts with
 a regexp that matches the entry name.  A rule that holds a bare face
