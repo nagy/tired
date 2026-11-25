@@ -185,6 +185,35 @@ and not the face that the cell builder would write."
         (forward-line 1))
       found)))
 
+(defun tired-test--printed-size (name)
+  "Return the printed size cell of the row that shows NAME, or nil.
+NAME names an entry of the current listing.  Read the buffer, so the
+test sees the cell that the printer wrote and not the cell that the
+current cache would build.  Each column takes its width plus one
+space, as `tabulated-list-print-col' pads it, so the widths of
+`tabulated-list-format' give the offset of the Size column."
+  (let ((offset 0)
+        (width nil)
+        (columns (append tabulated-list-format nil)))
+    (while (and columns (null width))
+      (if (string-prefix-p "Size" (nth 0 (car columns)))
+          (setq width (nth 1 (car columns)))
+        (setq offset (+ offset 1 (nth 1 (car columns))))
+        (setq columns (cdr columns))))
+    (when width
+      (save-excursion
+        (goto-char (point-min))
+        (let (line)
+          (while (and (not line) (not (eobp)))
+            (when (equal name
+                         (ignore-errors
+                           (tired-entry-name (tabulated-list-get-id))))
+              (setq line (buffer-substring-no-properties
+                          (line-beginning-position) (line-end-position))))
+            (forward-line 1))
+          (when line
+            (string-trim (substring line offset (+ offset width)))))))))
+
 (defun tired-test--header-string ()
   "Return the header line of the current listing as one string.
 The printer builds the header from several strings, and the column

@@ -17,8 +17,8 @@ reasons.
 - `tired.el` — entry point: commentary, the five requires, the public
   commands (`tired`, `tired-other-window`, `tired-noselect`,
   `tired-find-file-mode`, `tired-jump`, `tired-project`,
-  `tired-magit-status`, `tired-clear-caches`), the
-  evil hook
+  `tired-magit-status`, `tired-clear-caches`, `tired-compute-sizes`),
+  the evil hook
 - `tired-queue.el` — the idle job queue that the size walks and the
   element counts ride: the job record, the queue tables, the pass, its
   timer chain and the reprint
@@ -149,11 +149,11 @@ carries no cookie at all: `tired-noselect` runs the mode.
   that table never names a subdir, expand, collapse or toggle command.
 
 - Some commands carry no binding on purpose: `tired-clear-caches`,
-  `tired-delete-now`, `tired-edit-names`, `tired-commit-edits`, `tired-abort-edits`,
-  `tired-insert-subdir`, `tired-expand-file`, `tired-collapse-file`,
-  `tired-project` and `tired-magit-status` take `M-x` and the menu
-  alone.  `tired-undo` and
-  `tired-redo` take the `<undo>` and `<redo>` keysyms alone, so no
+  `tired-compute-sizes`, `tired-delete-now`, `tired-edit-names`,
+  `tired-commit-edits`, `tired-abort-edits`, `tired-insert-subdir`,
+  `tired-expand-file`, `tired-collapse-file`, `tired-project` and
+  `tired-magit-status` take `M-x` and the menu alone.  `tired-undo`
+  and `tired-redo` take the `<undo>` and `<redo>` keysyms alone, so no
   printable key and no menu entry reaches them.  `tired-core-test` and
   `tired-file-ops-test` fail when a binding returns.
 

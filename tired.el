@@ -337,6 +337,36 @@ reaches it."
           (setq tired--listing-stamps nil)
           (tired-refresh))))))
 
+;;;###autoload
+(defun tired-compute-sizes (&optional force)
+  "Fill the directory size cache for the rows this listing shows.
+Queue one idle walk for every visible directory row that no other
+visible row covers, so the walk stores a total that the size column,
+the empty-directory mark and the mode line read.  The walks run even
+while `tired-directory-size-walk' is nil, because the command is an
+explicit request for one reading, and the binding that allows them
+ends with the command, so no automatic walk follows.  A total serves
+those readers until `tired-size-cache-ttl' expires it.
+The mark and the mode line read a total even while
+`tired-directory-size' is nil and the column stays hidden, so the
+command pays off without the column.  A listing that no window shows
+takes the walk anyway, and the next display prints the totals, so the
+command reaches a buffer that `tired-noselect' returned.
+A young cached total costs no walk, so a second call reads nothing.
+FORCE, the prefix argument, recomputes every shown directory, as a
+refresh does.  A remote directory and a directory that
+`tired-directory-size-exclude' names still take no walk, and a
+directory under `tired-persistent-directories' keeps the total that
+its rule stored.  The command has no key and no menu entry, so `M-x'
+alone reaches it."
+  (interactive "P")
+  (unless tired--directory
+    (user-error "Not in a Tired buffer"))
+  (when force
+    (setq tired--size-forced (float-time)))
+  (let ((tired--size-walk-once t))
+    (tired--size-queue)))
+
 ;;; Evil integration
 
 ;; The definitions below follow `provide', so `(require 'tired)' inside

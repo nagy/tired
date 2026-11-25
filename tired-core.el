@@ -276,8 +276,12 @@
 ;;   computing.  Turning the value back on queues every Tired buffer
 ;;   again, so a hidden listing keeps its deferred state for its next
 ;;   display.  A plain `setq' runs no setter, so a walk that already
-;;   waits still runs and its total stays on screen.  See
-;;   `docs/adr/0037'.
+;;   waits still runs and its total stays on screen.  The command
+;;   `tired-compute-sizes' binds `tired--size-walk-once', so a user who
+;;   stopped every automatic walk still asks for one reading.  The
+;;   binding is dynamic and ends with the command: the idle pass that
+;;   runs later reads the option alone, so a total lands in the cache
+;;   and no second walk follows.  See `docs/adr/0037'.
 ;; - `tired--entries-size' counts a directory by its subtree, adds nothing
 ;;   for a remote directory or for a directory that
 ;;   `tired-directory-size-exclude' names, and adds zero until the walk
@@ -611,7 +615,9 @@ shows a total, because the walk would cost one network round trip
 per file.  A directory that `tired-directory-size-exclude' names
 costs no walk either.  A nil `tired-directory-size-walk' queues no
 walk at all, so the column shows the totals that earlier walks
-stored, and the setter of that option drops them."
+stored, and the setter of that option drops them.
+`M-x tired-compute-sizes' fills the table once without turning the
+option back on."
   :type 'boolean)
 
 (defcustom tired-directory-size-walk t
@@ -625,7 +631,9 @@ and redraws every Tired buffer.  The setter also queues every Tired
 buffer again when the value turns back on, so a shown listing walks
 at once and a hidden one walks at its next display.  A plain `setq'
 runs no setter, so a walk that already waits still runs and the total
-that it stores stays on screen.  The Elements column, the
+that it stores stays on screen.  `M-x tired-compute-sizes' fills the
+cache once, even while this option is nil, and a prefix argument
+recomputes every shown directory.  The Elements column, the
 single-child collapse and the whole-tree expansion keep their own
 options."
   :type 'boolean
@@ -2386,6 +2394,13 @@ once and then clears it, so one refresh forces one walk per shown
 directory.  A nil value means that the cached totals serve the
 redraw.")
 
+(defvar tired--size-walk-once nil
+  "Non-nil while one manual walk overrides `tired-directory-size-walk'.
+`tired-compute-sizes' binds it, so `tired--size-queue' and
+`tired--size-enqueue' fill the cache once although the option stops
+every automatic walk.  The binding is dynamic, so it ends with the
+command and the idle pass that runs later reads the option alone.")
+
 (defvar-local tired--size-timer nil
   "Timer that redraws the listing to queue its directory size walks.")
 
@@ -2748,7 +2763,9 @@ directory and a queued walk cost no walk.  A kept total is one that
 under `tired-persistent-directories'.  A listing that shows a
 directory whose walk already waits joins that walk, so one read and
 one repaint serve every listing.
-A nil `tired-directory-size-walk' queues nothing.
+A nil `tired-directory-size-walk' queues nothing, unless
+`tired--size-walk-once' holds, which is what `tired-compute-sizes'
+binds for one manual reading.
 FORCE recomputes a young total, because a refresh asked for the
 size that the disk holds now.  FORCE also drops a queued walk that
 started before FORCE, because that walk can still store a scan that
@@ -2756,7 +2773,7 @@ predates the change.  The new walk takes the owners of the walk it
 replaces, so no listing that waited loses its repaint.  A walk that
 started after FORCE stays, so one
 refresh never restarts itself."
-  (when (and tired-directory-size-walk
+  (when (and (or tired-directory-size-walk tired--size-walk-once)
              (not (gethash key tired--size-cache-permanent))
              (not (tired--size-skip-p directory entry))
              (or force
@@ -2808,15 +2825,23 @@ no window shows queues nothing and sets `tired--size-deferred', so
 the next display starts the walk.  A nil
 `tired-directory-size-walk' queues nothing and clears the deferred
 flag with the forced stamp, so no listing waits for a walk and no
-stale refresh restarts one later.  Only the topmost row of a chain
-queues, because a walk covers the subtree of its row."
+stale refresh restarts one later.  A non-nil
+`tired--size-walk-once' outranks both clauses, so the manual call of
+`tired-compute-sizes' queues the visible rows even while the option
+holds nil, and leaves `tired--size-deferred' set when no window shows
+the listing, so the display that follows prints the totals that the
+walk stores.  Only the topmost row of a chain queues, because a walk
+covers the subtree of its row."
   (cond
-   ((not tired-directory-size-walk)
+   ((not (or tired-directory-size-walk tired--size-walk-once))
     (setq tired--size-forced nil)
     (setq tired--size-deferred nil))
-   ((not (tired--size-window-p))
+   ((and (not tired--size-walk-once)
+         (not (tired--size-window-p)))
     (setq tired--size-deferred t))
    (t
+    (unless (tired--size-window-p)
+      (setq tired--size-deferred t))
     (let ((directories (make-hash-table :test #'equal))
           (force tired--size-forced))
       (setq tired--size-forced nil)

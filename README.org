@@ -665,9 +665,22 @@ Tired buffer again when the value turns back on, so a shown listing
 walks at once and a hidden one walks at its next display.  A plain
 =setq= reaches the next redraw alone, so a walk that already waits
 still runs and the total that it stores stays on screen.
-=M-x tired-clear-caches= drops the totals at any time.  The Elements
-column, the single-child collapse and the whole-tree expansion keep
-their own options.
+
+=M-x tired-compute-sizes= reads the sizes once, even while the option
+stays nil, so a tree on slow storage costs a walk only when you ask
+for one.  The command queues the visible directory rows alone, so the
+idle pass fills the cache and the column shows the totals that it
+stored; a listing that no window shows takes the walk anyway, and the
+next display reprints the totals.  The empty-directory mark and the
+mode line read a total either way, so the command pays off also while
+=tired-directory-size= is nil.  A young cached total costs no walk, so
+a second call reads nothing; a prefix argument recomputes every shown
+directory, as a refresh does.  A remote directory and a directory that
+=tired-directory-size-exclude= names still take no walk.  A total
+serves the column, the empty-directory mark and the mode line until
+=tired-size-cache-ttl= expires it, and =M-x tired-clear-caches= drops
+it at any time.  The Elements column, the single-child collapse and
+the whole-tree expansion keep their own options.
 
 A mounted network directory that =file-remote-p= does not reach can
 freeze Emacs, because a walk over a mount reads a whole network tree.
@@ -1037,9 +1050,10 @@ The mark needs no =tired-directory-size=, because the name reads the
 size cache, and a remote directory keeps the directory face.  A
 directory that =tired-directory-size-exclude= names keeps it too, and
 so does a directory without a total, which is every directory once
-=tired-directory-size-walk= turns nil.  A directory that still waits
-for a walk, and a listing that no window shows, keep the plain
-directory face until the walk lands.
+=tired-directory-size-walk= turns nil until =M-x tired-compute-sizes=
+fills the cache.  A directory that still waits for a walk, and a
+listing that no window shows, keep the plain directory face until the
+walk lands.
 
 Set =tired-name-faces= to colorize more names.  Each rule starts with
 a regexp that matches the entry name.  A rule that holds a bare face

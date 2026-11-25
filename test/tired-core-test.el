@@ -1897,6 +1897,106 @@ Its next display then starts the walk that the option asks for."
                              (tired--size-cell (tired-test--entry "sub"))))))
         (set-default 'tired-directory-size-walk original)))))
 
+(ert-deftest tired-compute-sizes-fills-the-cache-with-the-walk-off ()
+  "A manual walk reads the shown directories while the option is nil.
+The walk stores the totals that the option stops Tired from
+computing, so the column keeps them after the idle pass."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-walk nil))
+      (tired root)
+      (should-not (tired-test--queued-jobs 'size))
+      (tired-compute-sizes)
+      (should (tired-test--queued-jobs 'size))
+      (tired-test--flush-sizes)
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-test--entry "sub"))))
+      (should (equal 9 (tired--directory-total
+                        (expand-file-name "sub" root))))
+      ;; The reprint that follows the walk queues nothing, because the
+      ;; binding that allowed the walk ended with the command.
+      (should-not (tired-test--queued-jobs 'size)))))
+
+(ert-deftest tired-compute-sizes-keeps-its-total-across-a-refresh ()
+  "A refresh reads the total that the manual walk stored.
+The option stays nil, so the refresh queues no new walk, and the
+young total serves the size cell."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-walk nil))
+      (tired root)
+      (tired-compute-sizes)
+      (tired-test--flush-sizes)
+      (tired-refresh)
+      (should-not (tired-test--queued-jobs 'size))
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-test--entry "sub")))))))
+
+(ert-deftest tired-compute-sizes-reuses-a-young-total ()
+  "A young cached total costs no walk."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (tired-test--flush-sizes)
+      (should (equal (file-size-human-readable 9)
+                     (tired--size-cell (tired-test--entry "sub"))))
+      (tired-compute-sizes)
+      (should-not (tired-test--queued-jobs 'size)))))
+
+(ert-deftest tired-compute-sizes-forces-a-young-total ()
+  "The prefix argument recomputes a total that the cache still holds."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t))
+      (tired root)
+      (tired-test--flush-sizes)
+      (with-temp-file (expand-file-name "sub/fresh.txt")
+        (insert (make-string 91 ?y)))
+      (tired-compute-sizes)
+      (should-not (tired-test--queued-jobs 'size))
+      (tired-compute-sizes t)
+      (should (tired-test--queued-jobs 'size))
+      (tired-test--flush-sizes)
+      (should (equal (file-size-human-readable 100)
+                     (tired--size-cell (tired-test--entry "sub")))))))
+
+(ert-deftest tired-compute-sizes-queues-for-a-hidden-listing ()
+  "A hidden listing takes the walk that the command asks for.
+The walk leaves `tired--size-deferred' set, so the display that
+follows reprints the buffer and the total reaches the printed row."
+  (tired-test--with-fixture
+    (let ((tired-directory-size t)
+          (tired-directory-size-walk nil))
+      (tired-test--with-deferred-sizes
+        (with-current-buffer (tired-noselect root)
+          (should-not (tired-test--queued-jobs 'size))
+          (tired-compute-sizes)
+          (should (tired-test--queued-jobs 'size))
+          (tired-test--flush-sizes)
+          (should (equal 9 (tired--directory-total
+                            (expand-file-name "sub" root))))
+          ;; The reprint of a buffer that no window shows prints
+          ;; nothing, so the row still shows no size.
+          (should (equal "" (tired-test--printed-size "sub")))
+          (should tired--size-deferred)
+          ;; The display arms the redraw that prints the cached total.
+          (let ((tired-test--window-shown t))
+            (set-window-buffer (selected-window) (current-buffer))
+            (tired--window-buffer-changed (selected-window))
+            (should (timerp tired--size-timer))
+            (cancel-timer tired--size-timer)
+            (tired--size-redraw (current-buffer)))
+          (should (equal (file-size-human-readable 9)
+                         (tired-test--printed-size "sub"))))))))
+
+(ert-deftest tired-compute-sizes-needs-a-listing ()
+  "The command signals a user error outside a Tired buffer."
+  (with-temp-buffer
+    (should-error (tired-compute-sizes) :type 'user-error)))
+
+(ert-deftest tired-compute-sizes-has-no-key ()
+  "The command takes `M-x' alone, as `tired-clear-caches' does."
+  (should (commandp #'tired-compute-sizes))
+  (should-not (where-is-internal #'tired-compute-sizes tired-mode-map)))
 
 (ert-deftest tired-size-cache-ttl-zero-sums-every-refresh ()
   "A zero `tired-size-cache-ttl' makes each refresh walk the subtree."

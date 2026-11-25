@@ -49,6 +49,23 @@ standard value must not run the setter while the library loads, because
 the setter redraws listings that call functions the rest of the file
 defines, so the option takes `custom-initialize-default`.
 
+`tired-compute-sizes` reopens the door that the option closes, on the
+user's terms.  It binds `tired--size-walk-once`, a dynamic flag that
+`tired--size-queue` and `tired--size-enqueue` read beside the option,
+so one command queues the visible rows of one listing.  The binding
+ends with the command, so the idle pass that runs later reads the
+option alone: a total lands in the cache and no second walk follows,
+and the reprint that ends the walk queues nothing.  The command skips
+the window gate as well, so a listing that no window shows still takes
+the walk it asks for; it leaves `tired--size-deferred` set, because
+the reprint of a buffer with no window prints nothing, so the next
+display reprints the totals that the walk stored.  A plain call reuses
+every young total, so a second call reads nothing, and the prefix
+argument sets `tired--size-forced`, the path that a refresh already
+takes.  The manual command was preferred to a third value of the
+option, because the two states that a user wants, no walk at all and
+one walk on request, need no `setopt` to trade for each other.
+
 ## Consequences
 
 A user who turns the walk off through Customize or `setopt` loses every
@@ -60,3 +77,12 @@ fill while the size cell beside it stays empty; a count that a size
 walk stored goes with the total, so the column reads the directory
 itself once.  No idle pass reads a directory for a size, so a listing
 on slow storage never pays a walk through this path.
+
+A total that a manual walk stores outlives the command, so a refresh
+keeps it until `tired-size-cache-ttl` expires it.  Only a refresh that
+reloads the tables runs `tired--size-cache-prune`, so that refresh
+drops an expired total and queues no walk, and the cells empty until
+the user asks for another reading; a refresh of an unchanged listing
+keeps the total and prints it as it stood.  The setter of
+`tired-directory-size-walk` drops a manual total too, because it
+empties the table that the option stops filling.
