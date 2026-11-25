@@ -276,40 +276,6 @@ The header row counts, and a blank line stays out."
 
 ;;; Parquet
 
-(defun tired-test--leb128 (value)
-  "Return VALUE as a list of unsigned LEB128 bytes."
-  (let (bytes)
-    (while (> value 127)
-      (push (logior 128 (logand value 127)) bytes)
-      (setq value (ash value -7)))
-    (nreverse (push value bytes))))
-
-(defun tired-test--parquet-footer (rows)
-  "Return a minimal Thrift `FileMetaData' footer with ROWS."
-  (apply #'unibyte-string
-         (append
-          (list #x15) (tired-test--leb128 2)     ; field 1, version 1
-          (list #x19 #x1C)                        ; field 2, schema of 1
-          (list #x18 #x01 ?x #x00)                ; SchemaElement {name "x"}
-          (list #x16) (tired-test--leb128 (* 2 rows))
-          (list #x00))))
-
-(defun tired-test--parquet-content (footer &optional tail-magic)
-  "Return a Parquet file body with FOOTER and TAIL-MAGIC."
-  (let ((length (length footer)))
-    (concat "PAR1" footer
-            (unibyte-string (logand length #xff)
-                            (logand (ash length -8) #xff) 0 0)
-            (or tail-magic "PAR1"))))
-
-(defmacro tired-test--write-bytes (name content)
-  "Write CONTENT, a unibyte string, to NAME inside `root'."
-  (declare (indent 1) (debug t))
-  `(let ((coding-system-for-write 'no-conversion))
-     (with-temp-file (expand-file-name ,name root)
-       (set-buffer-multibyte nil)
-       (insert ,content))))
-
 (ert-deftest tired-elements-parquet-counts-the-rows ()
   "A Parquet file counts the rows of its footer."
   (tired-test--with-fixture

@@ -1188,6 +1188,99 @@ The redraw passes no force, so the cache key alone decides."
     (should (equal (tired-test--sections)
                    '(("R1 divider (1/2)" . 1))))))
 
+;;; Parquet
+
+(ert-deftest tired-parquet-sections-read-the-schema ()
+  "A Parquet file shows its schema under a row of counts."
+  (tired-test--with-fixture
+    (tired-test--parquet-write
+     "a.parquet"
+     (list (tired-test--parquet-element "root" :children 2)
+           (tired-test--parquet-element "id" :type 2 :repetition 1)
+           (tired-test--parquet-element "nested" :children 1
+                                         :repetition 1)
+           (tired-test--parquet-element "x" :type 1 :repetition 1))
+     :rows 12 :row-groups 2 :version 2)
+    (let ((sections (tired-file-sections (expand-file-name "a.parquet" root))))
+      (should (equal '("12 rows, 2 row groups, v2"
+                       "id INT64 OPTIONAL"
+                       "nested STRUCT OPTIONAL"
+                       "x INT32 OPTIONAL")
+                     (mapcar #'tired-section-label sections)))
+      (should (equal '(0 0 0 1) (mapcar #'tired-section-level sections)))
+      (should (equal '(title column table column)
+                     (mapcar #'tired-section-kind sections)))
+      (should (= 12 (tired-section-count (car sections))))
+      (should (equal '(1 2 3 4) (mapcar #'tired-section-line sections))))))
+
+(ert-deftest tired-parquet-sections-hide-the-list-group ()
+  "A LIST field shows its element alone, one level under the field.
+A MAP field does the same for its key and its value."
+  (tired-test--with-fixture
+    (tired-test--parquet-write
+     "a.parquet"
+     (list (tired-test--parquet-element "root" :children 2)
+           (tired-test--parquet-element "tags" :children 1 :converted 3
+                                         :repetition 1)
+           (tired-test--parquet-element "list" :children 1 :repetition 2)
+           (tired-test--parquet-element "element" :type 6 :repetition 1)
+           (tired-test--parquet-element "attrs" :children 1 :converted 1
+                                         :repetition 1)
+           (tired-test--parquet-element "key_value" :children 2
+                                        :repetition 2)
+           (tired-test--parquet-element "key" :type 6 :repetition 0)
+           (tired-test--parquet-element "value" :type 1 :repetition 1)))
+    (let ((sections (cdr (tired-file-sections
+                          (expand-file-name "a.parquet" root)))))
+      (should (equal '("tags LIST OPTIONAL"
+                       "element BYTE_ARRAY OPTIONAL"
+                       "attrs MAP OPTIONAL"
+                       "key BYTE_ARRAY REQUIRED"
+                       "value INT32 OPTIONAL")
+                     (mapcar #'tired-section-label sections)))
+      (should (equal '(0 1 0 1 1)
+                     (mapcar #'tired-section-level sections))))))
+
+(ert-deftest tired-parquet-sections-keep-a-named-list-group ()
+  "A struct that a user named `list' keeps its row."
+  (tired-test--with-fixture
+    (tired-test--parquet-write
+     "a.parquet"
+     (list (tired-test--parquet-element "root" :children 1)
+           (tired-test--parquet-element "list" :children 1 :repetition 1)
+           (tired-test--parquet-element "x" :type 1 :repetition 1)))
+    (should (equal '("42 rows, 1 row group, v1"
+                     "list STRUCT OPTIONAL"
+                     "x INT32 OPTIONAL")
+                   (mapcar #'tired-section-label
+                           (tired-file-sections
+                            (expand-file-name "a.parquet" root)))))))
+
+(ert-deftest tired-parquet-sections-paint-each-token ()
+  "A field label paints its name, its type and its repetition."
+  (let* ((field (list :name "price" :physical "FIXED_LEN_BYTE_ARRAY"
+                      :type-length 5 :repetition "OPTIONAL"
+                      :converted "DECIMAL" :precision 10 :scale 2
+                      :children 0 :field-id 3))
+         (label (tired--parquet-field-label field)))
+    (should (equal label
+                   "price FIXED_LEN_BYTE_ARRAY [5] DECIMAL (10,2) OPTIONAL id=3"))
+    (should (eq (get-text-property 0 'face label) 'tired-parquet-name-face))
+    (should (eq (get-text-property (string-search "FIXED" label) 'face label)
+                'tired-parquet-type-face))
+    (should (eq (get-text-property (string-search "DECIMAL" label) 'face label)
+                'tired-parquet-type-face))
+    (should (eq (get-text-property (string-search "OPTIONAL" label) 'face label)
+                'tired-parquet-constraint-face))
+    (should (eq (get-text-property (string-search "id=" label) 'face label)
+                'tired-parquet-constraint-face))))
+
+(ert-deftest tired-parquet-sections-stay-out-of-a-foreign-file ()
+  "A file with no footer has no sections."
+  (tired-test--with-fixture
+    (tired-test--write-bytes "a.parquet" "PAR1")
+    (should-not (tired-file-sections (expand-file-name "a.parquet" root)))))
+
 (provide 'tired-sections-test)
 
 ;;; tired-sections-test.el ends here

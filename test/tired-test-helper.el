@@ -480,6 +480,141 @@ The record starts with its own decimal length."
       (setq length (+ (length body) (length (number-to-string length)))))
     (concat (number-to-string length) body)))
 
+;;; Parquet
+
+(defun tired-test--leb128 (value)
+  "Return VALUE as a list of unsigned LEB128 bytes."
+  (let (bytes)
+    (while (> value 127)
+      (push (logior 128 (logand value 127)) bytes)
+      (setq value (ash value -7)))
+    (nreverse (push value bytes))))
+
+(defun tired-test--zigzag (value)
+  "Return VALUE as a list of zigzag-encoded LEB128 bytes."
+  (tired-test--leb128 (if (>= value 0)
+                          (ash value 1)
+                        (1- (ash (- value) 1)))))
+
+(defun tired-test--thrift-header (previous field type)
+  "Return the field header of FIELD with TYPE, after PREVIOUS.
+A field id more than 15 above the one before it takes the long form."
+  (let ((delta (- field previous)))
+    (if (and (> delta 0) (< delta 16))
+        (list (logior (ash delta 4) type))
+      (append (list type) (tired-test--zigzag field)))))
+
+(defun tired-test--thrift-int (previous field value &optional type)
+  "Return the integer field FIELD with VALUE, after PREVIOUS.
+TYPE is the compact type of the value, `i32' unless the format fixes
+an `i64'."
+  (append (tired-test--thrift-header previous field (or type 5))
+          (tired-test--zigzag value)))
+
+(defun tired-test--thrift-string (previous field text)
+  "Return the binary field FIELD with TEXT, after PREVIOUS."
+  (append (tired-test--thrift-header previous field 8)
+          (tired-test--leb128 (length text))
+          (string-to-list text)))
+
+(defun tired-test--thrift-list-header (count element)
+  "Return the header of a Thrift list of COUNT values of ELEMENT."
+  (if (< count 15)
+      (list (logior (ash count 4) element))
+    (append (list (logior (ash 15 4) element))
+            (tired-test--leb128 count))))
+
+(defun tired-test--parquet-logical (tag)
+  "Return the bytes of a `LogicalType' union that names TAG.
+Every member of the union holds an empty struct, so the member takes
+a STOP byte and the union takes another."
+  (append (tired-test--thrift-header 0 tag 12) (list 0 0)))
+
+(defun tired-test--parquet-element (name &rest args)
+  "Return the Thrift `SchemaElement' of NAME as a list of bytes.
+ARGS holds `:type', `:repetition', `:children', `:converted',
+`:precision', `:scale', `:field-id' and `:logical', the last as the
+tag of the `LogicalType' union."
+  (let ((fields (list (cons 1 (plist-get args :type))
+                      (cons 3 (plist-get args :repetition))
+                      (cons 4 name)
+                      (cons 5 (plist-get args :children))
+                      (cons 6 (plist-get args :converted))
+                      (cons 7 (plist-get args :scale))
+                      (cons 8 (plist-get args :precision))
+                      (cons 9 (plist-get args :field-id))
+                      (cons 10 (plist-get args :logical))))
+        (previous 0)
+        bytes)
+    (dolist (field fields)
+      (when (cdr field)
+        (setq bytes (append bytes
+                            (pcase (car field)
+                              ;; A union takes a struct field, and the
+                              ;; member below it an empty payload.
+                              (10 (append (tired-test--thrift-header
+                                           previous (car field) 12)
+                                          (tired-test--parquet-logical
+                                           (cdr field))))
+                              (4 (tired-test--thrift-string
+                                  previous (car field) (cdr field)))
+                              (_ (tired-test--thrift-int
+                                  previous (car field) (cdr field)))))
+              previous (car field))))
+    (append bytes (list 0))))
+
+(defun tired-test--parquet-footer (&optional rows &rest args)
+  "Return a Thrift `FileMetaData' footer for ROWS rows.
+ARGS holds `:version' (default 1), `:row-groups' (default 1) and
+`:schema', a list of the byte lists that
+`tired-test--parquet-element' builds.  The default schema holds one
+field named `x'."
+  (let* ((version (or (plist-get args :version) 1))
+         (groups (or (plist-get args :row-groups) 1))
+         (schema (or (plist-get args :schema)
+                     (list (tired-test--parquet-element "x")))))
+    (apply #'unibyte-string
+           (append
+            (tired-test--thrift-int 0 1 version)   ; field 1, version
+            (tired-test--thrift-header 1 2 9)      ; field 2, schema
+            (tired-test--thrift-list-header (length schema) 12)
+            (apply #'append schema)
+            (tired-test--thrift-int 2 3 (or rows 42) 6)  ; field 3, rows
+            (tired-test--thrift-header 3 4 9)      ; field 4, row groups
+            (tired-test--thrift-list-header groups 12)
+            ;; Every row group stays empty: a reader that walks them
+            ;; reads one STOP byte each, and nothing else needs to
+            ;; exist below them.
+            (make-list groups 0)
+            (list 0)))))
+
+(defun tired-test--parquet-content (footer &optional tail-magic)
+  "Return a Parquet file body with FOOTER and TAIL-MAGIC."
+  (let ((length (length footer)))
+    (concat "PAR1" footer
+            (unibyte-string (logand length #xff)
+                            (logand (ash length -8) #xff) 0 0)
+            (or tail-magic "PAR1"))))
+
+(defmacro tired-test--parquet-write (name schema &rest args)
+  "Write a Parquet file called NAME inside `root' with SCHEMA.
+ARGS reach `tired-test--parquet-footer'."
+  (declare (indent 2) (debug t))
+  `(tired-test--write-bytes ,name
+     (tired-test--parquet-content
+      (apply #'tired-test--parquet-footer
+             (plist-get (list ,@args) :rows)
+             :schema ,schema
+             (list ,@args)))))
+
+(defmacro tired-test--write-bytes (name content)
+  "Write CONTENT, a unibyte string, to NAME inside `root'."
+  (declare (indent 1) (debug t))
+  `(let ((coding-system-for-write 'no-conversion))
+     (with-temp-file (expand-file-name ,name root)
+       (set-buffer-multibyte nil)
+       (insert ,content))))
+
 (provide 'tired-test-helper)
 
 (provide 'tired-test-helper)

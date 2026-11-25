@@ -22,9 +22,10 @@
 ;;; Commentary:
 
 ;; The section handlers that turn one file into `tired-section'
-;; structs: Org, Emacs Lisp, Rust, Python, Go, Markdown, Cargo, SQLite
-;; and tar.  The framework that calls a handler stays in `tired-core',
-;; so a new handler costs one rule in `tired-file-handlers'.
+;; structs: Org, Emacs Lisp, Rust, Python, Go, Markdown, Cargo, SQLite,
+;; Parquet and tar.  The framework that calls a handler stays in
+;; `tired-core', so a new handler costs one rule in
+;; `tired-file-handlers'.
 ;;
 ;; A handler receives the file name, runs in a temporary buffer, selects
 ;; its own major mode, calls `font-lock-ensure' and returns plists.  It
@@ -92,6 +93,14 @@
 ;;   serves every suffix.  A pax record and a GNU long-name record change
 ;;   the name and the size of the member that follows them, so the walk
 ;;   clears both after it emits a member.
+;; - A Parquet handler names itself in `tired-section-path-handlers',
+;;   because the footer that it reads sits at the end of the file and the
+;;   framework copies a whole file into a buffer first.  The reader stays
+;;   in `tired-parquet', so this file holds the labels alone.  A LIST or
+;;   MAP field inserts a `REPEATED' group named `list' or `key_value',
+;;   and that row carries no fact of its own, so it stays out and its
+;;   child moves up one level.  A group without a logical type prints
+;;   `STRUCT', which the format names nowhere.
 ;; - The KiCad schematic handler scans one token at a time and never reads
 ;;   a whole form, so the library symbol block passes in linear time.  The
 ;;   tokenizer honours a quoted string with its backslash escapes and a
@@ -105,6 +114,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'tired-core)
+(require 'tired-parquet)
 
 ;; This user option lives in `treesit', which loads at run time.  A plain
 ;; `defvar' marks the variable special, so a binding stays dynamic and
@@ -1046,6 +1056,17 @@ line up.  Return nil when the TOML grammar is missing."
   (let ((tired--cargo-columns nil))
     (tired--treesit-sections tired--cargo-section-spec)))
 
+(defun tired--painted-token (text face)
+  "Return TEXT painted with FACE, or an empty string for nil TEXT.
+The separators of a label stay plain, so only the token takes the
+color.  The section cell mirrors FACE into `font-lock-face', and a
+handler that mixes a name, a type and a keyword builds its label
+from these tokens."
+  (declare (pure t) (side-effect-free t))
+  (if (or (null text) (string-empty-p text))
+      ""
+    (propertize text 'face face)))
+
 (defface tired-sqlite-column-face
   '((t :inherit font-lock-variable-name-face))
   "Face for the name of a SQLite column.
@@ -1067,15 +1088,6 @@ The face paints `NOT NULL' and `PRIMARY KEY', and it inherits
 `font-lock-keyword-face'."
   :group 'tired)
 
-(defun tired--sqlite-painted (text face)
-  "Return TEXT painted with FACE, or an empty string for nil TEXT.
-The separators of a label stay plain, so only the token takes the
-color.  The section cell mirrors FACE into `font-lock-face'."
-  (declare (pure t) (side-effect-free t))
-  (if (or (null text) (string-empty-p text))
-      ""
-    (propertize text 'face face)))
-
 (defun tired--sqlite-column-label (row)
   "Return the label for the `PRAGMA table_info' ROW of one column.
 ROW holds the column id, name, declared type, NOT NULL flag, default
@@ -1088,15 +1100,15 @@ declaration."
         (type (nth 2 row))
         (notnull (nth 3 row))
         (primary (nth 5 row)))
-    (push (tired--sqlite-painted name 'tired-sqlite-column-face) tokens)
+    (push (tired--painted-token name 'tired-sqlite-column-face) tokens)
     (when (and type (not (string-empty-p type)))
-      (push (tired--sqlite-painted type 'tired-sqlite-type-face) tokens))
+      (push (tired--painted-token type 'tired-sqlite-type-face) tokens))
     (when (and notnull (not (zerop notnull)))
-      (push (tired--sqlite-painted "NOT NULL" 'tired-sqlite-constraint-face)
+      (push (tired--painted-token "NOT NULL" 'tired-sqlite-constraint-face)
             tokens))
     (when (and primary (not (zerop primary)))
-      (push (tired--sqlite-painted "PRIMARY KEY"
-                                   'tired-sqlite-constraint-face)
+      (push (tired--painted-token "PRIMARY KEY"
+                                  'tired-sqlite-constraint-face)
             tokens))
     (string-join (nreverse tokens) " ")))
 
@@ -1162,6 +1174,154 @@ database."
             (sqlite-close db))
           (nreverse sections))
       (error nil))))
+
+(defface tired-parquet-name-face
+  '((t :inherit font-lock-variable-name-face))
+  "Face for the name of a Parquet field.
+The face inherits `font-lock-variable-name-face', so a theme colors
+the name the way it colors a variable in a source file."
+  :group 'tired)
+
+(defface tired-parquet-type-face
+  '((t :inherit font-lock-type-face))
+  "Face for the type of a Parquet field.
+The face paints the physical type, the length of a fixed byte array,
+the logical type and the `STRUCT' of a group, and it inherits
+`font-lock-type-face'."
+  :group 'tired)
+
+(defface tired-parquet-constraint-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for a repetition keyword of a Parquet field.
+The face paints `REQUIRED', `OPTIONAL', `REPEATED' and a field id,
+and it inherits `font-lock-keyword-face'."
+  :group 'tired)
+
+(defun tired--parquet-field-label (field)
+  "Return the label for the schema FIELD plist of one Parquet field.
+FIELD carries the keys of `tired-parquet-schema'.  Paint the name,
+the physical type, the logical type and each repetition keyword with
+its own face, so a field row reads like a declaration."
+  (declare (side-effect-free t))
+  (let ((tokens nil)
+        (type (plist-get field :physical))
+        (length (plist-get field :type-length))
+        (logical (or (plist-get field :logical)
+                     (plist-get field :converted)))
+        (precision (plist-get field :precision))
+        (scale (plist-get field :scale))
+        (repetition (plist-get field :repetition))
+        (field-id (plist-get field :field-id)))
+    (push (tired--painted-token (plist-get field :name)
+                                'tired-parquet-name-face)
+          tokens)
+    (when type
+      (push (tired--painted-token (format "%s" type)
+                                  'tired-parquet-type-face)
+            tokens))
+    (when (and (integerp length) (equal type "FIXED_LEN_BYTE_ARRAY"))
+      (push (tired--painted-token (format "[%d]" length)
+                                  'tired-parquet-type-face)
+            tokens))
+    (when logical
+      (push (tired--painted-token (format "%s" logical)
+                                  'tired-parquet-type-face)
+            tokens))
+    ;; A group without a logical type is a struct, and the format names
+    ;; no such type, so the row says it instead.
+    (when (and (null logical) (> (plist-get field :children) 0))
+      (push (tired--painted-token "STRUCT" 'tired-parquet-type-face)
+            tokens))
+    (when (and (integerp precision) (integerp scale))
+      (push (tired--painted-token (format "(%d,%d)" precision scale)
+                                  'tired-parquet-type-face)
+            tokens))
+    (when repetition
+      (push (tired--painted-token (format "%s" repetition)
+                                  'tired-parquet-constraint-face)
+            tokens))
+    (when field-id
+      (push (tired--painted-token (format "id=%d" field-id)
+                                  'tired-parquet-constraint-face)
+            tokens))
+    (string-join (nreverse tokens) " ")))
+
+(defun tired--parquet-wrapper-p (field parent)
+  "Return non-nil when FIELD is the group that a PARENT inserts.
+A LIST or MAP field has no leaf of its own: the format hangs a
+`REPEATED' group named `list' or `key_value' under it and puts the
+element below that group.  Such a row carries no fact that the
+schema does not already show, so the listing hides it and lifts its
+child one level."
+  (declare (side-effect-free t))
+  (and parent
+       (member (plist-get parent :converted) '("LIST" "MAP"))
+       (member (plist-get field :name) '("list" "key_value"))
+       ;; The LIST wrapper holds its element and the MAP wrapper holds a
+       ;; key and a value, so only the name and the parent decide.
+       (> (or (plist-get field :children) 0) 0)))
+
+(defun tired--parquet-visible-fields (schema)
+  "Return (FIELD . LEVEL) conses for the rows that SCHEMA prints.
+The root element names the file and not a field, so it stays out.
+A wrapper group stays out too, and every field below it moves up
+one level, so a LIST field reads as its element alone."
+  (declare (side-effect-free t))
+  (let ((open nil)
+        (first t)
+        rows)
+    (dolist (field schema)
+      ;; OPEN holds the ancestor chain of FIELD, innermost first, so its
+      ;; length is the depth of FIELD and its head is the parent.
+      (while (> (length open) (plist-get field :depth))
+        (pop open))
+      (let* ((ancestor (car open))
+             (wrapper (tired--parquet-wrapper-p field (car ancestor)))
+             (level (- (1- (plist-get field :depth))
+                       (cl-count-if #'cdr open))))
+        (unless (or first wrapper)
+          (push (cons field level) rows))
+        (setq first nil)
+        (when (> (or (plist-get field :children) 0) 0)
+          (push (cons field wrapper) open))))
+    (nreverse rows)))
+
+(defun tired-file-sections-parquet (path)
+  "Return the schema of the Parquet file at PATH as sections.
+The handler reads the footer at the end of the file, so it needs no
+buffer contents and `tired-section-path-handlers' keeps the reader
+from copying a whole file for it.  A version row carries the count
+of rows and of row groups, and the fields of the schema follow, one
+level deeper for every nesting.  A database and a Parquet file have
+no lines, so a section carries a synthetic ordinal.  Return nil when
+the file carries no readable footer."
+  (when-let* ((metadata (tired-parquet-schema path))
+              (schema (plist-get metadata :schema))
+              (rows (plist-get metadata :rows)))
+    (let ((line 0)
+          sections)
+      (push (list :label (format "%s %s, %s %s, v%s"
+                                 rows (if (= rows 1) "row" "rows")
+                                 (or (plist-get metadata :row-groups) 0)
+                                 (if (= (or (plist-get metadata :row-groups) 0)
+                                        1)
+                                     "row group" "row groups")
+                                 (or (plist-get metadata :version) "?"))
+                  :line (setq line (1+ line))
+                  :level 0
+                  :kind 'title
+                  :count rows)
+            sections)
+      (dolist (row (tired--parquet-visible-fields schema))
+        (push (list :label (tired--parquet-field-label (car row))
+                    :line (setq line (1+ line))
+                    :level (cdr row)
+                    ;; A group heads a subtree, as a SQLite table does.
+                    :kind (if (> (or (plist-get (car row) :children) 0) 0)
+                              'table
+                            'column))
+              sections))
+      (nreverse sections))))
 
 (defconst tired--tar-block 512
   "Size of one tar header block and of one tar data block.")

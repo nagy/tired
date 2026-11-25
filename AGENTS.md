@@ -27,8 +27,11 @@ reasons.
   `tired-mode`, and the point
   accessors `tired-directory-at-point`, `tired-path-at-point`,
   `tired-with-directory-at-point` and `tired-run-at-point`
+- `tired-parquet.el` — the Thrift compact reader, the Parquet footer
+  location, the `FileMetaData` and `SchemaElement` readers, and the
+  schema tree that a footer carries
 - `tired-sections.el` — the Org, Emacs Lisp, Rust, Python, Go,
-  Markdown, Cargo, KiCad schematic, SQLite and tar handlers
+  Markdown, Cargo, KiCad schematic, SQLite, Parquet and tar handlers
 - `tired-elements.el` — the Elements column, its dissector hook and the
   global count caches
 - `tired-file-ops.el` — copy, move, rename, delete, undo and redo, mkdir,
@@ -39,8 +42,9 @@ reasons.
 - `test/` — the ERT suites.  `tired-test-helper.el` holds the shared
   fixtures, helpers and setup, and `tired-core-test.el`,
   `tired-sections-test.el`, `tired-elements-test.el`,
-  `tired-file-ops-test.el`, `tired-export-test.el` and
-  `tired-evil-test.el` give one suite per library
+  `tired-parquet-test.el`, `tired-file-ops-test.el`,
+  `tired-export-test.el` and `tired-evil-test.el` give one suite per
+  library
 - `flake.nix`, `README.org`, `GLOSSARY.md`, `docs/adr/`, `LICENSE`
 
 Each library keeps a "Design notes" list in its `;;; Commentary:`.  Read
@@ -75,7 +79,7 @@ first, because the flake sources take git-tracked files alone.
   `TREESIT_EXTRA_LOAD_PATH` and puts `zstd` on the path for the archive
   fixtures.  A missing grammar skips its test instead of failing.
 - `checks.lint` is `mkLint`: `package-lint` on `tired.el` and
-  `test/*.el`, `checkdoc` on the eight libraries and `test/*.el`, and
+  `test/*.el`, `checkdoc` on the nine libraries and `test/*.el`, and
   `relint` on the same set.  `checkdoc` and `relint` exit 0 while they
   report, so the check gates on output.  `package-lint-main-file`
   names `tired.el`, because no test file carries a header.
@@ -87,10 +91,12 @@ first, because the flake sources take git-tracked files alone.
 
 ## Architecture
 
-Dependencies point one way: `tired-queue` requires no sibling,
-`tired-core` requires `tired-queue`, `tired-sections`, `tired-elements`,
-`tired-file-ops` and `tired-export` require `tired-core`, and `tired`
-requires the last five.  `tired-evil` requires `tired`.  A call into
+Dependencies point one way: `tired-queue` and `tired-parquet` require
+no sibling, `tired-core` requires `tired-queue`, `tired-sections`,
+`tired-elements`, `tired-file-ops` and `tired-export` require
+`tired-core`, `tired-sections` and `tired-elements` also require
+`tired-parquet`, and `tired` requires the last five.  `tired-evil`
+requires `tired`.  A call into
 another library takes a `declare-function`, so no load-time dependency
 forms, and a variable of another library takes a `defvar` with no
 value, as `tired-python-section-depth` shows in `tired-core`.  The
@@ -179,6 +185,15 @@ carries no cookie at all: `tired-noselect` runs the mode.
   flagged row writes `:extend t`, because its overlay covers the line
   and the newline.  A handler face writes `:group 'tired`, because
   `tired-sections` holds no `defgroup`.
+
+- A handler that reads a range of a file names itself in
+  `tired-section-path-handlers`.  `tired--call-handler` fills the
+  buffer of every other handler with the whole file, and a handler in
+  that list gets the empty buffer and reads the bytes it wants from the
+  path.  The Parquet handler reads the footer at the end of the file,
+  so the copy would cost a megabyte per megabyte of it.  The variable
+  holds symbols and `tired--call-handler` compares them with `memq`, so
+  a handler of another package joins the list by name.
 
 - A collapsed row answers the `filename` thing one chain component at
   a time: `tired--filename-at-point` and `tired--name-bounds` split the
@@ -328,6 +343,11 @@ before you write a test.
   runs the second.
 - A test never reaches the network.  `tired-test--with-remote` stubs
   `file-remote-p` for a real temporary directory.
+- A Parquet fixture is a list of Thrift bytes that
+  `tired-test--parquet-element' and `tired-test--parquet-footer' build,
+  so a test states the schema it wants.  The footer builder writes the
+  row groups as empty structs, and a test of the early stop writes the
+  list header alone.
 - `tired-test--with-trash` binds a private trash, an empty undo stack,
   an empty redo stack and an empty `tired-undo-push-functions`.  Use it
   to remove or replace a path.

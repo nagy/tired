@@ -777,6 +777,7 @@ path, so open, rename, copy, move and export keep the true target."
     ("\\.kicad_sch\\'" . tired-file-sections-kicad-sch)
     ("\\.tar\\'" . tired-file-sections-tar)
     ("\\.tar\\.\\(?:gz\\|zst\\)\\'" . tired-file-sections-tar)
+    ("\\.parquet\\'" . tired-file-sections-parquet)
     ("\\.\\(?:db\\|sqlite\\|sqlite3\\)\\'" . tired-file-sections-sqlite))
   "Alist of regexp to a function that extracts sections from a file.
 The regexp matches the absolute file name, and the first match wins.
@@ -786,8 +787,21 @@ returns a list of plists with the keys `:label', `:line', `:level'
 and `:kind', plus the optional keys `:column', `:action' and
 `:count'.  An `:count' number fills the Elements cell of the
 section row, and any other value leaves it empty.  An empty list
-means the file has no sections."
+means the file has no sections.  A handler named in
+`tired-section-path-handlers' gets the empty buffer instead."
   :type '(alist :key-type regexp :value-type function))
+
+(defcustom tired-section-path-handlers '(tired-file-sections-parquet)
+  "Handlers that read the file from its name alone.
+`tired-file-sections' fills the buffer of a handler with the file
+contents before it calls the handler, because a parser that the
+`treesit' modes, Org and Emacs Lisp run needs them.  A handler here
+reads the bytes that it wants itself, so the buffer stays empty and
+a large file costs neither the read nor the memory of a copy of
+itself.  The Parquet handler reads the footer at the end of a file,
+so a whole-file copy would cost a megabyte per megabyte for
+nothing."
+  :type '(repeat function))
 
 (defcustom tired-section-file-size-limit nil
   "Largest file size in bytes that a section handler reads.
@@ -1648,13 +1662,16 @@ Return nil when no rule matches PATH."
   "Return the raw section plists that HANDLER extracts from PATH.
 Run HANDLER in a temporary buffer that holds the file contents, so a
 handler parses what the disk holds and never a visiting buffer.
-HANDLER selects its own major mode.  Return nil when the file is
-unreadable or when HANDLER signals an error.  Read the file with
+HANDLER selects its own major mode.  A handler of
+`tired-section-path-handlers' gets the empty buffer, because it reads
+the bytes that it wants from PATH itself.  Return nil when the file
+is unreadable or when HANDLER signals an error.  Read the file with
 VISIT set, so the buffer keeps the file name and no modified flag,
 and the discarded buffer never prompts on kill."
   (condition-case err
       (with-temp-buffer
-        (insert-file-contents path t)
+        (unless (memq handler tired-section-path-handlers)
+          (insert-file-contents path t))
         (funcall handler path))
     (error
      (display-warning 'tired
@@ -1680,14 +1697,17 @@ ITEM is a plist with `:label' and `:line', plus the optional keys
    :action (plist-get item :action)
    :count (plist-get item :count)))
 
-(defun tired--section-cache-key (handler time)
+(defun tired--section-cache-key (handler time size)
   "Return the key that `tired--sections' stores with the sections.
-TIME is the modification time of the file and HANDLER is the function
-that parses it.  The key holds the options that the built-in handler
-reads, because a new value must reach a file that did not change.  A
-handler of another package names no option here, so it reaches the
-same effect through `tired-clear-caches'."
-  (list time handler
+TIME is the modification time of the file, SIZE its length and
+HANDLER the function that parses it.  The key holds the options that
+the built-in handler reads, because a new value must reach a file
+that did not change.  A handler of another package names no option
+here, so it reaches the same effect through `tired-clear-caches'.
+The size joins the time because a tool that rewrites a file and
+restores its time would otherwise serve the parse of the bytes
+before."
+  (list time size handler
         (and (eq handler 'tired-file-sections-python)
              tired-python-section-depth)))
 
@@ -1698,15 +1718,16 @@ closures by their code and environment, and a closure that a new rule
 installs can read exactly like the closure before it."
   (declare (side-effect-free t))
   (and (equal (car cached) (car key))
-       (eq (cadr cached) (cadr key))
-       (equal (nth 2 cached) (nth 2 key))))
+       (eq (nth 2 cached) (nth 2 key))
+       (equal (nth 3 cached) (nth 3 key))))
 
 (defun tired-file-sections (path &optional force)
   "Return the sections of PATH as a list of `tired-section' structs.
 Parse the file when FORCE is non-nil or when its modification time,
-its handler or an option that handler reads changed.  Return nil when
-no handler matches, when the file is gone, when the file exceeds
-`tired-section-file-size-limit' or when the handler found nothing."
+its size, its handler or an option that handler reads changed.
+Return nil when no handler matches, when the file is gone, when the
+file exceeds `tired-section-file-size-limit' or when the handler
+found nothing."
   (let* ((handler (tired-file-handler path))
          (attributes (and handler (file-attributes path)))
          (time (and attributes
@@ -1714,7 +1735,7 @@ no handler matches, when the file is gone, when the file exceeds
          (size (and attributes (file-attribute-size attributes)))
          (too-big (and size tired-section-file-size-limit
                        (> size tired-section-file-size-limit)))
-         (key (and time (tired--section-cache-key handler time)))
+         (key (and time (tired--section-cache-key handler time size)))
          (cached (and key
                       (hash-table-p tired--sections)
                       (gethash path tired--sections)))

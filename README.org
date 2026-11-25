@@ -36,8 +36,8 @@ the output of =ls -l=.  Requires Emacs 31.1 or later.
 - Expand a file into sections: org headings, Emacs Lisp top-level
   forms, Rust items, Python defs and classes, and Markdown headings
   through tree-sitter, SQLite tables and columns through the
-  built-in sqlite support, and the placed symbols of a KiCad
-  schematic
+  built-in sqlite support, the schema of a Parquet footer, and the
+  placed symbols of a KiCad schematic
 - Expand a Cargo manifest into its =features=, =dependencies=,
   =dev-dependencies= and =build-dependencies= tables
 - Name completion over the whole subtree, including directories
@@ -1118,6 +1118,12 @@ take =tired-sqlite-constraint-face=.  Each face inherits the matching
 =font-lock-= face, so a theme colors a column the way it colors a
 declaration.  A column without a type prints its name alone.
 
+The field rows of a Parquet schema paint their parts the same way.  The
+field name takes =tired-parquet-name-face=, the physical type, the
+logical type and the =STRUCT= of a group take
+=tired-parquet-type-face=, and the words =REQUIRED=, =OPTIONAL=,
+=REPEATED= and =id== take =tired-parquet-constraint-face=.
+
 * Symlink target shorthand
 
 The text after the arrow of a symbolic link can grow long, because a
@@ -1250,7 +1256,7 @@ on =TAB=.  A fold hides the rows that the section holds, and no row
 that sits outside it, so a method stays visible when a function above
 it folds.
 
-Ten handlers ship with the package:
+Eleven handlers ship with the package:
 
 | File type     | Sections                                              |
 |---------------+-------------------------------------------------------|
@@ -1261,15 +1267,18 @@ Ten handlers ship with the package:
 | Python (=.py=, =.pyi=) | Classes and defs, indented by the class or def that holds them.  Nested defs and inner classes show at their own depth.  A module-level assignment becomes a variable row.  A decorated def shows its decorators and =RET= visits the first decorator.  A class attribute and a local variable stay out.  The row repeats the source prefix, so a function reads =def= or =async def= |
 | Markdown      | ATX and setext headings, indented by their level.  A heading inside a fenced code block stays out.  A title carries the face of its level |
 | SQLite        | Every table and view, then its columns one level deeper.  A table row shows its row count in the Elements column, and a column row paints its name, its type and its constraints |
+| Parquet (=.parquet=) | A row of counts, then the schema tree.  A field row paints its name, its physical type, its logical type and its repetition.  A struct or a list nests its fields one level deeper, and the group that the format inserts for a list or a map stays out, so a list field reads as its element alone |
 | Cargo (=Cargo.toml=) | The =features=, =dependencies=, =dev-dependencies= and =build-dependencies= tables, with their entries one level deeper.  A key and a version carry the face of their source |
 | KiCad schematic (=.kicad_sch=) | Every placed symbol, one row per unit, with its reference, value and footprint in one column each.  A virtual symbol, whose reference starts with =#=, stays out |
 | Tar (=.tar=, =.tar.gz=, =.tar.zst=) | Every member, indented by the depth of its path.  A directory keeps a trailing slash and a link names its target.  =RET= extracts the member to a temporary file and visits it |
 
 =RET= on a section row visits the file at the section line.  A section
-row leaves the size, the date and the mode empty.  Only the SQLite
-handler fills its Elements cell, with the row count of the table.  A
-SQLite section opens the table in =sqlite-mode= instead, because a
-database has no lines.
+row leaves the size, the date and the mode empty.  The SQLite and
+Parquet handlers fill their Elements cell with a row count, the row
+count of the table and the row count of the file.  A SQLite section
+opens the table in =sqlite-mode= instead, because a database has no
+lines, and a Parquet section visits the binary file at a line that has
+no meaning.
 
 =RET= on an org heading also narrows the visited buffer to that
 subtree, so only the heading and its children show.  Use =C-x n w=
@@ -1326,7 +1335,7 @@ plists:
 
 The parsed sections of an expanded file stay in the buffer, and the
 next read parses again only when the modification time of the file,
-the handler or an option that handler reads changed.  A new handler
+its size, the handler or an option that handler reads changed.  A new handler
 rule therefore reaches the next redraw of an unchanged file.  A
 handler of another package that reads an option of its own calls =M-x
 tired-clear-caches=, which empties the section cache of every Tired
@@ -1337,7 +1346,19 @@ The optional keys =:column=, =:action= and =:count= also work.  An
 and it replaces the default visit.  The org handler uses that hook, so
 its headings narrow the visited buffer.  A =:count= number fills the
 Elements cell of the section row, and the SQLite handler puts the row
-count of each table there.
+count of each table there while the Parquet handler puts the row count
+of the file on its title row.
+
+The variable =tired-section-path-handlers= names the handlers that read
+the file from its name alone.  Every other handler runs in a buffer
+that the framework filled with the file contents, because the
+tree-sitter modes, Org and Emacs Lisp parse that buffer.  A handler that
+reads a range of the file itself belongs in the list, so a large file
+costs neither the copy nor the memory.  The Parquet handler is the one
+handler that ships in it: it reads the eight byte tail and the footer at
+the end of the file, so a 41 megabyte file costs a millisecond and no
+buffer, where the copy alone would cost a third of a second and 41
+megabytes.
 
 A =:label= may carry text properties.  A handler that fontifies its
 buffer returns a propertized label, and Tired keeps the faces of it and

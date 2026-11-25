@@ -4462,6 +4462,45 @@ again under the stub."
     (should-not (eq (key-binding (key-parse "E")) #'tired-collapse-file))
     (should (eq (key-binding (key-parse "TAB")) #'tired-toggle-subdir))))
 
+(ert-deftest tired-path-handlers-read-no-file-copy ()
+  "A handler of `tired-section-path-handlers' gets an empty buffer.
+Every other handler still reads the file into the buffer that it
+parses."
+  (tired-test--with-fixture
+    (tired-test--write "a.txt" "hello\n")
+    (let* ((seen nil)
+           (path (expand-file-name "a.txt" root))
+           (handler (lambda (_path)
+                      (push (buffer-size) seen)
+                      (list (list :label "row" :line 1 :level 0
+                                  :kind 'column)))))
+      (let ((tired-file-handlers (list (cons "\\.txt\\'" handler)))
+            (tired-section-path-handlers (list handler)))
+        (should (= 1 (length (tired-file-sections path t)))))
+      (let ((tired-file-handlers (list (cons "\\.txt\\'" handler)))
+            (tired-section-path-handlers nil))
+        (should (= 1 (length (tired-file-sections path t)))))
+      (should (equal '(6 0) seen)))))
+
+(ert-deftest tired-section-cache-notices-a-new-size ()
+  "A file that keeps its time but grows parses again."
+  (tired-test--with-fixture
+    (tired-test--write "a.txt" "one\n")
+    (let* ((path (expand-file-name "a.txt" root))
+           (handler (lambda (_path)
+                      (list (list :label (number-to-string (buffer-size))
+                                  :line 1 :level 0 :kind 'column))))
+           (tired-file-handlers (list (cons "\\.txt\\'" handler))))
+      (should (equal "4" (tired-section-label
+                          (car (tired-file-sections path)))))
+      ;; Rewrite the file and put its old time back, the way a tool that
+      ;; restores timestamps would.
+      (let ((time (file-attribute-modification-time (file-attributes path))))
+        (tired-test--write "a.txt" "two longer\n")
+        (set-file-times path time)
+        (should (equal "11" (tired-section-label
+                             (car (tired-file-sections path)))))))))
+
 (ert-deftest tired-thing-at-point-reads-the-row-name ()
   "A filename thing reads the path of the row under point."
   (tired-test--with-fixture
