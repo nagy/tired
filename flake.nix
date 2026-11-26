@@ -96,13 +96,11 @@
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [ treefmt-nix.flakeModule ];
-      # Pure Elisp, so every supported architecture works and Darwin
-      # needs no extra native dependencies.
+      # Pure Elisp, so both Linux architectures work. Darwin is untested,
+      # so it stays out rather than claiming support nobody builds.
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
       ];
 
       perSystem =
