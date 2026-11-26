@@ -1344,6 +1344,95 @@ a refresh that trusts the stamps alone keeps the old size."
     (should (eq 'size tired--sort-key))
     (should tired--sort-flip)))
 
+(ert-deftest tired-noselect-leaves-point-on-the-first-row ()
+  "A command that opens a listing puts point on its first row.
+An empty buffer stands at its end as well as at its start, so the
+first print must not read that position as one below the last row."
+  (tired-test--with-fixture
+    (tired root)
+    (should (tired-entry-p (tired--row-at-point)))
+    (should (= 1 (line-number-at-pos)))))
+
+(ert-deftest tired-refresh-keeps-a-point-below-the-last-row ()
+  "A change on the disk never moves point to the first line.
+The printer closes the listing with an empty line, and a line motion
+stops there.  That line holds no row, so the print has no entry id to
+remember, and it would move point to the first line."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-goto-last-entry)
+    (tired-next-line)
+    (should-not (tired--row-at-point))
+    (tired-test--write "alpha.txt" "changed content")
+    (tired-refresh)
+    (should-not (tired--row-at-point))
+    (should (eobp))))
+
+(ert-deftest tired-refresh-holds-a-point-below-a-shortened-listing ()
+  "A refresh keeps a point below the last row on the last line.
+It never climbs to the first line, even when a removal takes the
+last row away."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-goto-last-entry)
+    (tired-next-line)
+    (should-not (tired--row-at-point))
+    (delete-file (expand-file-name "beta.txt" root))
+    (tired-refresh)
+    (should-not (tired--row-at-point))
+    (should (eobp))))
+
+(ert-deftest tired-refresh-leaves-a-point-below-a-grown-listing ()
+  "A listing that gained rows keeps point below the last row.
+Point named no row, so a redraw leaves it on no row: it never lands
+on a row that arrived under the cursor, which a later command would
+act on."
+  (tired-test--with-fixture
+    (tired root)
+    (goto-char (point-max))
+    (should-not (tired--row-at-point))
+    (tired-test--write "arrived.txt" "x")
+    (tired-refresh)
+    (should-not (tired--row-at-point))
+    (should (eobp))))
+
+(ert-deftest tired-redraw-keeps-a-mark-below-the-last-row ()
+  "A redraw keeps a mark that stood below the last row.
+The mark carries no row id either, so the erase would otherwise
+leave it on the first line and flip the region."
+  (tired-test--with-fixture
+    (tired root)
+    (tired-test--goto "alpha.txt")
+    (push-mark (point-max) t t)
+    (tired--redraw)
+    (should (= (mark t) (point-max)))
+    (should (equal "alpha.txt" (tired-entry-name (tired--row-at-point))))))
+
+(ert-deftest tired-redraw-keeps-a-window-point-below-the-last-row ()
+  "A redraw of a background window holds a point that names no row.
+The view of that window records that point stood below the last row,
+so a reprint puts point back there instead of on the first line."
+  (tired-test--with-fixture
+    (tired root)
+    (let* ((listing (selected-window))
+           (other (split-window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer other (get-buffer-create " *tired-test-other*"))
+            (select-window other)
+            (with-current-buffer (window-buffer listing)
+              (tired-goto-last-entry)
+              (tired-next-line)
+              (set-window-point listing (point))
+              (should-not (tired--row-at (window-point listing)))
+              (tired--redraw listing)
+              (should (eobp))
+              (should (= (window-point listing) (point-max)))))
+        (when (window-live-p other)
+          (delete-window other))
+        (when (get-buffer " *tired-test-other*")
+          (kill-buffer " *tired-test-other*"))))))
+
 (ert-deftest tired-name-cell-shows-symlink-target ()
   "The name column of a symlink shows its target."
   (tired-test--with-fixture

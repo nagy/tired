@@ -170,7 +170,9 @@
 ;;   view command there, or a redraw loops forever.  The erase also
 ;;   moves the mark, point and the window start, so `tired--redraw'
 ;;   restores all three through `set-marker' and clamps the line to the
-;;   last row.
+;;   last row.  A point on the empty line below the last row, and a mark
+;;   there, come back below the last row, because the print holds no id
+;;   for such a line and would move point to the first line.
 ;; - `tired--pin-width-window' pins the window that renders the
 ;;   listing, because `tabulated-list-format' is permanent-local and one
 ;;   width serves every window.  Only a window that decides the width
@@ -317,7 +319,10 @@
 ;;   point before the print, and `tired--restore-window-views' puts every
 ;;   window back on that column after it.  The distance stops at the line
 ;;   end, so a point in the middle of a name survives a reprint that a
-;;   size walk or an idle reprint runs.
+;;   size walk or an idle reprint runs.  The empty line below the last
+;;   row holds no id, so `tired--redraw-buffer' keys it on the flag that
+;;   says that point stood below the listing, and a redraw never lands
+;;   point on a row that arrived under it.
 ;; - A row name is the `filename' thing through
 ;;   `tired--filename-at-point' and `tired--filename-bounds'.  A provider
 ;;   that returns nil cannot veto the plain Emacs guess.  A collapsed row
@@ -3954,14 +3959,20 @@ Leave point at the first line when the row is absent."
   (when (or (tired-entry-p row) (tired-section-p row))
     (tired--goto-row row)))
 
-(defun tired--restore-mark (row)
+(defun tired--restore-mark (row below)
   "Put the mark back on the line of ROW, when the listing shows it.
-Keep the region active, or inactive, as it was before the redraw."
-  (when (and row
-             (marker-position (mark-marker)))
+Keep the region active, or inactive, as it was before the redraw.
+BELOW says that the mark stood on the empty line below the last row,
+which holds no row for the print to remember, so the mark returns to
+that line instead of staying where the erase left it."
+  (when (marker-position (mark-marker))
     (save-excursion
-      (when (tired--goto-row row)
-        (set-marker (mark-marker) (point) (current-buffer))))))
+      (cond
+       (row
+        (when (tired--goto-row row)
+          (set-marker (mark-marker) (point) (current-buffer))))
+       (below
+        (set-marker (mark-marker) (point-max) (current-buffer)))))))
 
 ;;; Watches and auto-revert
 
@@ -4110,15 +4121,17 @@ listing refreshes once."
 
 ;;; Redraw, refresh and motion
 
-(defun tired--point-row (window)
-  "Return the row at the point of WINDOW.
+(defun tired--point-position (window)
+  "Return the position whose row a redraw treats as the point.
 The window point wins when WINDOW is not the selected window, because
-the buffer point of a window that lost the selection lags behind."
+the buffer point of a window that lost the selection lags behind.
+One position feeds the row, the line and the name offset of the
+restore, so they never describe two different points."
   (if (and (window-live-p window)
            (not (eq window (selected-window)))
            (eq (window-buffer window) (current-buffer)))
-      (tired--row-at (window-point window))
-    (tired--row-at-point)))
+      (window-point window)
+    (point)))
 
 (defun tired--row-position (row)
   "Return the buffer position of the line that shows ROW.
@@ -4140,15 +4153,21 @@ still holds point on its row."
 (defun tired--window-views ()
   "Return one view per window that shows the listing.
 A view is a list of the window, the row at its point, the distance
-from the name start of that row to its point, and the row at its
-display start.  Either row is nil when its line holds no row."
+from the name start of that row to its point, the row at its display
+start and the flag that says that its point stood below the last
+row.  Either row is nil when its line holds no row, and the flag
+names the one such line that a listing carries."
   (let (views)
     (dolist (window (get-buffer-window-list nil t))
-      (push (list window
-                  (tired--row-at (window-point window))
-                  (tired--name-offset (window-point window))
-                  (tired--row-at (window-start window)))
-            views))
+      (let* ((position (window-point window))
+             (point-row (tired--row-at position)))
+        (push (list window
+                    point-row
+                    (tired--name-offset position)
+                    (tired--row-at (window-start window))
+                    (and (null point-row)
+                         (tired--below-last-row-p position)))
+              views)))
     (nreverse views)))
 
 (defun tired--restore-window-views (views)
@@ -4160,18 +4179,23 @@ that starts at the first line.  Set the window point first, then the
 window start, so point keeps its place inside the window.  A window
 whose point vanished keeps its own point.  The name offset of the
 view puts point back on the column that it held inside the name,
-and not on the line start."
+and not on the line start.  A point that stood below the last row
+comes back below it, so a listing that gained rows never puts point
+on a row that the user did not choose."
   (dolist (view views)
     (let ((window (car view))
           (point-row (nth 1 view))
           (point-offset (nth 2 view))
-          (start-row (nth 3 view)))
+          (start-row (nth 3 view))
+          (point-below (nth 4 view)))
       (when (and (window-live-p window)
                  (eq (window-buffer window) (current-buffer)))
         (let ((point-position (and point-row
                                    (tired--row-name-position point-row
                                                              point-offset)))
               (start-position (and start-row (tired--row-position start-row))))
+          (when point-below
+            (setq point-position (point-max)))
           (when point-position
             (set-window-point window point-position)
             (when (and start-position (< start-position point-position))
@@ -4202,10 +4226,16 @@ directory rows and the idle queue fills the size cells."
   (let* ((window (tired--pin-width-window window))
          (_ (setq tired--name-column-window-width
                   (window-width window)))
-         (point-entry (tired--point-row window))
-         (point-line (line-number-at-pos))
-         (point-offset (tired--name-offset))
-         (mark-entry (tired--row-at (mark t)))
+         (point-at (tired--point-position window))
+         (point-entry (tired--row-at point-at))
+         (point-line (line-number-at-pos point-at))
+         (point-offset (tired--name-offset point-at))
+         (point-below (and (null point-entry)
+                           (tired--below-last-row-p point-at)))
+         (mark-at (mark t))
+         (mark-entry (tired--row-at mark-at))
+         (mark-below (and mark-at (null mark-entry)
+                          (tired--below-last-row-p mark-at)))
          (views (tired--window-views)))
     (setq tired--hidden-total (tired--count-hidden))
     (setq tired--rows (tired--display-rows t))
@@ -4231,16 +4261,24 @@ directory rows and the idle queue fills the size cells."
             (funcall tired--elements-queue-function))
           (tired--size-queue))
         (setq tired--rows nil)))
-    (if (tired--goto-entry point-entry)
-        (tired--goto-name-offset point-offset)
+    (cond
+     ((tired--goto-entry point-entry)
+      (tired--goto-name-offset point-offset))
+     (point-entry
       ;; The printed row is gone, and the print left point on the first
       ;; line.  Hold the line instead, so a removal of the last row
       ;; stops on the row that remains above it.
-      (when point-entry
-        (tired--goto-line point-line)
-        (tired--goto-name-offset point-offset)))
+      (tired--goto-line point-line)
+      (tired--goto-name-offset point-offset))
+     (point-below
+      ;; Point stood on the empty line that the printer closes the
+      ;; listing with.  That line holds no row, so the print has no id
+      ;; to remember, and it moves point to the first line.  Point goes
+      ;; back below the last row: a listing that gained rows leaves it
+      ;; there, on no row that the user did not choose.
+      (goto-char (point-max))))
     (tired--restore-window-views views)
-    (tired--restore-mark mark-entry)
+    (tired--restore-mark mark-entry mark-below)
     (tired--apply-selection-overlays)
     (tired--apply-flag-overlays)
     (tired--sync-watches)
@@ -4549,6 +4587,15 @@ holds, point keeps its offset inside the name."
       (forward-line -1))
     (when (tired--row-at-point)
       (point))))
+
+(defun tired--below-last-row-p (position)
+  "Return non-nil when POSITION stands on the empty line below the last row.
+The printer closes every row with a newline, so the buffer of a
+listing ends with an empty line, and the start of that line names no
+row.  A listing without a row holds no text and no such line."
+  (declare (side-effect-free t))
+  (and (> (point-max) (point-min))
+       (= position (point-max))))
 
 (defun tired--goto-line (line)
   "Move point to the start of line LINE, clamped to the last row.
